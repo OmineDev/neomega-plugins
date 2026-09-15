@@ -46,7 +46,7 @@ Worker 授权和会话结束确认各最多等待 120 秒。开启撤权策略�
 在仓库根目录：
 
 ```sh
-PYTHONPATH=integrations/neomega-cloud-import python3 -m unittest discover -s plugins/fatalder-cloud-import/tests
+PYTHONPATH=plugins/fatalder-cloud-import python3 -m unittest discover -s plugins/fatalder-cloud-import/tests
 ```
 
 业务默认值已作为版本化 JSON 随包发布，打包和测试不依赖 Fatalder 源码。需要同步默认值时，在已授权的 Fatalder checkout 中运行 `GOTOOLCHAIN=go1.26.0 go run "$PLUGIN_CHECKOUT/plugins/fatalder-cloud-import/tools/export-defaults.go"`，审核输出后更新 `fatalder_plugin/build_defaults.json`；当前来源为 Fatalder `1b3d3849fbaf82c7a7cd05ce958846f142e0b50f`。
