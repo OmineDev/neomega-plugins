@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "worker_url": {
+      "type": "string",
+      "title": "Worker HTTPS 地址"
+    },
+    "api_key": {
+      "type": "string",
+      "title": "Worker API Key",
+      "x-secret": true
+    },
+    "target_server_id": {
+      "type": "string",
+      "title": "Worker 目标配置 ID"
+    },
+    "rental_server_code": {
+      "type": "string",
+      "title": "租赁服号"
+    },
+    "admin_uuids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "管理员 UUID 白名单"
+    },
+    "rental_access": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "passcode": {
+              "type": "string",
+              "title": "租赁服密码",
+              "x-secret": true
+            }
+          },
+          "required": [
+            "passcode"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "有密码的租赁服访问配置",
+      "default": null
+    },
+    "files_directory": {
+      "type": "string",
+      "title": "数据目录内的建筑目录",
+      "default": "imports"
+    },
+    "revoke_operator_on_completion": {
+      "type": "boolean",
+      "title": "导入结束后撤销插件授予的 OP",
+      "description": "默认保留 OP；开启后须确认恢复原权限才结束权限会话。",
+      "default": false
+    },
+    "poll_seconds": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 30,
+      "default": 2.0
+    },
+    "max_upload_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1073741824,
+      "default": 104857600
+    }
+  },
+  "required": [
+    "worker_url",
+    "api_key",
+    "target_server_id",
+    "rental_server_code",
+    "admin_uuids"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,14 @@
+name: Plugin checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: PYTHONPATH=plugins/fatalder-cloud-import python3 -m unittest discover -s plugins/fatalder-cloud-import/tests
+      - run: python3 -m unittest discover -s tests
