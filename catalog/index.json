@@ -15,6 +15,43 @@
         "services": []
       },
       "permission_purposes": {}
+    },
+    {
+      "plugin_id": "fatalder.cloud-import",
+      "version": "1.0.4",
+      "name": "Fatalder 云导入",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/fatalder.cloud-import-v1.0.4/fatalder.cloud-import-1.0.4.zip",
+      "sha256": "e08ed083bbfc42e8391fe8546b458c7c4bde37ed2de3118d6846d0e4514ef1d0",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.packet.send_json"
+        ],
+        "services": [],
+        "players": [
+          "list",
+          "observe"
+        ],
+        "packet_send_ids": [
+          185
+        ],
+        "purposes": {
+          "operation:framework.command.execute": "向管理员反馈导入报价、状态与操作结果",
+          "operation:framework.packet.send_json": "发送经过身份核对的机器人权限请求",
+          "event:chat.received": "接收并校验管理员发出的导入命令",
+          "players:list": "将聊天玩家唯一匹配到管理员 UUID 白名单",
+          "players:observe": "核对 Worker 机器人身份及权限变更读回",
+          "packet_send:185": "发送 RequestPermissions，为已核验机器人授予 OP 或按配置恢复原权限"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "向管理员反馈导入报价、状态与操作结果",
+        "operation:framework.packet.send_json": "发送经过身份核对的机器人权限请求",
+        "event:chat.received": "接收并校验管理员发出的导入命令",
+        "players:list": "将聊天玩家唯一匹配到管理员 UUID 白名单",
+        "players:observe": "核对 Worker 机器人身份及权限变更读回",
+        "packet_send:185": "发送 RequestPermissions，为已核验机器人授予 OP 或按配置恢复原权限"
+      }
     }
   ]
 }
