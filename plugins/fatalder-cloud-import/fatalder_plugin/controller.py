@@ -35,6 +35,37 @@ class Controller:
         self.stopped = threading.Event()
         self.reader_job = None
         self.reader_task = None
+        self.maintenance_token = None
+        self.control_tasks = set()
+        self.active_controls = 0
+
+    async def maintenance(self, request):
+        operation, token = request.get('operation'), request.get('token')
+        if operation not in ('seal', 'release') or not isinstance(token, str) or not token:
+            return {'status': 'unsupported'}
+        # The lock check and seal contain no await: one atomic event-loop turn.
+        # Do not acquire an unlocked asyncio.Lock here: queued waiters may own
+        # its next turn, which would make maintenance wait behind business I/O.
+        if self.lock.locked():
+            return {'status': 'busy', 'token': token}
+        if operation == 'release':
+            if self.maintenance_token not in (None, token):
+                return {'status': 'busy', 'token': token}
+            self.maintenance_token = None
+            return {'status': 'released', 'token': token}
+        if self.maintenance_token == token:
+            return {'status': 'sealed', 'token': token}
+        outcomes = self.state.get('task_outcomes') or {}
+        if (self.maintenance_token or self.active_controls or any(not task.done() for task in self.control_tasks) or
+                (self.state and self.state.get('phase') not in TERMINAL) or
+                self.state.get('lease') or self.state.get('review') or
+                self.state.get('recovery_required') or
+                any(value.get('state') not in ('succeeded', 'failed', 'skipped')
+                    for value in outcomes.values())):
+            return {'status': 'busy', 'token': token}
+        self.maintenance_token = token
+        return {'status': 'sealed', 'token': token}
+
 
     async def start(self):
         self.state = await self.ctx.storage.get(STATE, {})
@@ -70,17 +101,19 @@ class Controller:
         await tx.save()
 
     async def handle(self, event):
-        body = event.payload.get('payload', {})
-        message, name = body.get('message', ''), body.get('player', '')
-        if event.kind != 'chat.received' or not message.startswith('!导入'):
-            await event.ack()
-            return
-        players = await self.ctx.players()
-        matched = [p for p in players if p['name'] == name]
-        if len(matched) != 1 or matched[0]['uuid'] not in self.ctx.config.admin_uuids:
-            await event.ack()
-            return
         async with self.lock:
+            if self.maintenance_token:
+                return
+            body = event.payload.get('payload', {})
+            message, name = body.get('message', ''), body.get('player', '')
+            if event.kind != 'chat.received' or not message.startswith('!导入'):
+                await event.ack()
+                return
+            players = await self.ctx.players()
+            matched = [p for p in players if p['name'] == name]
+            if len(matched) != 1 or matched[0]['uuid'] not in self.ctx.config.admin_uuids:
+                await event.ack()
+                return
             # Admission and ACK are atomic. A crash never replays a paid command.
             # The slot records the corresponding prepare/start request before I/O.
             token = event.payload['delivery_token']
@@ -88,7 +121,7 @@ class Controller:
             tx.set('fatalder.last_chat', token)
             await tx.save()
             try:
-                await self.command(name, shlex.split(message)[1:])
+                await self._command(name, shlex.split(message)[1:])
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -112,6 +145,12 @@ class Controller:
         return path
 
     async def command(self, name, args):
+        async with self.lock:
+            if self.maintenance_token:
+                return
+            await self._command(name, args)
+
+    async def _command(self, name, args):
         if not args:
             await self.tell(name, '!导入 列表 | 文件名 x y z overworld/nether/the_end | 确认 token | 状态 | 暂停 | 继续 | 取消 | 恢复 | 核查 | 确认核查 token')
             return
@@ -148,18 +187,18 @@ class Controller:
                     quote_id=self.state['quote']['quote_id'], idempotency_key=secrets.token_hex(16))
                 self.state['phase'] = 'start_pending'
                 await self.save()
-                self.ctx.spawn(self.run_control('start', self.state['start']), name='fatalder-start')
+                self.spawn_control('start', self.state['start'], name='fatalder-start')
             elif action == '恢复':
                 job = await self.request('GET', self.path())
                 if job['state'] == 'READY' and self.state.get('start'):
-                    self.ctx.spawn(self.run_control('start', self.state['start']), name='fatalder-start-reconcile')
+                    self.spawn_control('start', self.state['start'], name='fatalder-start-reconcile')
                     await self.tell(name, '使用原确认回执核对启动；未创建新的扣费请求。')
                     return
                 if not job.get('recovery_required'):
                     raise ValueError('recovery not required')
-                self.ctx.spawn(self.run_control('recover', dict(version=5, job_id=self.state['job_id'])), name='fatalder-recover')
+                self.spawn_control('recover', dict(version=5, job_id=self.state['job_id']), name='fatalder-recover')
             else:
-                self.ctx.spawn(self.run_control({'暂停': 'pause', '继续': 'resume', '取消': 'cancel'}[action], {}), name='fatalder-control')
+                self.spawn_control({'暂停': 'pause', '继续': 'resume', '取消': 'cancel'}[action], {}, name='fatalder-control')
             await self.tell(name, '已提交请求；最终状态以 !导入 状态 为准。')
             return
         if len(args) != 5:
@@ -204,7 +243,24 @@ class Controller:
         q = self.state['quote']
         await self.tell(name, f"报价：{q['amount']} {q['currency']}，计费量 {q['units']}，有效至 {q['expires_at']}。确认执行：!导入 确认 {self.state['confirm_token']}")
 
+    def spawn_control(self, action, body, *, name):
+        task = self.ctx.spawn(self.run_control(action, body), name=name)
+        self.control_tasks.add(task)
+        task.add_done_callback(self.control_tasks.discard)
+
     async def run_control(self, action, body):
+        async with self.lock:
+            if self.maintenance_token:
+                return
+            self.active_controls += 1
+        try:
+            # Remote start/recovery may await operator ACKs from tick/reader.
+            # Keep observation live while the admitted request runs.
+            await self._run_control(action, body)
+        finally:
+            self.active_controls -= 1
+
+    async def _run_control(self, action, body):
         # Never retry mutations on transport failure. GET determines the outcome.
         path = self.path('/' + action)
         try:
@@ -224,6 +280,8 @@ class Controller:
             return
         try:
             async with self.lock:
+                if self.maintenance_token:
+                    return
                 job = await self.request('GET', self.path())
                 if job['state'] == 'READY' and self.state.get('quote') and not self.state.get('start'):
                     self.state['phase'] = 'quoted'
@@ -401,6 +459,8 @@ class Controller:
             {k: snapshot[k] for k in ('session_id', 'attempt_id', 'phase')})
 
     async def read_events(self, job_id):
+        if self.maintenance_token:
+            return
         iterator = self.client.events(job_id, self.state.get('cursor', 0), self.stopped)
         try:
             while not self.stopped.is_set():
@@ -408,6 +468,8 @@ class Controller:
                 if event is None:
                     break
                 async with self.lock:
+                    if self.maintenance_token:
+                        return
                     if self.state.get('job_id') != job_id:
                         break
                     seq = event.get('seq', 0)

@@ -18,6 +18,11 @@ class CloudImport(Plugin):
     async def on_event(self, ctx, event):
         await self.controller.handle(event)
 
+    async def on_maintenance(self, ctx, request):
+        if not hasattr(self, 'controller'):
+            return {'status': 'unsupported'}
+        return await self.controller.maintenance(request)
+
     async def on_stop(self, ctx):
         if hasattr(self, 'controller'):
             await self.controller.stop()

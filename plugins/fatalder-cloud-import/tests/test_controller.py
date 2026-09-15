@@ -63,6 +63,142 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
+    async def test_maintenance_busy_preserves_active_slot_and_background(self):
+        before = copy.deepcopy(self.c.state)
+        result = await self.c.maintenance({'operation': 'seal', 'token': 'backup'})
+        self.assertEqual(result['status'], 'busy')
+        self.assertEqual(self.c.state, before)
+        self.assertFalse(self.c.stopped.is_set())
+        self.c.request.assert_not_called()
+
+    async def test_maintenance_seal_blocks_writers_until_matching_release(self):
+        self.c.state = dict(job_id='job', phase='succeeded', cursor=1)
+        self.client.events = lambda *args: iter([dict(seq=2)])
+        event = SimpleNamespace(kind='other', payload={}, ack=AsyncMock())
+        self.assertEqual((await self.c.maintenance(dict(operation='seal', token='a')))['status'], 'sealed')
+        before = copy.deepcopy(self.c.state)
+        await self.c.handle(event)
+        await self.c.tick()
+        await self.c.command('Admin', ['状态'])
+        await self.c.run_control('start', {})
+        await self.c.read_events('job')
+        self.assertEqual(self.c.state, before)
+        self.assertEqual(self.ctx.storage.values, {})
+        event.ack.assert_not_called()
+        self.c.tell.assert_not_called()
+        self.c.request.assert_not_called()
+        self.assertEqual((await self.c.maintenance(dict(operation='release', token='b')))['status'], 'busy')
+        self.assertEqual((await self.c.maintenance(dict(operation='release', token='a')))['status'], 'released')
+        self.assertEqual((await self.c.maintenance(dict(operation='release', token='a')))['status'], 'released')
+        await self.c.handle(event)
+        event.ack.assert_awaited_once()
+
+    async def test_maintenance_does_not_overtake_admitted_control(self):
+        self.c.state['phase'] = 'succeeded'
+        await self.c.command('Admin', ['取消'])
+        result = await self.c.maintenance(dict(operation='seal', token='a'))
+        self.assertEqual(result['status'], 'busy')
+        await asyncio.gather(*self.tasks)
+        self.c.request.assert_awaited_once()
+        self.assertFalse(self.c.stopped.is_set())
+
+    async def test_maintenance_rejects_uncertain_durable_state(self):
+        for extra in ({'phase': 'quoted'}, {'phase': 'prepare_pending'},
+                      {'phase': 'start_pending'}, {'phase': 'paused'},
+                      {'lease': {'cleaned': True}}, {'review': {'token': 'r'}},
+                      {'recovery_required': True},
+                      {'task_outcomes': {'a': {'state': 'unknown'}}}):
+            with self.subTest(extra=extra):
+                self.c.state = dict(job_id='job', phase='failed')
+                self.c.state.update(extra)
+                before = copy.deepcopy(self.c.state)
+                self.assertEqual((await self.c.maintenance(dict(operation='seal', token='a')))['status'], 'busy')
+                self.assertEqual(self.c.state, before)
+        self.c.state = dict(phase='failed', task_outcomes={'a': {'state': 'failed', 'content': 'incomplete'}})
+        self.assertEqual((await self.c.maintenance(dict(operation='seal', token='a')))['status'], 'sealed')
+
+    async def test_maintenance_busy_returns_while_event_ack_in_flight(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def ack():
+            entered.set()
+            await release.wait()
+        event = SimpleNamespace(kind='other', payload={}, ack=ack)
+        task = self.ctx.spawn(self.c.handle(event))
+        await entered.wait()
+        self.c.state = {}
+        try:
+            result = await asyncio.wait_for(self.c.maintenance(dict(operation='seal', token='a')), 0.1)
+            self.assertEqual(result['status'], 'busy')
+            self.assertFalse(task.done())
+            self.assertFalse(self.c.stopped.is_set())
+        finally:
+            release.set()
+            await task
+
+    async def test_maintenance_and_new_import_have_one_admission_winner(self):
+        root = self.c.files_root()
+        (root / 'house.bdx').write_bytes(b'building')
+        ref = dict(object_id='obj', sha256='sha256:'+'a'*64, size_bytes=8, display_name='house.bdx')
+        self.client.upload = lambda _: ref
+        self.c.request.return_value = dict(job_id='j', quote=dict(quote_id='q', amount=10,
+            currency='unit', units=1, expires_at=(now()+timedelta(seconds=30)).isoformat()))
+        for seal_first in (True, False):
+            with self.subTest(seal_first=seal_first):
+                self.c.state = {}
+                self.c.request.reset_mock()
+                self.ctx.storage.values.clear()
+                seal = self.c.maintenance(dict(operation='seal', token='a'))
+                command = self.c.command('Admin', ['house.bdx', '1', '64', '2', 'overworld'])
+                if seal_first:
+                    result, _ = await asyncio.gather(seal, command)
+                    self.assertEqual(result['status'], 'sealed')
+                    self.c.request.assert_not_called()
+                    self.assertEqual(self.ctx.storage.values, {})
+                    await self.c.maintenance(dict(operation='release', token='a'))
+                else:
+                    _, result = await asyncio.gather(command, seal)
+                    self.assertEqual(result['status'], 'busy')
+                    self.c.request.assert_awaited_once()
+                    self.assertEqual(self.c.state['phase'], 'quoted')
+
+    async def test_maintenance_seal_blocks_already_waiting_reader_commit(self):
+        self.c.state = dict(job_id='job', phase='succeeded', cursor=1)
+        entered, release = threading.Event(), threading.Event()
+        def events():
+            entered.set()
+            release.wait(5)
+            yield dict(seq=2)
+        self.client.events = lambda *args: events()
+        reader = self.ctx.spawn(self.c.read_events('job'))
+        await asyncio.to_thread(entered.wait, 5)
+        try:
+            self.assertEqual((await self.c.maintenance(dict(operation='seal', token='a')))['status'], 'sealed')
+        finally:
+            release.set()
+            await reader
+        self.assertEqual(self.c.state['cursor'], 1)
+        self.assertEqual(self.ctx.storage.values, {})
+        self.assertFalse(self.c.stopped.is_set())
+
+    async def test_control_request_keeps_observer_available_but_blocks_maintenance(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def request(method, path, body=None):
+            if method == 'POST':
+                entered.set()
+                await release.wait()
+                return {}
+            return dict(job_id='job', state='RUNNING')
+        self.c.request.side_effect = request
+        self.c.read_events = AsyncMock()
+        control = self.ctx.spawn(self.c.run_control('start', {}))
+        await entered.wait()
+        try:
+            await asyncio.wait_for(self.c.tick(), 0.2)
+            self.assertEqual((await self.c.maintenance(dict(operation='seal', token='a')))['status'], 'busy')
+        finally:
+            release.set()
+            await control
+
     async def test_retained_terminal_poll_releases_same_session_without_writes(self):
         self.ctx.config.revoke_operator_on_completion = False
         await self.c.operator_gate(self.snapshot)

@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
   "id": "fatalder.cloud-import",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "host_api": {
     "major": 1,
-    "min_minor": 1
+    "min_minor": 2
   },
   "worker_protocol": {
     "major": 1,

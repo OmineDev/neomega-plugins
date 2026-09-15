@@ -55,7 +55,7 @@ PYTHONPATH=plugins/fatalder-cloud-import python3 -m unittest discover -s plugins
 
 ## 从 Fatalder 仓内版本迁移
 
-独立版本 1.0.1 保持 `fatalder.cloud-import`、`state_version: 1`、配置声明和持久状态键不变；仅改变源码/制品归属及可复现打包。现有安装使用相同名称（如 `importer`）执行 `update`，不要卸载重装或改名。先停止新任务并核对没有进行中的导入、未知请求、权限租约，再停插件，私下备份旧制品、配置、密钥与数据后更新；有未完成任务则继续使用原版，不能清空回执绕过。宿主状态、事件游标和数据目录不搬入新仓库或 ZIP。迁移不会自动启动、重放任务或撤销世界写入。
+独立版本 1.0.1 保持 `fatalder.cloud-import`、`state_version: 1`、配置声明和持久状态键不变，仅改变源码/制品归属及可复现打包。当前安全更新要求维护协议；旧版 1.0.1/1.0.3 无法提供可信的空闲证明，暂不支持无缝迁移。不能通过停进程、清空回执、卸载重装或改名绕过进行中任务和未知结果检查。宿主状态、事件游标和数据目录不搬入新仓库或 ZIP；任何迁移都不会自动撤销世界写入。
 
 迁移不改变原 Worker 的 120 秒结束 ACK 行为；插件离线完成的改进由后续独立版本实现。
 
@@ -70,3 +70,9 @@ PYTHONPATH=plugins/fatalder-cloud-import python3 -m unittest discover -s plugins
 ### 1.0.3：声明权限与显式授权
 
 最低 Host API 提升至 1.1，worker wire 保持 1.0；配置与 SQLite state_version 仍为 1。升级后按 `configure → permissions → doctor → start` 检查配置、明确保存新增授权并独立启动。旧 catalog 没有确认记录时必须重新确认，不自动补齐权限；仅保存权限不会启动。先核查旧任务和权限租约，再按前述迁移边界更新。使用新的 1.0.3 制品名，不覆盖既有 1.0.1 发布包。
+
+### 1.0.4：维护检查与安全更新
+
+最低 Host API 为 1.2，worker wire 仍为 1.0，state_version 保持 1。插件通过 `on_maintenance` 在同一业务锁内核对任务、租约、控制请求及所有状态写者，空闲时封闭新任务；busy 无损返回，release 按同一 token 解除。维护等待不停止后台任务，也不取消远端导入。
+
+使用运行中且支持维护协议的实例执行显式固定版本更新；先查看计划并确认候选版本、哈希与权限。未应用的配置或密钥必须先处理，停止状态不代表远端业务空闲。备份或验证失败发生在 Drain 前，激活失败需按宿主诊断处理，不能把已保存当作已生效。详细命令、备份及旧版本限制见 [安全更新合同](https://github.com/OmineDev/neomega-agent/blob/main/docs/runtime/plugin-updates.md)。本版本不提供世界回滚，不自动重放未知动作；自动测试不代表实服验收。
