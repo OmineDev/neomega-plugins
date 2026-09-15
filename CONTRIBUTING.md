@@ -5,7 +5,7 @@
 ```sh
 PYTHONPATH=plugins/fatalder-cloud-import python3 -m unittest discover -s plugins/fatalder-cloud-import/tests
 python3 -m unittest discover -s tests
-python3 plugins/fatalder-cloud-import/tools/package.py dist/fatalder.cloud-import-1.0.1.zip
+python3 plugins/fatalder-cloud-import/tools/package.py dist/fatalder.cloud-import-1.0.4.zip
 ```
 
 包使用源文件白名单与固定 ZIP 时间/权限。维护者检查 manifest、schema、权限变化、来源许可、测试与制品内容，确认 ID 和状态兼容性。改变权限须记录用途，审核发布不能替代服主授权。默认值按插件 README 的显式来源更新，日常测试与打包无需 Fatalder checkout。
@@ -19,9 +19,9 @@ python3 plugins/fatalder-cloud-import/tools/package.py dist/fatalder.cloud-impor
 5. Release 说明写清迁移兼容性、自动测试及实服验收界限。禁止把离线安装说成实际导入成功。
 
 ```sh
-sha256sum dist/fatalder.cloud-import-1.0.1.zip
+sha256sum dist/fatalder.cloud-import-1.0.4.zip
 # 在 dist 内生成仅含文件名的 SHA256SUMS，然后：
-gh release create fatalder.cloud-import-v1.0.1 dist/fatalder.cloud-import-1.0.1.zip dist/SHA256SUMS --target <reviewed-commit> --notes-file <release-notes.md>
+gh release create fatalder.cloud-import-v1.0.4 dist/fatalder.cloud-import-1.0.4.zip dist/SHA256SUMS --target <reviewed-commit> --notes-file <release-notes.md>
 ```
 
 Host 安装测试需要已构建的离线 binary 和相同版本的 `scripts/runtime-admin.py`。插件 `session_required`，离线只验证安装与配置；不能启动成连接游戏的运行实例。
@@ -29,7 +29,7 @@ Host 安装测试需要已构建的离线 binary 和相同版本的 `scripts/run
 现有公开管理入口的可重复离线检查：
 
 ```sh
-TMPDIR=/your/temp python3 tools/check-host.py --host /path/to/neomega-runtime --agent /path/to/neomega-agent dist/fatalder.cloud-import-1.0.1.zip
+TMPDIR=/your/temp python3 tools/check-host.py --host /path/to/neomega-runtime --agent /path/to/neomega-agent dist/fatalder.cloud-import-1.0.4.zip
 ```
 
 检查临时安装保持 stopped、静态配置校验和保存、密钥引用保留，以及无效字段未覆盖已保存配置；临时进程和状态在结束时清理。不验证真实 Worker 或游戏运行。
