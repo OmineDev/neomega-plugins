@@ -4,14 +4,14 @@
 
 ## 安装与配置
 
-需要包含 managed_operator 握手的新版 Worker、已连接目标租赁服且具备授予权限能力 的 neomega Agent，以及支持 config schema/secrets 的插件宿主。Worker 目标配置必须允许 service_center，并允许所配置服号。宿主必须为安装项 `managed:importer` 开启 `NEOMEGA_PLAYER_INSTALLATIONS`、`NEOMEGA_PLAYER_OBSERVATION_INSTALLATIONS` 和 `NEOMEGA_PACKET_SEND_INSTALLATIONS`，发送包类型 `NEOMEGA_PACKET_SEND_IDS` 包含 **185（RequestPermissions）**，并使用允许世界写入的模式。合并到现有授权列表，不覆盖其他安装项；修改宿主启动环境需要按实际部署流程生效。入站订阅授权不能替代发包授权。权限包按实体唯一 ID 定位，不使用玩家名字发送 op/deop。
+需要包含 managed_operator 握手的新版 Worker、已连接目标租赁服且具备授予权限能力的 neomega Agent，以及支持配置与权限管理的 **Host API 1.1**（worker wire 仍为 **1.0**）。Worker 目标配置必须允许 service_center，并允许所配置服号。插件在 manifest 中申请玩家列表、原子玩家观察、命令、聊天事件及 **185（RequestPermissions）** 发包权限；服主通过管理向导审阅并明确保存，无需猜测安装项 ENV 授权名单。宿主必须具备相应来源且允许世界写入；来源缺失时，先按诊断配置/升级并重启宿主。权限包按实体唯一 ID 定位，不使用玩家名字发送 op/deop。
 
 同一租赁服只安装一个本插件实例；该实例同时只占用一个导入槽。
 
 1. 在仓库根目录运行 `python3 plugins/fatalder-cloud-import/tools/package.py /your/output/cloud-import.zip`。
 2. 使用 neomega 提供的管理脚本安装：`python3 runtime-admin.py --url "$TARGET_URL" --token-file "$TARGET_TOKEN_FILE" install importer /your/output/cloud-import.zip`。
 3. 运行 `python3 runtime-admin.py --url "$TARGET_URL" --token-file "$TARGET_TOKEN_FILE" configure importer`，按向导填写 HTTPS Worker 根地址、API Key、Worker 目标配置 ID、租赁服号与管理员 UUID 数组。
-4. 运行管理脚本的 `doctor importer` 检查，再执行 `enable importer`、`start importer`。API Key 存在宿主管理的私有密钥文件，普通配置只保存 secret 引用；不把真实 Key 写进本目录或安装包。
+4. 运行 `python3 runtime-admin.py --url "$TARGET_URL" --token-file "$TARGET_TOKEN_FILE" permissions importer`，审阅用途、申请与缺口，输入“同意”保存权限；在后续启动提问处回车，保持停止。再执行同一管理脚本的 `doctor importer`，检查通过后独立执行 `start importer`。如需宿主重启后自动加载，再明确执行 `enable importer`（该命令也会启动尚未运行的插件）。API Key 存在宿主管理的私有密钥文件，普通配置只保存 secret 引用；不把真实 Key 写进本目录或安装包。
 5. 将建筑文件放入插件**数据目录**的 `imports/`，不是安装目录。文件名含空格时用双引号包裹。也支持 `名称.ref.json`：内容为 Worker 已存对象的完整 ObjectRef（object_id、sha256、size_bytes、display_name），sha256 必须有 `sha256:` 前缀。
 
 插件要求普通 HTTPS 证书验证；不跟随重定向、不读取系统代理。数据目录内 `downloads/` 保存已校验的 Worker 转换产物。首次启动后可由服主管理数据目录文件，不提供任意网络 URL 导入。
@@ -66,3 +66,7 @@ PYTHONPATH=plugins/fatalder-cloud-import python3 -m unittest discover -s plugins
 `!导入 状态` 分开显示任务状态与内容缺项/未知；成功不代表 NBT 完整。旧 `cleanup_failed` 必须由管理员输入 `!导入 核查`，阅读原任务失败、各任务可信结果、内容缺项及保留 OP 的影响，再输入五分钟内有效的 `!导入 确认核查 token`。确认再次 GET 核对同份 job/session/结果证据，记录本地显式保留 OP 收据并释放槽位；Worker 历史 FAILED 保留，不重建、不发权限命令。缺证据/需恢复时保持占用。原版 Worker 不提供可信 task_outcomes 时不能绕过核查；先升级兼容 Worker。
 
 状态继续使用 `fatalder.controller` / state_version 1，新增 worker_cleanup_policy、task_outcomes、review、last_operator_session 字段。新任务准入仍检查终态且无 lease；未知 prepare/start、在途任务及未核查 lease 均不可清空绕过。所有消息、轮询与事件状态更新在同一 Controller.lock 下；部署更新守卫应复用该锁。代码与离线测试不代表真服验收。
+
+### 1.0.3：声明权限与显式授权
+
+最低 Host API 提升至 1.1，worker wire 保持 1.0；配置与 SQLite state_version 仍为 1。升级后按 `configure → permissions → doctor → start` 检查配置、明确保存新增授权并独立启动。旧 catalog 没有确认记录时必须重新确认，不自动补齐权限；仅保存权限不会启动。先核查旧任务和权限租约，再按前述迁移边界更新。使用新的 1.0.3 制品名，不覆盖既有 1.0.1 发布包。

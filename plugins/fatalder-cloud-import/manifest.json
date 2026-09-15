@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
   "id": "fatalder.cloud-import",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "host_api": {
     "major": 1,
-    "min_minor": 0
+    "min_minor": 1
   },
   "worker_protocol": {
     "major": 1,
@@ -27,7 +27,22 @@
       "framework.command.execute",
       "framework.packet.send_json"
     ],
-    "services": []
+    "services": [],
+    "players": [
+      "list",
+      "observe"
+    ],
+    "packet_send_ids": [
+      185
+    ],
+    "purposes": {
+      "operation:framework.command.execute": "向管理员反馈导入报价、状态与操作结果",
+      "operation:framework.packet.send_json": "发送经过身份核对的机器人权限请求",
+      "event:chat.received": "接收并校验管理员发出的导入命令",
+      "players:list": "将聊天玩家唯一匹配到管理员 UUID 白名单",
+      "players:observe": "核对 Worker 机器人身份及权限变更读回",
+      "packet_send:185": "发送 RequestPermissions，为已核验机器人授予 OP 或按配置恢复原权限"
+    }
   },
   "dependencies": [],
   "exports": []
