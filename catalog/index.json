@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "plugin_id": "fatalder.cloud-import",
+      "version": "1.0.1",
+      "name": "Fatalder 云导入",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/fatalder.cloud-import-v1.0.1/fatalder.cloud-import-1.0.1.zip",
+      "sha256": "bf836a824ed3986e0cb44fbe8f39c8e5cb7d7de36682489d6e4afacfc68c9543",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.packet.send_json"
+        ],
+        "services": []
+      },
+      "permission_purposes": {}
+    }
+  ]
+}
