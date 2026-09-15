@@ -58,3 +58,11 @@ PYTHONPATH=plugins/fatalder-cloud-import python3 -m unittest discover -s plugins
 独立版本 1.0.1 保持 `fatalder.cloud-import`、`state_version: 1`、配置声明和持久状态键不变；仅改变源码/制品归属及可复现打包。现有安装使用相同名称（如 `importer`）执行 `update`，不要卸载重装或改名。先停止新任务并核对没有进行中的导入、未知请求、权限租约，再停插件，私下备份旧制品、配置、密钥与数据后更新；有未完成任务则继续使用原版，不能清空回执绕过。宿主状态、事件游标和数据目录不搬入新仓库或 ZIP。迁移不会自动启动、重放任务或撤销世界写入。
 
 迁移不改变原 Worker 的 120 秒结束 ACK 行为；插件离线完成的改进由后续独立版本实现。
+
+### 1.0.2：离线完成与旧失败核查
+
+新建任务将 `revoke_operator_on_completion` 转为 Prepare 中冻结的 `operator_cleanup_policy`。默认保留 OP 时，Worker 验证真实会话身份并完成授权后，结束直接记录 `retained`；插件离线超过两分钟也不因缺清理 ACK 改写建造结果。重连仅查询原 job/session/目标服/终态，不重发启动；收到重复通知仍只释放一次租约。任务内部更换连接时，也消费原 session 的持久 retained 事件关闭该连接租约，槽位仍保持进行中；下一连接重新核验实际身份，旧事件不能清掉新连接租约。撤权策略继续走原清理 ACK 与权限收据。
+
+`!导入 状态` 分开显示任务状态与内容缺项/未知；成功不代表 NBT 完整。旧 `cleanup_failed` 必须由管理员输入 `!导入 核查`，阅读原任务失败、各任务可信结果、内容缺项及保留 OP 的影响，再输入五分钟内有效的 `!导入 确认核查 token`。确认再次 GET 核对同份 job/session/结果证据，记录本地显式保留 OP 收据并释放槽位；Worker 历史 FAILED 保留，不重建、不发权限命令。缺证据/需恢复时保持占用。原版 Worker 不提供可信 task_outcomes 时不能绕过核查；先升级兼容 Worker。
+
+状态继续使用 `fatalder.controller` / state_version 1，新增 worker_cleanup_policy、task_outcomes、review、last_operator_session 字段。新任务准入仍检查终态且无 lease；未知 prepare/start、在途任务及未核查 lease 均不可清空绕过。所有消息、轮询与事件状态更新在同一 Controller.lock 下；部署更新守卫应复用该锁。代码与离线测试不代表真服验收。

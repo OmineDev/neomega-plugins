@@ -63,6 +63,78 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
+    async def test_retained_terminal_poll_releases_same_session_without_writes(self):
+        self.ctx.config.revoke_operator_on_completion = False
+        await self.c.operator_gate(self.snapshot)
+        self.snapshot['phase'] = 'retained'
+        self.c.request.return_value = dict(job_id='job', state='SUCCEEDED',
+            spec={'operator_cleanup_policy': 'retain'}, operator_session=self.snapshot,
+            task_outcomes={'import': {'state': 'succeeded', 'content': 'incomplete'}})
+        self.c.read_events = AsyncMock()
+        self.c.request.reset_mock()
+        self.operator.set_permission.reset_mock()
+        await self.c.tick()
+        await self.c.tick()
+        self.assertNotIn('lease', self.c.state)
+        self.operator.set_permission.assert_not_called()
+        self.assertTrue(all(c.args[0] == 'GET' for c in self.c.request.call_args_list))
+        self.assertEqual(self.c.state['task_outcomes']['import']['content'], 'incomplete')
+
+    async def test_legacy_cleanup_requires_explicit_evidence_bound_confirmation(self):
+        await self.c.operator_gate(self.snapshot)
+        self.snapshot['phase'] = 'cleanup_failed'
+        job = dict(job_id='job', state='FAILED', operator_session=self.snapshot,
+            spec={'tasks': [{'task_key': 'import'}]},
+            task_outcomes={'import': {'state': 'succeeded', 'content': 'incomplete'}})
+        self.c.request.return_value = job
+        self.c.request.reset_mock()
+        self.operator.set_permission.reset_mock()
+        await self.c.command('Admin', ['核查'])
+        self.assertIn('lease', self.c.state)
+        token = self.c.state['review']['token']
+        job['task_outcomes']['import']['state'] = 'unknown'
+        await self.c.command('Admin', ['确认核查', token])
+        self.assertIn('lease', self.c.state)
+        job['task_outcomes']['import']['state'] = 'succeeded'
+        await self.c.command('Admin', ['核查'])
+        await self.c.command('Admin', ['确认核查', self.c.state['review']['token']])
+        self.assertNotIn('lease', self.c.state)
+        self.assertEqual(self.c.state['phase'], 'failed')
+        self.assertEqual(self.c.state['last_operator_session']['cleanup_outcome'], 'explicit_retention_review')
+        self.operator.set_permission.assert_not_called()
+        self.assertTrue(all(c.args[0] == 'GET' for c in self.c.request.call_args_list))
+
+    async def test_authorization_uses_frozen_worker_policy_after_config_change(self):
+        self.c.request.return_value = dict(job_id='job', state='RUNNING',
+            spec={'operator_cleanup_policy': 'retain'}, operator_session=self.snapshot)
+        self.c.read_events = AsyncMock()
+        await self.c.tick()
+        self.assertEqual(self.c.state['lease']['cleanup_policy'], 'retain')
+
+    async def test_retained_wrong_session_and_recovery_keep_lease(self):
+        await self.c.operator_gate(self.snapshot)
+        job = dict(job_id='job', state='SUCCEEDED', spec={'operator_cleanup_policy': 'retain'},
+            operator_session=dict(self.snapshot, phase='retained', session_id='wrong'))
+        await self.c.reconcile_retained(job)
+        self.assertIn('lease', self.c.state)
+        job['operator_session']['session_id'] = 's'
+        job['recovery_required'] = True
+        await self.c.reconcile_retained(job)
+        self.assertIn('lease', self.c.state)
+
+    async def test_retained_event_closes_old_connection_but_keeps_running_slot(self):
+        self.c.state['worker_cleanup_policy'] = 'retain'
+        await self.c.operator_gate(self.snapshot)
+        retained = dict(self.snapshot, phase='retained')
+        self.client.events = lambda *args: iter([dict(seq=1, kind='target.operator_session', payload=retained)])
+        await self.c.read_events('job')
+        self.assertNotIn('lease', self.c.state)
+        self.assertEqual(self.c.state['phase'], 'running')
+        await self.c.operator_gate(dict(self.snapshot, session_id='next'))
+        self.client.events = lambda *args: iter([dict(seq=2, kind='target.operator_session', payload=retained)])
+        await self.c.read_events('job')
+        self.assertEqual(self.c.state['lease']['session_id'], 'next')
+
     async def test_grant_then_cleanup_only_owned_permission(self):
         await self.c.operator_gate(self.snapshot)
         self.assertTrue(self.c.state['lease']['owned'])

@@ -113,18 +113,22 @@ class Controller:
 
     async def command(self, name, args):
         if not args:
-            await self.tell(name, '!导入 列表 | 文件名 x y z overworld/nether/the_end | 确认 token | 状态 | 暂停 | 继续 | 取消 | 恢复')
+            await self.tell(name, '!导入 列表 | 文件名 x y z overworld/nether/the_end | 确认 token | 状态 | 暂停 | 继续 | 取消 | 恢复 | 核查 | 确认核查 token')
             return
         action = args[0]
         if action == '列表':
             names = sorted(p.name for p in self.files_root().iterdir() if p.is_file() and not p.is_symlink())
             await self.tell(name, '可用建筑：' + '、'.join(names[:40]))
             return
+        if action in ('核查', '确认核查'):
+            await self.review_cleanup(name, args)
+            return
         if action == '状态':
             await self.tell(name, '导入状态：' + str(self.state.get('phase', '空闲')) +
                             '；任务：' + str(self.state.get('job_id', '无')) +
                             ('；需要显式恢复' if self.state.get('recovery_required') else '') +
-                            ('；存在待核查权限租约' if self.state.get('lease') else ''))
+                            ('；存在待核查权限租约' if self.state.get('lease') else '') +
+                            '；' + self.result_summary(self.state.get('task_outcomes', {})))
             if self.state.get('phase') == 'quoted':
                 await self.show_quote(name)
             return
@@ -181,7 +185,9 @@ class Controller:
             start_position=dict(zip(('x', 'y', 'z'), xyz)), dimension_name=args[4])
         self.state = dict(binding=self.binding(), phase='prepare_pending', owner=name, cursor=0, prepare=dict(version=5,
             idempotency_key=secrets.token_hex(16), spec=dict(display_name=source_name,
-                managed_operator=True, target=dict(server_id=self.ctx.config.target_server_id,
+                managed_operator=True,
+                operator_cleanup_policy='revoke' if self.ctx.config.revoke_operator_on_completion else 'retain',
+                target=dict(server_id=self.ctx.config.target_server_id,
                     rental_server_code=self.ctx.config.rental_server_code, account_source='service_center'),
                 tasks=[dict(task_key='import', kind='build', build=build)])))
         await self.save()
@@ -224,7 +230,10 @@ class Controller:
                 else:
                     self.state['phase'] = job['state'].lower()
                 self.state['recovery_required'] = job.get('recovery_required', False)
+                self.state['task_outcomes'] = job.get('task_outcomes', {})
+                self.state['worker_cleanup_policy'] = job.get('spec', {}).get('operator_cleanup_policy') or 'revoke'
                 await self.operator_gate(job.get('operator_session'))
+                await self.reconcile_retained(job)
                 await self.save()
                 job_id = self.state['job_id']
                 if self.reader_task is None or self.reader_task.done():
@@ -234,6 +243,78 @@ class Controller:
             raise
         except Exception:
             self.ctx.log.warning('Fatalder observation unavailable; retaining task and permission receipts')
+
+    @staticmethod
+    def result_summary(outcomes):
+        if not outcomes:
+            return '任务结果未知；内容完整性未知'
+        labels = {'succeeded': '成功', 'failed': '失败', 'skipped': '跳过',
+                  'unknown': '未知', 'incomplete': '不完整'}
+        return '；'.join(str(key) + ' 任务=' + labels.get(value.get('state'), '未知') +
+                        ' 内容=' + labels.get(value.get('content'), '未知')
+                        for key, value in outcomes.items())
+
+    def matching_session(self, job):
+        lease = self.state.get('lease')
+        snapshot = job.get('operator_session') or {}
+        return bool(lease and job.get('job_id') == self.state.get('job_id') and
+                    snapshot.get('session_id') == lease['session_id'] and
+                    snapshot.get('bot_uuid') == lease['identity']['uuid'] and
+                    snapshot.get('bot_name') == lease['identity']['name'] and
+                    snapshot.get('server_id') == self.ctx.config.target_server_id and
+                    snapshot.get('rental_server_code') == self.ctx.config.rental_server_code)
+
+    async def reconcile_retained(self, job):
+        if (job.get('recovery_required') or
+                job.get('spec', {}).get('operator_cleanup_policy') != 'retain' or
+                (job.get('operator_session') or {}).get('phase') != 'retained' or
+                not self.matching_session(job)):
+            return
+        lease = self.state.pop('lease')
+        self.state['last_operator_session'] = dict(lease, job_id=self.state['job_id'],
+            cleanup_outcome='operator_retained', task_outcomes=job.get('task_outcomes', {}))
+        await self.save()
+
+    async def review_cleanup(self, name, args):
+        if not self.state.get('job_id'):
+            await self.tell(name, '没有可核查的原任务。')
+            return
+        job = await self.request('GET', self.path())
+        outcomes = job.get('task_outcomes') or {}
+        tasks = job.get('spec', {}).get('tasks', [])
+        keys = {task['task_key'] for task in tasks}
+        trusted = (keys and keys == set(outcomes) and
+                   all(v.get('state') in ('succeeded', 'failed', 'skipped') for v in outcomes.values()))
+        if (not self.matching_session(job) or job.get('state', '').lower() not in TERMINAL or
+                job.get('recovery_required') or not trusted or
+                job['operator_session'].get('phase') != 'cleanup_failed'):
+            self.state.pop('review', None)
+            await self.save()
+            await self.tell(name, '核查证据不足，保留占用；' + self.result_summary(outcomes))
+            return
+        evidence = dict(job_id=job['job_id'], state=job['state'],
+                        session=job['operator_session'], outcomes=outcomes, tasks=tasks)
+        digest = hashlib.sha256(json.dumps(evidence, sort_keys=True).encode()).hexdigest()
+        if args[0] == '核查':
+            token = secrets.token_hex(4)
+            self.state['review'] = dict(token=token, digest=digest, owner=name,
+                deadline=(now()+timedelta(minutes=5)).isoformat())
+            await self.save()
+            await self.tell(name, '原任务=' + job['state'] + '；' + self.result_summary(outcomes) +
+                '。确认将保留机器人 OP 并释放本地槽位；历史失败不改、不会重建。输入 !导入 确认核查 ' + token)
+            return
+        review = self.state.get('review') or {}
+        if (len(args) != 2 or args[1] != review.get('token') or review.get('owner') != name or
+                review.get('digest') != digest or expired(review.get('deadline', '2000-01-01T00:00:00Z'))):
+            await self.tell(name, '核查确认无效或证据变化，请重新核查。')
+            return
+        lease = self.state.pop('lease')
+        self.state.update(phase=job['state'].lower(), task_outcomes=outcomes,
+            last_operator_session=dict(lease, job_id=job['job_id'], cleanup_outcome='explicit_retention_review',
+                review=evidence, confirmed_by=name, confirmed_at=now().isoformat()))
+        self.state.pop('review', None)
+        await self.save()
+        await self.tell(name, '已记录保留 OP 核查并释放槽位；原任务=' + job['state'] + '；' + self.result_summary(outcomes))
 
     async def operator_gate(self, snapshot):
         if not snapshot:
@@ -256,7 +337,8 @@ class Controller:
                 if identity is None:
                     return
                 lease = dict(session_id=session, identity=identity, prior_op=identity['is_op'], owned=False,
-                             cleanup_policy='revoke' if self.ctx.config.revoke_operator_on_completion else 'retain',
+                             cleanup_policy=self.state.get('worker_cleanup_policy',
+                                 'revoke' if self.ctx.config.revoke_operator_on_completion else 'retain'),
                              grant_key=self.state['job_id'] + ':' + session + ':grant')
                 self.state['lease'] = lease
                 await self.save()
@@ -332,6 +414,10 @@ class Controller:
                     if seq <= self.state.get('cursor', 0):
                         continue
                     payload = event.get('payload') or {}
+                    if event.get('kind') == 'target.operator_session' and payload.get('phase') == 'retained':
+                        await self.reconcile_retained(dict(job_id=job_id, operator_session=payload,
+                            recovery_required=self.state.get('recovery_required', False),
+                            spec={'operator_cleanup_policy': self.state.get('worker_cleanup_policy')}))
                     gate = payload.get('gate')
                     if gate:
                         obj = gate.get('object')
