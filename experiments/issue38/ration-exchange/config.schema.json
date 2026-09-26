@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "player_uuids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "initial_points": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000,
+      "default": 100
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
