@@ -4,6 +4,7 @@ OmineDev 审核维护的 neomega 业务插件。社区通过 Pull Request 贡献
 
 | 插件 | ID | 源码与安装说明 |
 | --- | --- | --- |
+| 测试积分兑换示例 | `example.points-exchange` | [plugins/points-exchange](plugins/points-exchange/README.md) |
 | 入门服务（欢迎 / 帮助 / 公告） | `example.starter-service` | [plugins/starter-service](plugins/starter-service/README.md) |
 | Fatalder 云导入 | `fatalder.cloud-import` | [plugins/fatalder-cloud-import](plugins/fatalder-cloud-import/README.md) |
 
