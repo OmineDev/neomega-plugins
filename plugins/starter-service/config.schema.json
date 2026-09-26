@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "welcome_text": {
+      "type": "string",
+      "default": "欢迎 {name}！输入 !help 查看帮助。"
+    },
+    "help_text": {
+      "type": "string",
+      "default": "服务帮助：输入 !help 查看这条说明。有问题请联系管理员。"
+    },
+    "announcement_text": {
+      "type": "string",
+      "default": "请友善交流，输入 !help 查看帮助。"
+    },
+    "announcement_interval": {
+      "type": "number",
+      "default": 300.0,
+      "minimum": 10
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

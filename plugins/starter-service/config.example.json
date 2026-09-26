@@ -1,0 +1,6 @@
+{
+  "welcome_text": "欢迎 {name}！输入 !help 查看帮助。",
+  "help_text": "服务帮助：输入 !help 查看这条说明。有问题请联系管理员。",
+  "announcement_text": "请友善交流，输入 !help 查看帮助。",
+  "announcement_interval": 300.0
+}
