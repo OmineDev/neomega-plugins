@@ -1,0 +1,41 @@
+{
+  "manifest_version": 1,
+  "id": "example.ration-exchange",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 2
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "services": [],
+    "players": [
+      "list"
+    ],
+    "purposes": {
+      "operation:framework.command.execute": "发放固定面包奖励及查询反馈",
+      "event:chat.received": "接收兑换请求号与状态查询",
+      "players:list": "匹配测试玩家 UUID 白名单"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

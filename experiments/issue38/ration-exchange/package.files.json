@@ -1,0 +1,8 @@
+[
+  "manifest.json",
+  "main.py",
+  "config.schema.json",
+  "config.example.json",
+  "README.md",
+  "LICENSE"
+]
