@@ -1,0 +1,41 @@
+{
+  "manifest_version": 1,
+  "id": "example.starter-service",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 1
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    },
+    {
+      "name": "join",
+      "kind": "player.list_added",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": []
+  },
+  "dependencies": [],
+  "exports": []
+}
