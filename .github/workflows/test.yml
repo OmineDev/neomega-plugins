@@ -7,8 +7,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: OmineDev/neomega-agent
+          ref: 675d7e0e52bfa854a7ab79b19c61db59d1921210
+          path: .ci-sdk
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python3 tools/check-plugins.py
+      - run: PYTHONPATH="$GITHUB_WORKSPACE/.ci-sdk/sdk/python" python3 tools/check-plugins.py
       - run: python3 -m unittest discover -s tests

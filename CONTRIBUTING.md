@@ -5,14 +5,16 @@
 ## 投稿
 
 1. 新建 `plugins/<目录>/`，提交稳定 ID 的 `manifest.json`、静态 `config.schema.json`、入口源码、README 和 LICENSE。版本使用独立语义版本，状态版本仅随数据合同变化。不要改旧插件安装名或删除任务回执。
-2. 添加 `release.json`：`name` 为展示名，`files` 为逐项明确的包内相对路径数组，不支持通配符。参考现有插件；真实配置、凭据、日志、数据库、缓存与建筑文件不得入包。所有申请权限和订阅必须在 manifest 的 `permissions.purposes` 中解释用途。
+2. 添加 `release.json`：`name` 为展示名，`files` 为逐项明确的包内相对路径数组，不支持通配符。参考现有插件；真实配置、凭据、日志、数据库、缓存与建筑文件不得入包。所有申请权限和订阅必须在 manifest 的 `permissions.purposes` 中解释用途；兼容既有制品时可在 `release.json.permission_purposes` 提供相同用途映射，避免改变原包字节。
 3. 添加业务测试到插件的 `tests/`，运行下列命令。PR 说明权限变化、许可证来源、迁移影响以及已完成的验证。维护者审核源码、白名单和包内容后合入；自动检查不替代人工审核。
 
 ```sh
-python3 tools/check-plugins.py
+PYTHONPATH="$AGENT/sdk/python" python3 tools/check-plugins.py
 python3 -m unittest discover -s tests
 python3 tools/package-plugin.py plugins/<目录> --output /tmp/review.zip
 ```
+
+本地 `AGENT` 指向匹配的 neomega-agent checkout；CI 固定 SDK 提交为 `675d7e0e52bfa854a7ab79b19c61db59d1921210`，运行各插件 `tests/` 与已有 `tools/check-offline.py`。
 
 通用打包器只校验社区提交约定，不替代 Host 完整 manifest/schema 校验。社区制品上限为 32 MiB；Polaris 托管安装当前上限为 5 MiB，超过该大小的包只能在支持对应大小的独立 Host/CLI 中安装。ZIP 的文件顺序取自白名单，时间和权限固定；同一源和打包运行时可复现。既有 Fatalder 白名单保持旧打包器字节不变。Host 离线检查仍可使用 `tools/check-host.py`；离线安装不证明实服业务运行成功。
 

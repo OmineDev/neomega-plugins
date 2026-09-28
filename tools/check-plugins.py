@@ -18,7 +18,12 @@ for plugin in sorted((ROOT / 'plugins').iterdir()):
     if manifest['id'] in seen:
         raise ValueError('duplicate plugin ID: ' + manifest['id'])
     seen.add(manifest['id'])
+    paths = [str(plugin)]
+    if os.environ.get('PYTHONPATH'):
+        paths.append(os.environ['PYTHONPATH'])
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(paths), PYTHONDONTWRITEBYTECODE='1')
     if (plugin / 'tests').is_dir():
-        env = dict(os.environ, PYTHONPATH=str(plugin), PYTHONDONTWRITEBYTECODE='1')
         subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', str(plugin / 'tests')], env=env, check=True)
+    if (plugin / 'tools/check-offline.py').is_file():
+        subprocess.run([sys.executable, str(plugin / 'tools/check-offline.py')], env=env, check=True)
     print('Validated ' + manifest['id'])

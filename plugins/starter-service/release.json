@@ -1,0 +1,17 @@
+{
+  "name": "入门服务（欢迎 / 帮助 / 公告）",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ],
+  "permission_purposes": {
+    "operation:framework.command.execute": "发送欢迎通知、帮助与公告",
+    "players:list": "核对当前收件人身份",
+    "event:chat.received": "处理玩家帮助请求",
+    "event:player.list_added": "向进入服务器的玩家发送欢迎通知"
+  }
+}

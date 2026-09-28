@@ -1,0 +1,11 @@
+{
+  "name": "测试积分兑换示例",
+  "files": [
+    "manifest.json",
+    "main.py",
+    "config.schema.json",
+    "config.example.json",
+    "README.md",
+    "LICENSE"
+  ]
+}

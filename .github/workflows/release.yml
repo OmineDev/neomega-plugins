@@ -26,13 +26,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: OmineDev/neomega-agent
+          ref: 675d7e0e52bfa854a7ab79b19c61db59d1921210
+          path: .ci-sdk
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Check and prepare reviewed source
         run: |
           python3 -m unittest discover -s tests
-          python3 tools/check-plugins.py
+          PYTHONPATH="$GITHUB_WORKSPACE/.ci-sdk/sdk/python" python3 tools/check-plugins.py
           python3 tools/prepare-release.py "$PLUGIN_DIRECTORY"
           cat dist/release/release.env >> "$GITHUB_ENV"
       - name: Keep reviewable candidate even if publication fails

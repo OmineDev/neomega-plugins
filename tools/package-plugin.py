@@ -48,7 +48,9 @@ def validate(root):
     if not isinstance(schema, dict) or schema.get('type') != 'object':
         raise ValueError('configuration schema must describe an object')
     permissions = manifest.get('permissions', {})
-    purposes = permissions.get('purposes', {})
+    purposes = meta.get('permission_purposes', permissions.get('purposes', {}))
+    if not isinstance(purposes, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in purposes.items()):
+        raise ValueError('permission purposes must be a string map')
     required = []
     for field, prefix in [('operations', 'operation'), ('services', 'service'), ('players', 'players'), ('packet_send_ids', 'packet_send')]:
         values = permissions.get(field, [])

@@ -25,6 +25,21 @@ class CommunityPackageTests(unittest.TestCase):
             package.build(ROOT / 'plugins/fatalder-cloud-import', new)
             self.assertEqual(old.read_bytes(), new.read_bytes())
 
+    def test_merged_examples_preserve_manifests_and_use_reviewed_purposes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for name in ['points-exchange', 'starter-service']:
+                root = ROOT / 'plugins' / name
+                output = Path(folder) / (name + '.zip')
+                package.build(root, output)
+                with zipfile.ZipFile(output) as archive:
+                    self.assertEqual(archive.read('manifest.json'), (root / 'manifest.json').read_bytes())
+                    self.assertIn('config.example.json', archive.namelist())
+            spec = importlib.util.spec_from_file_location('points_packager', ROOT / 'plugins/points-exchange/tools/package.py')
+            old = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(old)
+            old.build(Path(folder) / 'old.zip')
+            self.assertEqual((Path(folder) / 'old.zip').read_bytes(), (Path(folder) / 'points-exchange.zip').read_bytes())
+
     def test_new_author_and_rejections(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / 'plugin'

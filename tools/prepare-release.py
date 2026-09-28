@@ -29,7 +29,7 @@ def prepare(directory, output):
     (output / 'SHA256SUMS').write_text(f'{digest}  {filename}\n')
     (output / 'index.json').write_text(json.dumps(index, ensure_ascii=False, indent=2) + '\n')
     purposes = output / 'permission-purposes.json'
-    purposes.write_text(json.dumps(manifest.get('permissions', {}).get('purposes', {})))
+    purposes.write_text(json.dumps(meta.get('permission_purposes', manifest.get('permissions', {}).get('purposes', {}))))
     subprocess.run([sys.executable, str(ROOT / 'tools/catalog-release.py'), '--package', str(output / filename),
                     '--plugin', manifest['id'], '--version', manifest['version'], '--name', meta['name'],
                     '--index', str(output / 'index.json'), '--permission-purposes', str(purposes)], check=True)
