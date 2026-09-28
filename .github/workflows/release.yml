@@ -1,0 +1,63 @@
+name: Publish reviewed plugin
+on:
+  workflow_dispatch:
+    inputs:
+      plugin_directory:
+        description: Reviewed directory name under plugins/
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: community-plugin-publication
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLUGIN_DIRECTORY: ${{ inputs.plugin_directory }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check and prepare reviewed source
+        run: |
+          python3 -m unittest discover -s tests
+          python3 tools/check-plugins.py
+          python3 tools/prepare-release.py "$PLUGIN_DIRECTORY"
+          cat dist/release/release.env >> "$GITHUB_ENV"
+      - name: Keep reviewable candidate even if publication fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-release-candidate
+          path: dist/release/
+      - name: Refuse existing versions and publish pinned assets
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag"; then
+            echo 'Version tag already exists; do not overwrite or replay.' >&2
+            exit 1
+          else
+            result=$?
+            [ "$result" -eq 2 ] || exit "$result"
+          fi
+          gh release create "$tag" "dist/release/$filename" dist/release/SHA256SUMS --target "$GITHUB_SHA" --notes-file dist/release/release-notes.md
+          mkdir -p dist/readback
+          gh release download "$tag" --pattern "$filename" --dir dist/readback
+          cmp "dist/release/$filename" "dist/readback/$filename"
+      - name: Propose catalog inclusion for separate review
+        run: |
+          git switch -c "catalog/$tag"
+          cp dist/release/index.json catalog/index.json
+          git add catalog/index.json
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "feat(catalog): add $tag"
+          git push origin "HEAD:refs/heads/catalog/$tag"
+          gh pr create --base "$DEFAULT_BRANCH" --head "catalog/$tag" --title "Catalog: $tag" --body 'Add the fixed release after download byte verification. Review the catalog diff and SHA-256 before merging. Inclusion does not grant Host permissions or imply live-game acceptance.'

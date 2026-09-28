@@ -1,0 +1,15 @@
+{
+  "name": "Fatalder 云导入",
+  "files": [
+    "manifest.json",
+    "main.py",
+    "config.schema.json",
+    "README.md",
+    "LICENSE",
+    "fatalder_plugin/client.py",
+    "fatalder_plugin/controller.py",
+    "fatalder_plugin/operator.py",
+    "fatalder_plugin/settings.py",
+    "fatalder_plugin/build_defaults.json"
+  ]
+}

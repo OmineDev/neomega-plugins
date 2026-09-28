@@ -1,6 +1,6 @@
 # 发布固定版本审核目录
 
-目录由维护者审核，Host 权限由服主另外授予。先完成插件独立测试、确定审核提交并构建固定 ZIP；同版本不能替换字节。不要从变动中的源码重打已审定版本。
+所有社区作者都可通过 PR 收录；精选只能引用既有 `plugin_id`，插件不依赖 Polaris 账号。目录由维护者审核，Host 权限由服主另外授予。先完成插件独立测试、确定审核提交并构建固定 ZIP；同版本不能替换字节。不要从变动中的源码重打已审定版本。
 
 ```sh
 python3 tools/catalog-release.py \
@@ -18,3 +18,5 @@ python3 tools/catalog-release.py \
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_catalog_release.py
 ```
+
+通用投稿与手动发布入口见 [CONTRIBUTING](../CONTRIBUTING.md)。`tools/prepare-release.py <目录>` 仅在本地准备未发布版本的 ZIP、校验文件和候选索引；`.github/workflows/release.yml` 在审核合入默认分支后由维护者手动触发，发布及下载校验后创建索引 PR。此流程不自动批准或合入 PR。
