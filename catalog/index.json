@@ -2,6 +2,245 @@
   "schema_version": 1,
   "plugins": [
     {
+      "plugin_id": "example.go-state-darwin-amd64",
+      "version": "1.0.0",
+      "name": "Go 状态与事件服务 (darwin/amd64)",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/example.go-state-darwin-amd64-v1.0.0/example.go-state-darwin-amd64-1.0.0.zip",
+      "sha256": "83dc0d709402593d7bb9ae7aebe90ad2af824bbe1c0bfad7f3302cc75c3b026c",
+      "permissions": {
+        "operations": [],
+        "services": []
+      },
+      "permission_purposes": {
+        "event:chat.received": "记录已确认处理的聊天事件数量"
+      },
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "adbfaf67708161b3dcfc91ce3e905edeea320a5c",
+        "path": "plugins/go-state"
+      },
+      "runtime": "go",
+      "host_api": {
+        "major": 1,
+        "min_minor": 9
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "target_os": "darwin",
+      "target_arch": "amd64",
+      "min_host_version": "1.0.0"
+    },
+    {
+      "plugin_id": "example.go-state-darwin-arm64",
+      "version": "1.0.0",
+      "name": "Go 状态与事件服务 (darwin/arm64)",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/example.go-state-darwin-arm64-v1.0.0/example.go-state-darwin-arm64-1.0.0.zip",
+      "sha256": "7264be889d9c5e4ae96d2cc0dc1e61f9714361677f84d6228f602ab19692e382",
+      "permissions": {
+        "operations": [],
+        "services": []
+      },
+      "permission_purposes": {
+        "event:chat.received": "记录已确认处理的聊天事件数量"
+      },
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "adbfaf67708161b3dcfc91ce3e905edeea320a5c",
+        "path": "plugins/go-state"
+      },
+      "runtime": "go",
+      "host_api": {
+        "major": 1,
+        "min_minor": 9
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "target_os": "darwin",
+      "target_arch": "arm64",
+      "min_host_version": "1.0.0"
+    },
+    {
+      "plugin_id": "example.go-state-linux-amd64",
+      "version": "1.0.0",
+      "name": "Go 状态与事件服务 (linux/amd64)",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/example.go-state-linux-amd64-v1.0.0/example.go-state-linux-amd64-1.0.0.zip",
+      "sha256": "f2d3c90ca9fc02042fd5397333aad00f649c1ab7e1da3c025af8d08100525700",
+      "permissions": {
+        "operations": [],
+        "services": []
+      },
+      "permission_purposes": {
+        "event:chat.received": "记录已确认处理的聊天事件数量"
+      },
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "adbfaf67708161b3dcfc91ce3e905edeea320a5c",
+        "path": "plugins/go-state"
+      },
+      "runtime": "go",
+      "host_api": {
+        "major": 1,
+        "min_minor": 9
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "target_os": "linux",
+      "target_arch": "amd64",
+      "min_host_version": "1.0.0"
+    },
+    {
+      "plugin_id": "example.go-state-linux-arm64",
+      "version": "1.0.0",
+      "name": "Go 状态与事件服务 (linux/arm64)",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/example.go-state-linux-arm64-v1.0.0/example.go-state-linux-arm64-1.0.0.zip",
+      "sha256": "f12b83719aabad25977f74cb3ca332c4caf537845726e0217ed650c664189efe",
+      "permissions": {
+        "operations": [],
+        "services": []
+      },
+      "permission_purposes": {
+        "event:chat.received": "记录已确认处理的聊天事件数量"
+      },
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "adbfaf67708161b3dcfc91ce3e905edeea320a5c",
+        "path": "plugins/go-state"
+      },
+      "runtime": "go",
+      "host_api": {
+        "major": 1,
+        "min_minor": 9
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "target_os": "linux",
+      "target_arch": "arm64",
+      "min_host_version": "1.0.0"
+    },
+    {
+      "plugin_id": "example.go-state-windows-amd64",
+      "version": "1.0.0",
+      "name": "Go 状态与事件服务 (windows/amd64)",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/example.go-state-windows-amd64-v1.0.0/example.go-state-windows-amd64-1.0.0.zip",
+      "sha256": "75ae54cd8e2fb8cf47c746ad9fc6d7f51a9407017e9afa9fd770444f46f80015",
+      "permissions": {
+        "operations": [],
+        "services": []
+      },
+      "permission_purposes": {
+        "event:chat.received": "记录已确认处理的聊天事件数量"
+      },
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "adbfaf67708161b3dcfc91ce3e905edeea320a5c",
+        "path": "plugins/go-state"
+      },
+      "runtime": "go",
+      "host_api": {
+        "major": 1,
+        "min_minor": 9
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "target_os": "windows",
+      "target_arch": "amd64",
+      "min_host_version": "1.0.0"
+    },
+    {
+      "plugin_id": "example.nativebusshop",
+      "version": "1.0.0",
+      "name": "原生 Bus 发货服务",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/example.nativebusshop-v1.0.0/example.nativebusshop-1.0.0.zip",
+      "sha256": "24672656487775ecfaef65de54602051dc39c24cfbf83b45811a45d59039a647",
+      "permissions": {
+        "operations": [],
+        "services": [
+          "command.execute"
+        ],
+        "purposes": {
+          "service:command.execute": "将已提交订单的发货意图交给 Host 执行 give 命令"
+        }
+      },
+      "permission_purposes": {
+        "service:command.execute": "将已提交订单的发货意图交给 Host 执行 give 命令"
+      },
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "adbfaf67708161b3dcfc91ce3e905edeea320a5c",
+        "path": "plugins/native-bus-shop"
+      },
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 6
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "min_host_version": "1.0.0"
+    },
+    {
+      "plugin_id": "example.starter-service",
+      "version": "1.0.0",
+      "name": "入门服务（欢迎 / 帮助 / 公告）",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/example.starter-service-v1.0.0/example.starter-service-1.0.0.zip",
+      "sha256": "368b5b72918eef6409a021b99847a80fe080ad500783fd8ef0793d2c692ad9f1",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "operation:framework.command.execute": "发送欢迎通知、帮助与公告",
+          "players:list": "核对当前收件人身份",
+          "event:chat.received": "处理玩家帮助请求",
+          "event:player.list_added": "向进入服务器的玩家发送欢迎通知"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "发送欢迎通知、帮助与公告",
+        "players:list": "核对当前收件人身份",
+        "event:chat.received": "处理玩家帮助请求",
+        "event:player.list_added": "向进入服务器的玩家发送欢迎通知"
+      },
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "adbfaf67708161b3dcfc91ce3e905edeea320a5c",
+        "path": "plugins/starter-service"
+      },
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 1
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "min_host_version": "1.0.0"
+    },
+    {
       "plugin_id": "fatalder.cloud-import",
       "version": "1.0.1",
       "name": "Fatalder 云导入",
