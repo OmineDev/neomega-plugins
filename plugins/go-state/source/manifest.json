@@ -1,0 +1,81 @@
+{
+  "manifest_version": 1,
+  "id": "example.go-state",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 9
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "go",
+  "target_os": "linux",
+  "target_arch": "amd64",
+  "entrypoint": "worker",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [],
+    "services": []
+  },
+  "dependencies": [],
+  "exports": [
+    {
+      "name": "count",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "count"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  ],
+  "bus": {
+    "namespace": "go_state",
+    "exports": [
+      {
+        "name": "count",
+        "kind": "read",
+        "major": 1,
+        "shared": false,
+        "candidate_readable": true,
+        "schema_digest": "sha256:4e4a23df3668db3d77df15d037ed8421ba8a0694b78a6d8edb1a7d083fb6c925"
+      },
+      {
+        "name": "inspect",
+        "kind": "service",
+        "major": 1,
+        "shared": false,
+        "candidate_readable": false,
+        "schema_digest": "sha256:4e4a23df3668db3d77df15d037ed8421ba8a0694b78a6d8edb1a7d083fb6c925"
+      }
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "manifest_version": 1,
+  "id": "example.nativebusshop",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 6
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "plugin.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [],
+    "services": [
+      "command.execute"
+    ],
+    "purposes": {
+      "service:command.execute": "将已提交订单的发货意图交给 Host 执行 give 命令"
+    }
+  },
+  "dependencies": [],
+  "exports": [],
+  "bus": {
+    "namespace": "shop",
+    "exports": [
+      {
+        "name": "buy",
+        "kind": "service",
+        "major": 1,
+        "shared": false,
+        "candidate_readable": false,
+        "schema_digest": "sha256:8b5176fb8575873b4e0b07d5839caa8d6e49d126e5894dfa72482c1c046f5062"
+      }
+    ]
+  }
+}

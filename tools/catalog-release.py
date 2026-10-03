@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import tempfile
 import zipfile
@@ -19,6 +19,10 @@ def main():
     parser.add_argument('--name',required=True)
     parser.add_argument('--index',required=True,type=Path)
     parser.add_argument('--permission-purposes',type=Path,help='Reviewed JSON map explaining requested capabilities; never grants authority')
+    parser.add_argument('--source-ref', help='Full reviewed source commit SHA in this repository')
+    parser.add_argument('--source-path', help='Repository-relative plugin source directory')
+    parser.add_argument('--min-host-version', help='Minimum distributed Host version, separate from host_api')
+    parser.add_argument('--description', help='Short description for discovery')
     args=parser.parse_args()
     try:
         if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}',args.plugin): raise ValueError('invalid plugin ID')
@@ -38,6 +42,27 @@ def main():
                'url':ROOT+f'{args.plugin}-v{args.version}/{expected}',
                'sha256':hashlib.sha256(raw).hexdigest(),
                'permissions':manifest.get('permissions',{}),'permission_purposes':purposes}
+        if args.source_ref is not None or args.source_path is not None:
+            if not isinstance(args.source_ref, str) or not re.fullmatch('[0-9a-f]{40}', args.source_ref):
+                raise ValueError('source-ref must be a full reviewed commit SHA')
+            if not args.source_path:
+                raise ValueError('source-path is required with source-ref')
+            path = PurePosixPath(args.source_path)
+            if path.is_absolute() or '..' in path.parts or str(path) != args.source_path or '\\' in args.source_path:
+                raise ValueError('source-path must be a safe repository-relative directory')
+            entry['source_provenance'] = {'repository': 'https://github.com/OmineDev/neomega-plugins',
+                                          'ref': args.source_ref, 'path': args.source_path}
+            for key in ('runtime', 'host_api', 'worker_protocol', 'dependencies'):
+                entry[key] = manifest[key]
+            for key in ('target_os', 'target_arch'):
+                if key in manifest:
+                    entry[key] = manifest[key]
+        if args.min_host_version is not None:
+            if not re.fullmatch(r'\d+\.\d+\.\d+', args.min_host_version):
+                raise ValueError('min-host-version must be an explicit release version')
+            entry['min_host_version'] = args.min_host_version
+        if args.description is not None:
+            entry['description'] = args.description
         index=json.loads(args.index.read_text()) if args.index.exists() else {'schema_version':1,'plugins':[]}
         if not isinstance(index,dict) or index.get('schema_version') != 1 or not isinstance(index.get('plugins'),list): raise ValueError('invalid existing index')
         for old in index['plugins']:

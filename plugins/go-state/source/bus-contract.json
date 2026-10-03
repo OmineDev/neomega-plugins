@@ -1,0 +1,21 @@
+{
+  "major": 1,
+  "schema_digest": "sha256:4e4a23df3668db3d77df15d037ed8421ba8a0694b78a6d8edb1a7d083fb6c925",
+  "schema": {
+    "version": "bus-v1",
+    "roots": [
+      0,
+      1
+    ],
+    "nodes": [
+      {
+        "kind": "struct",
+        "fields": []
+      },
+      {
+        "kind": "uint",
+        "bits": 64
+      }
+    ]
+  }
+}

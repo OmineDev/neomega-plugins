@@ -1,0 +1,15 @@
+{
+  "name": "原生 Bus 发货服务",
+  "files": [
+    "NOTICE",
+    "README.md",
+    "plugin.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ],
+  "permission_purposes": {
+    "service:command.execute": "将已提交订单的发货意图交给 Host 执行 give 命令"
+  },
+  "license_notice": "NOTICE"
+}

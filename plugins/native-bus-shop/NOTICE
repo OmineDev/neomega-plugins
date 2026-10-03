@@ -1,0 +1,3 @@
+SDK、模板和作者工具公开供 Neomega 插件开发使用。框架本体保持闭源，本工具包不包含核心 Go 源码或运行 Host。尚未为 SDK 和工具指定独立开源许可证，不应将“可下载源码”理解为采用 MIT、Apache 或其他开源许可。已有第三方声明见 `THIRD_PARTY_NOTICES`。
+
+本包仅包含 shop provider 示例，不捆绑 SDK。上文 THIRD_PARTY_NOTICES 指配套 Neomega 1.0.0 开发工具包中的同名文件；工具包从 https://wiki.wuxie233.com/ 获取。

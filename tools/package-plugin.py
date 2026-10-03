@@ -33,15 +33,26 @@ def validate(root):
                 raise ValueError('symlinks cannot be packaged: ' + name)
         if not candidate.is_file():
             raise ValueError('missing packaged file: ' + name)
-    if not {'manifest.json', 'config.schema.json', 'README.md', 'LICENSE'} <= set(names):
-        raise ValueError('manifest, schema, README and LICENSE must be packaged')
+    notice = meta.get('license_notice', 'LICENSE')
+    if notice not in ('LICENSE', 'NOTICE'):
+        raise ValueError('license_notice must name LICENSE or NOTICE')
+    if not {'manifest.json', 'config.schema.json', 'README.md', notice} <= set(names):
+        raise ValueError('manifest, schema, README and explicit license/notice must be packaged')
     manifest = json.loads((root / 'manifest.json').read_text())
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', manifest['id']):
         raise ValueError('invalid plugin ID')
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', manifest['version']):
         raise ValueError('explicit semantic version required')
-    if manifest.get('manifest_version') != 1 or manifest.get('runtime') != 'python':
+    if manifest.get('manifest_version') != 1 or manifest.get('runtime') not in ('python', 'go'):
         raise ValueError('unsupported manifest version/runtime')
+    if manifest.get('runtime') == 'go':
+        if (manifest.get('target_os'), manifest.get('target_arch')) not in {
+            ('linux', 'amd64'), ('linux', 'arm64'), ('windows', 'amd64'),
+            ('darwin', 'amd64'), ('darwin', 'arm64'),
+        }:
+            raise ValueError('unsupported Go worker platform')
+        if manifest.get('host_api', {}).get('min_minor', -1) < 9:
+            raise ValueError('Go workers require Host API 1.9')
     if manifest.get('entrypoint') not in names:
         raise ValueError('entrypoint must be packaged')
     schema = json.loads((root / 'config.schema.json').read_text())
@@ -74,7 +85,8 @@ def build(root, destination):
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = 3
-            info.external_attr = 0o100644 << 16
+            mode = 0o100755 if manifest['runtime'] == 'go' and name == manifest['entrypoint'] else 0o100644
+            info.external_attr = mode << 16
             archive.writestr(info, (Path(root) / name).read_bytes())
     if destination.stat().st_size > 32 << 20:
         destination.unlink()
