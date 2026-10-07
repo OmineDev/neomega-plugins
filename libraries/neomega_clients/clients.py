@@ -1,6 +1,7 @@
 """Typed asynchronous clients over the public Host service receipt protocol."""
 from datetime import datetime, timedelta, timezone
 import uuid
+import time
 from typing import Any, cast
 from neomega_runtime.services import ServiceFailed, ServiceRejected
 from .models import *
@@ -87,6 +88,16 @@ class PlayersClient(Client):
     async def export(self, arguments: PlayerRequest) -> PlayerResult:
         return cast(PlayerResult, await self.invoke("export", dict(arguments)))
 
+    async def register_schema(self, arguments: PlayerRequest) -> PlayerSchemaSaved:
+        return cast(PlayerSchemaSaved, await self.invoke("register_schema", dict(arguments)))
+
+    async def get_schema(self, arguments: PlayerRequest) -> PlayerSchemaResult:
+        return cast(PlayerSchemaResult, await self.invoke("get_schema", dict(arguments)))
+
+    async def import_fields(self, arguments: PlayerRequest) -> PlayerResult:
+        """Import this installation's exported fields; player identity is never rewritten."""
+        return cast(PlayerResult, await self.invoke("import", dict(arguments)))
+
 
 class ObservationsClient(Client):
     plugin_id = "neomega.observations"
@@ -116,20 +127,20 @@ class ObservationsClient(Client):
 class CbBridgeClient(Client):
     plugin_id = "neomega.cbbridge"
 
-    async def register(self, arguments: BridgeRequest) -> Result:
-        return cast(Result, await self.invoke("register", dict(arguments)))
+    async def register(self, arguments: BridgeRequest) -> BridgeRoute:
+        return cast(BridgeRoute, await self.invoke("register", dict(arguments)))
 
-    async def unregister(self, arguments: BridgeRequest) -> Result:
-        return cast(Result, await self.invoke("unregister", dict(arguments)))
+    async def unregister(self, arguments: BridgeRequest) -> BridgeRemoved:
+        return cast(BridgeRemoved, await self.invoke("unregister", dict(arguments)))
 
-    async def subscribe(self, arguments: BridgeRequest) -> Result:
-        return cast(Result, await self.invoke("subscribe", dict(arguments)))
+    async def subscribe(self, arguments: BridgeRequest) -> BridgeSubscription:
+        return cast(BridgeSubscription, await self.invoke("subscribe", dict(arguments)))
 
-    async def poll(self, arguments: BridgeRequest) -> OperationReceipt:
-        return cast(OperationReceipt, await self.invoke("poll", dict(arguments)))
+    async def poll(self, arguments: BridgeRequest) -> BridgePoll:
+        return cast(BridgePoll, await self.invoke("poll", dict(arguments)))
 
-    async def status(self, arguments: BridgeRequest) -> OperationReceipt:
-        return cast(OperationReceipt, await self.invoke("status", dict(arguments)))
+    async def status(self, arguments: BridgeRequest) -> BridgeStatus:
+        return cast(BridgeStatus, await self.invoke("status", dict(arguments)))
 
 
 class ChunksClient(Client):
@@ -160,16 +171,16 @@ class WorldToolsClient(Client):
     async def prepare_task(self, arguments: WorldRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("prepare", dict(arguments)))
 
-    async def execute(self, arguments: WorldRequest) -> WorldResult:
+    async def execute(self, arguments: WorldMutationRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("execute", dict(arguments)))
 
     async def status(self, arguments: WorldRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("status", dict(arguments)))
 
-    async def cancel(self, arguments: WorldRequest) -> WorldResult:
+    async def cancel(self, arguments: WorldMutationRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("cancel", dict(arguments)))
 
-    async def resume(self, arguments: WorldRequest) -> WorldResult:
+    async def resume(self, arguments: WorldMutationRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("resume", dict(arguments)))
 
     async def snapshot(self, arguments: WorldRequest) -> SnapshotPage:
@@ -184,13 +195,13 @@ class WorldToolsClient(Client):
     async def fatalder_confirm(self, arguments: WorldRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("fatalder_confirm", dict(arguments)))
 
-    async def fatalder_pause(self, arguments: WorldRequest) -> WorldResult:
+    async def fatalder_pause(self, arguments: WorldControlRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("fatalder_pause", dict(arguments)))
 
-    async def fatalder_resume(self, arguments: WorldRequest) -> WorldResult:
+    async def fatalder_resume(self, arguments: WorldControlRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("fatalder_resume", dict(arguments)))
 
-    async def fatalder_cancel(self, arguments: WorldRequest) -> WorldResult:
+    async def fatalder_cancel(self, arguments: WorldControlRequest) -> WorldResult:
         return cast(WorldResult, await self.invoke("fatalder_cancel", dict(arguments)))
 
     async def fatalder_recover(self, arguments: WorldRequest) -> WorldResult:
@@ -200,14 +211,14 @@ class WorldToolsClient(Client):
 class MusicClient(Client):
     plugin_id = "neomega.music"
 
-    async def play(self, arguments: MusicRequest) -> OperationReceipt:
-        return cast(OperationReceipt, await self.invoke("play", dict(arguments)))
+    async def play(self, arguments: MusicRequest) -> MusicResult:
+        return cast(MusicResult, await self.invoke("play", dict(arguments)))
 
-    async def status(self, arguments: MusicRequest) -> OperationReceipt:
-        return cast(OperationReceipt, await self.invoke("status", dict(arguments)))
+    async def status(self, arguments: MusicRequest) -> MusicResult:
+        return cast(MusicResult, await self.invoke("status", dict(arguments)))
 
-    async def stop(self, arguments: MusicRequest) -> OperationReceipt:
-        return cast(OperationReceipt, await self.invoke("stop", dict(arguments)))
+    async def stop(self, arguments: MusicRequest) -> MusicResult:
+        return cast(MusicResult, await self.invoke("stop", dict(arguments)))
 
 
 class ScoresClient(Client):
@@ -311,6 +322,12 @@ class SchedulerClient(Client):
 
 class MessagingClient(Client):
     plugin_id = "neomega.messaging"
+
+    @staticmethod
+    def new_request_id() -> str:
+        """Create once per business intent; persist before send and retain on uncertainty."""
+        return f"v2:{time.time_ns() // 1_000_000}:{uuid.uuid4().hex}"
+
 
     async def send(self, arguments: MessagingRequest) -> MessagingResult:
         return cast(MessagingResult, await self.invoke("send", dict(arguments)))

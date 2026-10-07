@@ -12,3 +12,6 @@ python3 tools/package-plugin.py examples/prerequisite-suite --output /tmp/prereq
 ```
 
 源码展示 `PlayersClient(ctx.services)`、`SchedulerClient(ctx.services)` 和 `ctx.every` 的接线。完整 13 个客户端、写入幂等/CAS、回执与未知恢复说明见 `libraries/neomega_clients/README.md`；各插件 README 给出业务参数。此示例不自动安装或授权其他插件。
+
+
+库版本 1.1 增加玩家字段 schema/导入与世界任务 CAS 类型；本示例仍只读取玩家和调度数据，服务权限无需扩张。打包前重新生成 library.lock.json，以固定本次库源码摘要。复制世界操作示例时使用当前任务 revision；控制远端导入先保存 control_id；业务未知结果不由示例定时循环重新提交。
