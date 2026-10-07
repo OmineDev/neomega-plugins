@@ -132,6 +132,8 @@ class Rewards:
             raise ValueError('duplicate rule ID')
         if len(json.dumps(asdict(self), ensure_ascii=False).encode()) > 65536:
             raise ValueError('reward configuration exceeds 64 KiB')
+        if encoded_size(asdict(self)) > 192 << 10:
+            raise ValueError('aggregate reward snapshots exceed 192 KiB Host budget')
 
 
 @dataclass(frozen=True)
@@ -311,10 +313,21 @@ class OnlineTime(Plugin):
                     for state in self.active.values():
                         if parts and min(parts) < state['account'].get('high_day', ''):
                             continue
-                        state['total_ns'] += elapsed
-                        for day, delta in parts.items():
-                            state['days'][day] = state['days'].get(day, 0) + delta
-                        state['dirty'] = True
+                        if len(parts) > 1:
+                            # One atomic checkpoint per date keeps at most one
+                            # earned snapshot per day-rule in each transaction.
+                            # Checkpoint the final date too: a healthy delayed
+                            # observation may contain a large final-day delta.
+                            for day, delta in parts.items():
+                                state['total_ns'] += delta
+                                state['days'][day] = state['days'].get(day, 0) + delta
+                                state['dirty'] = True
+                                await self.checkpoint(state, monotonic_ns)
+                        else:
+                            state['total_ns'] += elapsed
+                            for day, delta in parts.items():
+                                state['days'][day] = state['days'].get(day, 0) + delta
+                            state['dirty'] = True
                 elif abs(wall_delta - elapsed / NS) > 2:
                     self.ctx.log.warning('online-time clock_discontinuity; interval discarded')
                 if not continuous:
@@ -399,6 +412,7 @@ class OnlineTime(Plugin):
                 policy = tx.get('policy')
                 policy['calendar_used'] = True
                 tx.set('policy', policy)
+            check_commit_budget(tx)
             try:
                 await self.save(tx)
                 state['account'], state['saved_ns'], state['dirty'] = updated, now, False
