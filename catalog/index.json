@@ -2,6 +2,42 @@
   "schema_version": 1,
   "plugins": [
     {
+      "plugin_id": "community.scheduled-commands",
+      "version": "0.1.0",
+      "name": "定时命令",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.scheduled-commands-v0.1.0/community.scheduled-commands-0.1.0.zip",
+      "sha256": "316619e5c3cab6e6bdfcb7a75bdaa6a69dceff41266a42d1089bdeb61f0933fd",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "services": [],
+        "players": [],
+        "purposes": {
+          "operation:framework.command.execute": "按服主配置的时间表逐条执行游戏命令"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "按服主配置的时间表逐条执行游戏命令"
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/scheduled-commands"
+      }
+    },
+    {
       "plugin_id": "example.go-state-darwin-amd64",
       "version": "1.0.0",
       "name": "Go 状态与事件服务 (darwin/amd64)",
