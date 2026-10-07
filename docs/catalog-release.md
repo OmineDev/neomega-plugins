@@ -94,3 +94,5 @@ SDK ZIP 使用时先解压，再把解压根目录加入 `PYTHONPATH`。当前�
 完整套件构建要求全新输出目录；已存在的目录直接拒绝，禁止覆盖旧版 ZIP、SDK 或摘要。源码冻结后分别构建两个新目录，比较 SHA256SUMS 确认可复现。
 
 `vendor-wheels.py` 同时生成 `runtime-target.json`；将它放在插件包根并加入白名单，不留在 vendor 子目录。打包器从锁定的 METADATA 读取 `Requires-Python`，校验声明目标覆盖完整 minor；当前无法由 minor 目标保证的 patch 精确限制明确拒绝。真正无额外 Python 限制的 `py3-none-any` 可省略运行目标；不把 `py312-none-any` 或 `Requires-Python: >=3.12` 当成通用 Python 3。
+
+公开 toolkit 1.1.0 对应的 Host API 1.10 不包含本轮新增的 `state.scan` 和世界操作维度绑定合同；这些能力从 Host API 1.11 开始。`messaging`、`worldtools` 及启用其能力的消费者要求 `min_minor: 11`；仅依赖已有服务的插件保持自身实际最低版本。toolkit 发行版本与 Host API minor 独立，本轮 toolkit 为 1.2.0。最终制品与兼容检查必须使用合并公开发行能力后的 Host/SDK，不能以合并前候选制品替代。

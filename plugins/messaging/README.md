@@ -48,7 +48,7 @@
 
 ## 持久化、维护与恢复
 
-状态 schema_version=3（需要 Host API 1.10 的分页键名扫描），由安装独有 Host storage 分键存储 outbox、去重记录、Telegram 游标及有界事件历史。每条投递/去重/事件独立，按路由维护有界队列、按调用者维护最近 100 条索引；查询不会读取全账本。所有写入使用选择键事务，每次提交之前把原 commit ID 写入安装数据目录的屏障文件并 fsync 文件与目录。超时、取消或进程重启后只查询原 Host receipt；receipt 尚不可得时返回 unknown 并停止新写入，不以新 CAS 重放。此版取代未发布的单键草案；若检测到旧草案 messaging 键，明确拒绝启动要求显式迁移，不静默忽略。发送前持久标记 dispatching；进程重启把该状态转 unknown，不自动重发。queued 可继续发送。保留原 delivery_id 和 request_id，unknown 应结合外部渠道历史核对，重复 send 不会新建投递。入站游戏动作与去重记录在同一个 Host transaction 接纳；它表示 accepted，不声称游戏显示已完成，原 commit ID 保留在 seen 记录用于 Host 读回。
+状态 schema_version=3（需要 Host API 1.11 的分页键名扫描），由安装独有 Host storage 分键存储 outbox、去重记录、Telegram 游标及有界事件历史。每条投递/去重/事件独立，按路由维护有界队列、按调用者维护最近 100 条索引；查询不会读取全账本。所有写入使用选择键事务，每次提交之前把原 commit ID 写入安装数据目录的屏障文件并 fsync 文件与目录。超时、取消或进程重启后只查询原 Host receipt；receipt 尚不可得时返回 unknown 并停止新写入，不以新 CAS 重放。此版取代未发布的单键草案；若检测到旧草案 messaging 键，明确拒绝启动要求显式迁移，不静默忽略。发送前持久标记 dispatching；进程重启把该状态转 unknown，不自动重发。queued 可继续发送。保留原 delivery_id 和 request_id，unknown 应结合外部渠道历史核对，重复 send 不会新建投递。入站游戏动作与去重记录在同一个 Host transaction 接纳；它表示 accepted，不声称游戏显示已完成，原 commit ID 保留在 seen 记录用于 Host 读回。
 
 `retention_seconds` 默认 86400 秒，控制主动发送请求有效窗口与终态结果保留；`inbound_retention_seconds` 默认 86400 秒，独立控制来源事件窗口。两者可设 1 至 2592000 秒。`clock_skew_seconds` 默认 60 秒，允许最多 300 秒超前。出站 ID 早于持久 `expired_before` 返回 `request_expired`，未来超出容差返回 `request_in_future`，格式错误返回 `invalid_request_id`。客户端给出的时间是请求有效期字段，并不是不可伪造的业务身份；换 ID 是一个新请求，调用方必须保留原 ID。
 
@@ -64,7 +64,7 @@ seal 在锁内阻止新写入及后台投递，存在网络在途、unknown 或�
 
 ## 作者使用
 
-`example.py` 提供可直接从消费者生命周期调用的函数。消费者 manifest 需声明运行依赖 `neomega.messaging` major=1 min_version=1.1.0，并申请所调用服务权限；服主另授 Host grants 和路由 ACL。无需打包 SDK 或在运行时安装 pip 包。
+`example.py` 提供可直接从消费者生命周期调用的函数。消费者需使用 Host API 1.11+，manifest 需声明运行依赖 `neomega.messaging` major=1 min_version=1.1.0，并申请所调用服务权限；服主另授 Host grants 和路由 ACL。无需打包 SDK 或在运行时安装 pip 包。
 
 本插件标准库实现：内置有界 RFC6455 客户端，支持掩码、分片、ping/pong 和 echo 回执；不安装运行时 pip 包。OneBot HTTP、Polaris WS、Telegram 可并存。
 

@@ -4,7 +4,7 @@
   "version": "1.1.0",
   "host_api": {
     "major": 1,
-    "min_minor": 10
+    "min_minor": 11
   },
   "worker_protocol": {
     "major": 1,

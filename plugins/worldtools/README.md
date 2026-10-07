@@ -4,9 +4,9 @@
 
 ## 安装与调用
 
-需要 `neomega.chunks` 和支持 `framework.world.set_block`、维度绑定 `framework.world.region.read` 的 Host 1.9+（旧 minor 8 不保证新增 capability 已安装）。授权 manifest 实际操作后启动。NBT 使用 Host 的受管机器人工作区；传入 `anvil_pos` 与 `workspace_pos`。容器与世界动作受 Host 权限、窗口和世界模式控制。
+需要 `neomega.chunks` 和支持 `framework.world.set_block`、维度绑定 `framework.world.region.read` 的 Host API 1.11+（公开 1.10 不具备本轮新增的维度绑定原语）。授权 manifest 实际操作后启动。NBT 使用 Host 的受管机器人工作区；传入 `anvil_pos` 与 `workspace_pos`。容器与世界动作受 Host 权限、窗口和世界模式控制。
 
-每个消费者授权 `plugin.neomega.worldtools.<方法>`；可信 installation 隔离任务。`prepare` 的 `request_key` 同键同参数返回原任务，异参拒绝。
+消费者 manifest 声明 Host API 1.11+，并授权 `plugin.neomega.worldtools.<方法>`；可信 installation 隔离任务。`prepare` 的 `request_key` 同键同参数返回原任务，异参拒绝。
 
 | 方法 | 输入 | 结果 |
 |---|---|---|

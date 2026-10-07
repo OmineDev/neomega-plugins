@@ -120,7 +120,7 @@ result = await client.receipt_request({'request_id': business_request_id})
 大观察数据通过 `read(kind,sequence,offset,limit)` 获取 `fragment,next_offset,done,length,sha256`；拼接文本、按 UTF-8 核对 SHA256 后解析 JSON。采样 sequence 改变会拒绝，不混合不同快照。区块单元 NBT 使用 `nbt_offset` 分页，`nbt.data_base64` 是该页字节。以上分页都由调用方显式推进，客户端不隐式循环读取或重试。
 
 
-世界工具的 snapshot 模式要求 Host API 1.9 的维度绑定读取，备份页 `snapshot(task_id,index,offset)` 返回 16KiB `data_base64`、总 `length` 与 SHA256；按原字节拼接校验再解析 JSON，保留未知/不支持字段与损失说明。传统结构模式须显式 `mode: "structure"`。容器恢复需提供真实 `anvil_pos/workspace_pos`。
+世界工具的 snapshot 模式要求 Host API 1.11 的维度绑定读取，备份页 `snapshot(task_id,index,offset)` 返回 16KiB `data_base64`、总 `length` 与 SHA256；按原字节拼接校验再解析 JSON，保留未知/不支持字段与损失说明。传统结构模式须显式 `mode: "structure"`。容器恢复需提供真实 `anvil_pos/workspace_pos`。
 
 Fatalder 云导入由世界工具调用独立 `fatalder.cloud-import` 前置。消费者只授予所需 `plugin.neomega.worldtools.fatalder_*` 服务权限；`fatalder_prepare` 返回远端报价与任务，`fatalder_confirm` 提交返回的 `confirm_token` 和调用方持久 `confirmation_key`。`dimension` 使用 `overworld/nether/the_end`。未知结果通过原 `task_id` 查询/恢复，不能生成新请求隐式再次付费。命令方块路由 `status` 分页默认 64，按 `next_offset/done` 继续。
 
