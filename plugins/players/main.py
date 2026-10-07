@@ -4,12 +4,13 @@ import hashlib
 import json
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from neomega_runtime import Plugin, service
 from neomega_runtime.services import ServiceRejected
 from neomega_runtime.storage import CommitUncertain
 from neomega_runtime.managed import IPCRejected
+from field_schema import check_schema, validate
 
 
 def digest(value):
@@ -28,10 +29,10 @@ def index_key(kind, value):
 
 @dataclass(frozen=True)
 class Settings:
-    observation_interval: float = 30.0
-    max_players: int = 16384
-    max_names: int = 64
-    max_field_bytes: int = 16384
+    observation_interval: float = field(default=30.0, metadata={'title': '玩家观察间隔（秒）', 'description': '定期刷新可信身份及历史名称。', 'minimum': 5, 'maximum': 3600})
+    max_players: int = field(default=16384, metadata={'title': '玩家档案上限', 'description': '达到上限后保留已有档案并停止新增。', 'minimum': 1, 'maximum': 100000})
+    max_names: int = field(default=64, metadata={'title': '历史名称保留条数', 'description': '每个玩家保留的最近历史名称数量。', 'minimum': 1, 'maximum': 128})
+    max_field_bytes: int = field(default=16384, metadata={'title': '单份扩展字段大小上限', 'description': '每个调用插件与玩家的字段大小，单位为字节。', 'minimum': 128, 'maximum': 32768})
 
     def __post_init__(self):
         if not 5 <= self.observation_interval <= 3600 or not 1 <= self.max_players <= 100000:
@@ -50,7 +51,7 @@ class Players(Plugin):
         self.pending_path = None
 
     def owner(self, call):
-        if call is None:
+        if call is None or not call.installation_id:
             raise ServiceRejected('permission_denied')
         return call.installation_id
 
@@ -203,7 +204,9 @@ class Players(Plugin):
         owner = self.owner(call)
         player = await self.record(ctx, args.get('player_id'))
         fields = await ctx.storage.get('fields:' + digest(owner + '\0' + player['player_id']), {'revision': 0, 'fields': {}})
-        return {'status': 'resolved', 'player': player, 'fields': fields['fields'], 'fields_revision': fields['revision']}
+        registration = await self.get_schema(ctx, {}, call)
+        return {'status': 'resolved', 'player': player, 'fields': fields['fields'], 'fields_revision': fields['revision'],
+                'schema_version': registration['schema_version']}
 
     @service('history', with_context=True)
     async def history(self, ctx, args, call):
@@ -214,6 +217,9 @@ class Players(Plugin):
 
     @service('patch', with_context=True)
     async def patch(self, ctx, args, call):
+        return await self.write_fields(ctx, args, call)
+
+    async def write_fields(self, ctx, args, call, *, imported=None):
         owner = self.owner(call)
         pid = text(args.get('player_id'))
         request = text(args.get('request_id'), 128)
@@ -229,34 +235,98 @@ class Players(Plugin):
             raise ServiceRejected('invalid_argument') from None
         if len(encoded.encode()) > ctx.config.max_field_bytes:
             raise ServiceRejected('invalid_argument')
-        fingerprint = digest(json.dumps(args, sort_keys=True, ensure_ascii=False, allow_nan=False))
+        fingerprint = digest(json.dumps(args if imported is None else {'args': args, 'imported': imported}, sort_keys=True, ensure_ascii=False, allow_nan=False))
         receipt_key = 'request:' + digest(owner + '\0' + request)
         field_key = 'fields:' + digest(owner + '\0' + pid)
         async with self.lock:
             await self.writable(ctx)
-            await self.record(ctx, pid)
+            player = await self.record(ctx, pid)
             tx = await ctx.storage.transaction(keys=[field_key, receipt_key])
             receipt = tx.get(receipt_key)
             if receipt:
                 if receipt['fingerprint'] != fingerprint:
                     raise ServiceRejected('conflict')
                 return receipt['result']
+            if imported is not None:
+                if imported.get('player_id') != pid or any(imported.get(k, '') != player.get(k, '') for k in ('uuid', 'xuid')):
+                    raise ServiceRejected('identity_conflict')
             row = tx.get(field_key, {'revision': 0, 'fields': {}})
             if row['revision'] != expected:
                 raise ServiceRejected('conflict')
-            for key, value in fields.items():
+            registration = await self.get_schema(ctx, {}, call)
+            if registration['schema'] is not None and args.get('schema_version') != registration['schema_version']:
+                raise ServiceRejected('schema_version_conflict')
+            if imported is not None:
+                if registration['schema'] is None:
+                    raise ServiceRejected('schema_not_registered')
+                row['fields'] = fields.copy()
+            for key, value in (fields.items() if imported is None else []):
                 if value is None:
                     row['fields'].pop(key, None)
                 else:
                     row['fields'][key] = value
             if len(json.dumps(row['fields'], ensure_ascii=False).encode()) > ctx.config.max_field_bytes:
                 raise ServiceRejected('invalid_argument')
+            if registration['schema'] is not None:
+                validate(registration['schema'], row['fields'])
             row['revision'] += 1
             row['updated_at'] = time.time()
-            result = dict(status='saved', player_id=pid, request_id=request, revision=row['revision'], fields=row['fields'])
+            result = dict(status='saved', player_id=pid, request_id=request, revision=row['revision'], fields=row['fields'], schema_version=registration['schema_version'])
             tx.set(field_key, row).set(receipt_key, {'fingerprint': fingerprint, 'result': result})
             await self.save(tx)
             return result
+
+    @service('get_schema', with_context=True)
+    async def get_schema(self, ctx, args, call):
+        owner = self.owner(call)
+        row = await ctx.storage.get('field_schema:' + digest(owner))
+        return dict(namespace=owner, **(row or {'revision': 0, 'schema_version': None, 'schema': None}))
+
+    @service('register_schema', with_context=True)
+    async def register_schema(self, ctx, args, call):
+        owner = self.owner(call)
+        request = text(args.get('request_id'), 128)
+        version, expected, schema = (args.get(k) for k in ('schema_version', 'expected_revision', 'schema'))
+        if type(version) is not int or version < 1 or type(expected) is not int or expected < 0:
+            raise ServiceRejected('invalid_argument')
+        check_schema(schema)
+        if schema['type'] != 'object' or len(json.dumps(schema, allow_nan=False).encode()) > ctx.config.max_field_bytes:
+            raise ServiceRejected('invalid_field_schema')
+        fingerprint = digest(json.dumps({'register_schema': args}, sort_keys=True, allow_nan=False))
+        skey = 'field_schema:' + digest(owner)
+        rkey = 'request:' + digest(owner + '\0' + request)
+        async with self.lock:
+            await self.writable(ctx)
+            tx = await ctx.storage.transaction(keys=[skey, rkey])
+            previous = tx.get(rkey)
+            if previous:
+                if previous['fingerprint'] != fingerprint: raise ServiceRejected('conflict')
+                return previous['result']
+            row = tx.get(skey, {'revision': 0, 'schema_version': 0})
+            if expected != row['revision'] or version <= row['schema_version']:
+                raise ServiceRejected('schema_version_conflict')
+            # A changed namespace schema may not invalidate already stored fields.
+            for bucket in range(256):
+                for pid in await ctx.storage.get('bucket:' + format(bucket, '02x'), []):
+                    fields = await ctx.storage.get('fields:' + digest(owner + '\0' + pid))
+                    if fields is not None: validate(schema, fields['fields'])
+            row = dict(revision=expected + 1, schema_version=version, schema=schema)
+            result = dict(status='saved', namespace=owner, **row)
+            tx.set(skey, row).set(rkey, {'fingerprint': fingerprint, 'result': result})
+            await self.save(tx)
+            return result
+
+    @service('import', with_context=True)
+    async def import_fields(self, ctx, args, call):
+        owner = self.owner(call)
+        if args.get('namespace') != owner:
+            raise ServiceRejected('permission_denied')
+        item = args.get('item')
+        if not isinstance(item, dict) or not isinstance(item.get('player'), dict):
+            raise ServiceRejected('invalid_argument')
+        converted = {key: args.get(key) for key in ('request_id', 'expected_revision', 'schema_version')}
+        converted.update(player_id=item['player'].get('player_id'), fields=item.get('fields'))
+        return await self.write_fields(ctx, converted, call, imported=item['player'])
 
     async def page(self, ctx, args, call):
         owner = self.owner(call)

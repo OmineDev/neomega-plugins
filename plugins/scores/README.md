@@ -16,7 +16,7 @@
 
 目标 ID 稳定；rename 只修改展示名。remove 清空目标数据但保留 revision 墓碑，防止旧请求创建混淆。分数为有符号32位整数，set/add/sub 溢出拒绝；reset 移除玩家行。分数相同按 player_id 排序，不抖动。分页使用 expected_revision 可识别排行已变。单目标最多512个玩家，超过明确报 objective_capacity，不静默截断。
 
-sync_bindings 每项为 namespace、objective、game_objective；服主将一个游戏目标唯一绑定一个虚拟目标。只有配置了绑定才可同步，游戏目标须已存在。sync 将玩家档案当时的名称及分值固定为 set/reset 操作，与业务回执原子提交；不会自动建立或覆盖其他游戏目标。queued 仅表示入持久队列，调用方再次调用 sync，传 action=receipt 与原 request_id，由提供者返回原 result 及 operations 真实操作回执（此查询不需要 objective/expected_revision），未知结果不得重发。
+sync_bindings 每项为 namespace、objective、game_objective；服主将一个游戏目标唯一绑定一个虚拟目标。只有配置了绑定才可同步，游戏目标须已存在。sync 使用档案的 UUID/XUID 在当前 Host 玩家列表中解析唯一身份，将当前名称及分值固定为 set/reset 操作；离线返回 player_offline，身份或同名冲突返回 player_identity_conflict，绝不使用历史名称作为离线写入后备目标。列表是 Host 当前缓存，不能保证排队执行时玩家仍在线。同步操作与业务回执原子提交；不会自动建立或覆盖其他游戏目标。queued 仅表示入持久队列，调用方再次调用 sync，传 action=receipt 与原 request_id，由提供者返回原 result 及 operations 真实操作回执（此查询不需要 objective/expected_revision），未知结果不得重发。
 
 ## 配置、权限与持久性
 

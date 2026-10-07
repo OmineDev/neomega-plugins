@@ -25,7 +25,8 @@
       "plugin.neomega.scheduler.schedule",
       "plugin.neomega.scheduler.query",
       "plugin.neomega.scheduler.claim",
-      "plugin.neomega.scheduler.ack"
+      "plugin.neomega.scheduler.ack",
+      "plugin.neomega.scheduler.cancel"
     ],
     "players": [
       "list"
@@ -37,7 +38,8 @@
       "service:plugin.neomega.scheduler.schedule": "解析玩家身份并管理封禁到期任务",
       "service:plugin.neomega.scheduler.query": "解析玩家身份并管理封禁到期任务",
       "service:plugin.neomega.scheduler.claim": "解析玩家身份并管理封禁到期任务",
-      "service:plugin.neomega.scheduler.ack": "解析玩家身份并管理封禁到期任务"
+      "service:plugin.neomega.scheduler.ack": "解析玩家身份并管理封禁到期任务",
+      "service:plugin.neomega.scheduler.cancel": "取消已替换、解除或到期的封禁调度任务"
     }
   },
   "dependencies": [

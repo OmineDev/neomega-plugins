@@ -29,3 +29,12 @@ player 包含 `player_id, uuid, xuid, name, names, first_seen, last_seen, source
 Host 列表是观察证据，不是原子游戏身份绑定；last_seen 不能证明玩家此刻在线。调用方需要即时在线目标时仍使用 Host 玩家 API。无真服或人工验收要求；当前实现可通过离线接口调用验证。
 
 许可证：AGPL-3.0，见 LICENSE。
+
+## 扩展字段版本与导入
+
+`get_schema({})` 返回调用安装独占的 `namespace, revision, schema_version, schema`；未注册时后两项为 null、revision 为 0。
+`register_schema({request_id, expected_revision, schema_version, schema})` 通过 CAS 注册命名空间字段结构；schema_version 必须为正整数且逐次递增。返回 `status=saved` 和上述结构。注册会检查全部已保存的本命名空间字段，不能用不兼容的新结构覆盖旧数据。
+
+字段 schema 支持显式 type（object/array/string/integer/number/boolean/null）、properties、required、additionalProperties（默认 false）、items、enum、minimum/maximum、minLength/maxLength、minItems/maxItems 及 title/description；拒绝未知关键词、引用与组合结构，嵌套最多 16 层，不隐式转换或填默认值。根必须为 object。注册后 patch 必须附带匹配的 schema_version，合并及删除后的完整对象通过校验才提交。未注册的旧命名空间继续支持原 patch 合同。
+
+`import({request_id, expected_revision, schema_version, namespace, item})` 接受 query/export 中的单个 item，将 `item.fields` **完整替换**当前调用方字段；null 是导入值而不是删除标记。namespace 必须等于可信调用安装 ID，不能指定其他作者空间。item.player 的 player_id/uuid/xuid 必须与本 Host 已观察的档案一致：不能凭导入建立身份或覆盖名称历史。导入要求事先注册 schema；expected_revision 指向目标当前 fields_revision，不采用导出文件里的旧修订。get/query/export 每项包含当前 schema_version。导出再导入时保留原 namespace 与 item，显式填入目标修订并分配稳定 request_id；重复同请求读回原结果，异参冲突。每项原子提交，不承诺跨页原子导入。

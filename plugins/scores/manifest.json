@@ -27,8 +27,12 @@
     "purposes": {
       "service:plugin.neomega.players.get": "确认既有玩家身份，不用姓名或调用方输入伪造身份",
       "operation:framework.scoreboard.set": "按服主绑定显式同步虚拟分数并保留原操作回执",
-      "operation:framework.scoreboard.reset": "按服主绑定显式同步虚拟分数并保留原操作回执"
-    }
+      "operation:framework.scoreboard.reset": "按服主绑定显式同步虚拟分数并保留原操作回执",
+      "players:list": "同步前以稳定身份匹配当前玩家列表，拒绝离线或冲突身份并使用当前名称"
+    },
+    "players": [
+      "list"
+    ]
   },
   "dependencies": [
     {

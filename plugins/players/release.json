@@ -5,6 +5,7 @@
     "LICENSE",
     "README.md",
     "main.py",
+    "field_schema.py",
     "manifest.json",
     "config.schema.json",
     "config.example.json",

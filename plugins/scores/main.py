@@ -99,14 +99,28 @@ class Scores(Provider):
             if row is None or not row['active']: reject('objective_not_found')
             self.cas(args, row)
             p = await self.player(ctx, args.get('player_id'))
-            if not p.get('name'): reject('player_name_unknown')
+            roster = await ctx.players()
+            identities = {field: p[field] for field in ('uuid', 'xuid') if p.get(field)}
+            if not identities: reject('player_identity_unknown')
+            matches = [candidate for candidate in roster
+                       if any(candidate.get(field) == value for field, value in identities.items())]
+            if not matches: reject('player_offline')
+            if len(matches) != 1: reject('player_identity_conflict')
+            current = matches[0]
+            if any(current.get(field) and current[field] != value
+                   for field, value in identities.items()):
+                reject('player_identity_conflict')
+            name = current.get('name')
+            if not name: reject('player_name_unknown')
+            if sum(candidate.get('name') == name for candidate in roster) != 1:
+                reject('player_identity_conflict')
             pid = p['player_id']
             deadline = (datetime.now(timezone.utc) + timedelta(seconds=25)).isoformat()
             params = dict(idempotency_key=b.business_id, deadline=deadline)
             if pid in row['scores']:
-                intent = ctx.scoreboard.prepare_set(p['name'], binding.game_objective, row['scores'][pid], **params)
+                intent = ctx.scoreboard.prepare_set(name, binding.game_objective, row['scores'][pid], **params)
             else:
-                intent = ctx.scoreboard.prepare_reset(p['name'], binding.game_objective, **params)
+                intent = ctx.scoreboard.prepare_reset(name, binding.game_objective, **params)
             b.state.action(intent)
             return await self.commit(b, row, k, args, call, 'sync', {'player_id': pid, 'sync_state': 'queued'})
 

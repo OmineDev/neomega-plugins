@@ -4,19 +4,35 @@
   "properties": {
     "observation_interval": {
       "type": "number",
-      "default": 30.0
+      "default": 30.0,
+      "title": "玩家观察间隔（秒）",
+      "description": "定期刷新可信身份及历史名称。",
+      "minimum": 5,
+      "maximum": 3600
     },
     "max_players": {
       "type": "integer",
-      "default": 16384
+      "default": 16384,
+      "title": "玩家档案上限",
+      "description": "达到上限后保留已有档案并停止新增。",
+      "minimum": 1,
+      "maximum": 100000
     },
     "max_names": {
       "type": "integer",
-      "default": 64
+      "default": 64,
+      "title": "历史名称保留条数",
+      "description": "每个玩家保留的最近历史名称数量。",
+      "minimum": 1,
+      "maximum": 128
     },
     "max_field_bytes": {
       "type": "integer",
-      "default": 16384
+      "default": 16384,
+      "title": "单份扩展字段大小上限",
+      "description": "每个调用插件与玩家的字段大小，单位为字节。",
+      "minimum": 128,
+      "maximum": 32768
     }
   },
   "required": [],
