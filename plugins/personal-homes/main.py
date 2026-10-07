@@ -379,6 +379,8 @@ class PersonalHomes(Plugin):
                 if moved(before, await self.sample(ctx, identity), .5):
                     raise ValueError('位置变化，传送已取消')
             current = await self.sample(ctx, identity)
+            if ctx.config.warmup_seconds and moved(before, current, .5):
+                raise ValueError('位置变化，传送已取消')
             if not ctx.config.cross_dimension and current['dimension'] != destination['dimension']:
                 raise ValueError('当前位置维度已变化')
             self.allowed(ctx, current['dimension'])
