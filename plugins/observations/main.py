@@ -15,11 +15,11 @@ from neomega_runtime.managed import IPCRejected
 
 @dataclass(frozen=True)
 class Config:
-    interval: float = field(default=2.0, metadata={'minimum': .5, 'maximum': 60})
-    stale_after: float = field(default=10.0, metadata={'minimum': 1, 'maximum': 300})
-    max_subscriptions: int = field(default=128, metadata={'minimum': 1, 'maximum': 1024})
-    event_capacity: int = field(default=256, metadata={'minimum': 16, 'maximum': 1024})
-    subscription_ttl: int = field(default=60, metadata={'minimum': 5, 'maximum': 300})
+    interval: float = field(default=2.0, metadata={'title': '采样间隔', 'description': '共享采样的间隔，单位秒。', 'minimum': .5, 'maximum': 60})
+    stale_after: float = field(default=10.0, metadata={'title': '过期时间', 'description': '距最后一次成功采样超过此秒数时标记过期。', 'minimum': 1, 'maximum': 300})
+    max_subscriptions: int = field(default=128, metadata={'title': '订阅上限', 'description': '允许同时存在的订阅数量。', 'minimum': 1, 'maximum': 1024})
+    event_capacity: int = field(default=256, metadata={'title': '事件缓存', 'description': '最多保留的近期事件数量。', 'minimum': 16, 'maximum': 1024})
+    subscription_ttl: int = field(default=60, metadata={'title': '订阅有效期', 'description': '订阅未续期时自动过期，单位秒。', 'minimum': 5, 'maximum': 300})
 
 class Observations(Plugin):
     config_type = Config
@@ -65,10 +65,29 @@ class Observations(Plugin):
                 pass
         return {'status': 'sealed' if self.sealed else 'released', 'token': token}
 
-    def publish(self, kind, data, source, *, complete=False, observed_at=None):
+    def publish(self, kind, data, source, *, complete=False, observed_at=None, successful=True):
+        now = time.time()
+        timestamp = datetime.now(timezone.utc).isoformat()
+        previous = self.cache.get(kind)
+        if not successful:
+            self.sequence += 1
+            if previous is not None:
+                row = copy.deepcopy(previous)
+            else:
+                row = dict(kind=kind, data=None, source=source, complete=False,
+                           observed_at=None, sampled_at=None, sequence=None, epoch=self.epoch,
+                           last_success_at=None, last_success_value=None)
+            row.update(last_attempt_at=timestamp, last_error=copy.deepcopy(data),
+                       attempt_sequence=self.sequence)
+            self.cache[kind] = row
+            event = copy.deepcopy(row)
+            event.update(sequence=self.sequence, payload_sequence=row['sequence'])
+            self.events.append(event)
+            return
         encoded = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
         self.payloads[kind] = (self.sequence + 1, encoded)
-        if len(encoded.encode()) > 24000:
+        # Both data and last_success_value travel in the service envelope.
+        if len(json.dumps(data, ensure_ascii=False).encode()) > 16000:
             data = {'state': 'partial', 'reason': 'read_payload_pages',
                     'operation_id': data.get('operation_id'), 'payload_available': True,
                     'length': len(encoded), 'sha256': hashlib.sha256(encoded.encode()).hexdigest()}
@@ -76,7 +95,9 @@ class Observations(Plugin):
         self.sequence += 1
         row = dict(kind=kind, data=data, source=source, complete=complete,
                    observed_at=observed_at or datetime.now(timezone.utc).isoformat(),
-                   sampled_at=time.time(), sequence=self.sequence, epoch=self.epoch)
+                   sampled_at=now, sequence=self.sequence, epoch=self.epoch,
+                   last_success_at=observed_at or timestamp, last_success_value=copy.deepcopy(data),
+                   last_attempt_at=timestamp, last_error=None)
         self.cache[kind] = row
         self.events.append(row)
 
@@ -97,7 +118,7 @@ class Observations(Plugin):
                     data = await ctx.positions.sample(timeout=5, target='players', limit=64)
                     self.publish('position', data, 'framework.entities.query', complete=data.get('complete', False))
                 except (ProtocolError, IPCRejected, TimeoutError) as error:
-                    self.publish('position', {'state': 'unavailable', 'error': type(error).__name__}, 'framework.entities.query')
+                    self.publish('position', {'state': 'unavailable', 'error': type(error).__name__}, 'framework.entities.query', successful=False)
             if 'inventory' in requested:
                 op = None
                 try:
@@ -105,11 +126,15 @@ class Observations(Plugin):
                     intent = ctx.inventory.observe(0, idempotency_key=uuid4().hex, deadline=deadline)
                     op = await ctx.operations.submit(intent)
                     receipt = await ctx.operations.wait(op, timeout=5)
-                    self.publish('inventory', {'subject': 'self', 'operation_id': op, 'receipt': receipt},
-                                 'framework.self.inventory.observe', complete=False)
+                    if receipt['state'] == 'succeeded':
+                        self.publish('inventory', {'subject': 'self', 'operation_id': op, 'receipt': receipt},
+                                     'framework.self.inventory.observe', complete=False)
+                    else:
+                        self.publish('inventory', {'state': receipt['state'], 'operation_id': op},
+                                     'framework.self.inventory.observe', successful=False)
                 except (ProtocolError, IPCRejected, TimeoutError) as error:
                     self.publish('inventory', {'state': 'unavailable', 'operation_id': op,
-                        'error': type(error).__name__}, 'framework.self.inventory.observe')
+                        'error': type(error).__name__}, 'framework.self.inventory.observe', successful=False)
 
     async def observe(self, ctx):
         try:
@@ -231,7 +256,7 @@ class Observations(Plugin):
         for kind in kinds:
             row = copy.deepcopy(self.cache.get(kind))
             if row:
-                row['stale'] = time.time()-row['sampled_at'] > ctx.config.stale_after
+                row['stale'] = row['sampled_at'] is None or time.time()-row['sampled_at'] > ctx.config.stale_after
             if row:
                 size = len(json.dumps(row, ensure_ascii=False).encode())
                 if size > budget:

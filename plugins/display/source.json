@@ -1,9 +1,9 @@
 {
   "source_id": "neomega-display",
   "repository": null,
-  "ref": "sha256:d16344bc8fe15c318fd63ca624b8d87b60f264062c76a65051aceb068ea95839",
+  "ref": "sha256:9ced0ce69d26bb51569fd65b4939da69677c9ff15e4cc05768213bca1963408b",
   "path": "plugin",
-  "source_sha256": "d16344bc8fe15c318fd63ca624b8d87b60f264062c76a65051aceb068ea95839",
+  "source_sha256": "9ced0ce69d26bb51569fd65b4939da69677c9ff15e4cc05768213bca1963408b",
   "version": "1.1.0",
   "files": [
     "LICENSE",

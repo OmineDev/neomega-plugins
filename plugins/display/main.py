@@ -4,16 +4,16 @@ from dataclasses import dataclass, field
 
 from neomega_runtime import Plugin, service
 from display_provider import profile
-from display_provider.provider import Provider
-from display_provider.channels import Channels
+from display_provider.provider import Provider, META, PREFIX
+from display_provider.channels import Channels, KEY
 
 
 @dataclass
 class Settings:
-    max_objects: int = field(default=8, metadata={'minimum': 1, 'maximum': 8})
-    max_owner_objects: int = field(default=4, metadata={'minimum': 1, 'maximum': 4})
-    max_ttl_seconds: int = field(default=60, metadata={'minimum': 1, 'maximum': 60})
-    tick_seconds: float = field(default=0.25, metadata={'minimum': 0.1, 'maximum': 5.0})
+    max_objects: int = field(default=8, metadata={'title': '展示对象上限', 'description': '同时存在的展示对象数量。', 'minimum': 1, 'maximum': 8})
+    max_owner_objects: int = field(default=4, metadata={'title': '单插件对象上限', 'description': '每个调用插件可以创建的对象数量。', 'minimum': 1, 'maximum': 4})
+    max_ttl_seconds: int = field(default=60, metadata={'title': '最长展示时间', 'description': '展示对象的最长有效时间，单位秒。', 'minimum': 1, 'maximum': 60})
+    tick_seconds: float = field(default=0.25, metadata={'title': '刷新间隔', 'description': '展示状态处理间隔，单位秒。', 'minimum': 0.1, 'maximum': 5.0})
 
 
 class DisplayPlugin(Plugin):
@@ -27,6 +27,38 @@ class DisplayPlugin(Plugin):
         await self.channels.recover()
         ctx.every(ctx.config.tick_seconds, self.channels.tick, name='display-channels')
         ctx.every(ctx.config.tick_seconds, self.provider.tick, name='display-reconcile')
+
+    async def on_maintenance(self, ctx, request):
+        token, operation = request['token'], request['operation']
+        gate = self.provider.lock
+        if operation not in ('seal', 'release'):
+            return {'status': 'unsupported', 'token': token}
+        if gate.locked():
+            return {'status': 'busy', 'token': token}
+        async with gate:
+            if gate.token not in (None, token):
+                return {'status': 'busy', 'token': token}
+            if operation == 'release':
+                gate.sealed, gate.token = False, None
+                return {'status': 'released', 'token': token}
+            if gate.sealed:
+                return {'status': 'sealed', 'token': token}
+            for commit_id in tuple(gate.uncertain):
+                if await ctx.storage.receipt(commit_id) is not None:
+                    gate.uncertain.remove(commit_id)
+            if gate.uncertain:
+                return {'status': 'busy', 'token': token}
+            meta = await ctx.storage.get(META, {'objects': []})
+            for oid in meta['objects']:
+                row = await ctx.storage.get(PREFIX + oid)
+                if row and (row.get('pending') or row.get('plan') or row.get('cleanup_pending')
+                            or row['physical_state'] in ('unknown', 'inflight', 'session_changed', 'cleanup_failed')):
+                    return {'status': 'busy', 'token': token}
+            channels = await ctx.storage.get(KEY, self.channels.initial())
+            if self.channels.has_unsettled(channels):
+                return {'status': 'busy', 'token': token}
+            gate.sealed, gate.token = True, token
+            return {'status': 'sealed', 'token': token}
 
     async def on_stop(self, ctx):
         if not hasattr(self, 'provider'):

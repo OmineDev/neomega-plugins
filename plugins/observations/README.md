@@ -35,3 +35,5 @@ TPS 是 SetTime 昼夜时间增量除单调时钟耗时的估算，quality=dayti
 seal 暂停新订阅和主动采集，release 恢复；没有世界写动作或持久账本。工程交付包括静态 schema、导入、ZIP 白名单与离线直接调用；真实游戏表现未经本项检查证明，不设置实服/人工门。
 
 大于服务信封的数据保留在缓存，快照返回 payload_available 和序号。用 read 分页拼接 fragment、核对 SHA-256 后 JSON 解码；offset 按 Unicode 字符计数。采样已更新则 conflict，重新获取快照；不会把截断当完整。多种 kind 合并超过信封时按提示逐 kind 获取。
+
+成功采样的 `data`、`last_success_value`、`last_success_at`、`observed_at` 和 `sampled_at` 在失败后保留；`last_attempt_at`、`last_error`、`attempt_sequence` 独立描述最近尝试。`stale` 只依据最后成功采样时间，首次即失败时成功字段为 null。快照 `sequence` 仍绑定成功 payload；失败事件的 `sequence` 用于事件游标，`payload_sequence` 用于读取保留数据，不能用失败事件序号读取旧 payload。下一次成功清空 last_error 并更新成功字段。大 payload 的两个值字段都返回分页摘要，以保留服务信封空间。

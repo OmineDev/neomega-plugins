@@ -6,31 +6,41 @@
       "type": "number",
       "minimum": 0.5,
       "maximum": 60,
-      "default": 2.0
+      "default": 2.0,
+      "title": "采样间隔",
+      "description": "共享采样的间隔，单位秒。"
     },
     "stale_after": {
       "type": "number",
       "minimum": 1,
       "maximum": 300,
-      "default": 10.0
+      "default": 10.0,
+      "title": "过期时间",
+      "description": "距最后一次成功采样超过此秒数时标记过期。"
     },
     "max_subscriptions": {
       "type": "integer",
       "minimum": 1,
       "maximum": 1024,
-      "default": 128
+      "default": 128,
+      "title": "订阅上限",
+      "description": "允许同时存在的订阅数量。"
     },
     "event_capacity": {
       "type": "integer",
       "minimum": 16,
       "maximum": 1024,
-      "default": 256
+      "default": 256,
+      "title": "事件缓存",
+      "description": "最多保留的近期事件数量。"
     },
     "subscription_ttl": {
       "type": "integer",
       "minimum": 5,
       "maximum": 300,
-      "default": 60
+      "default": 60,
+      "title": "订阅有效期",
+      "description": "订阅未续期时自动过期，单位秒。"
     }
   },
   "required": [],

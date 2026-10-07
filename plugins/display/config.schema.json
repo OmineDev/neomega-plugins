@@ -6,25 +6,33 @@
       "type": "integer",
       "default": 8,
       "minimum": 1,
-      "maximum": 8
+      "maximum": 8,
+      "title": "展示对象上限",
+      "description": "同时存在的展示对象数量。"
     },
     "max_owner_objects": {
       "type": "integer",
       "default": 4,
       "minimum": 1,
-      "maximum": 4
+      "maximum": 4,
+      "title": "单插件对象上限",
+      "description": "每个调用插件可以创建的对象数量。"
     },
     "max_ttl_seconds": {
       "type": "integer",
       "default": 60,
       "minimum": 1,
-      "maximum": 60
+      "maximum": 60,
+      "title": "最长展示时间",
+      "description": "展示对象的最长有效时间，单位秒。"
     },
     "tick_seconds": {
       "type": "number",
       "default": 0.25,
       "minimum": 0.1,
-      "maximum": 5
+      "maximum": 5,
+      "title": "刷新间隔",
+      "description": "展示状态处理间隔，单位秒。"
     }
   }
 }

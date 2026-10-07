@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
   "id": "neomega.messaging",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "host_api": {
     "major": 1,
-    "min_minor": 8
+    "min_minor": 10
   },
   "worker_protocol": {
     "major": 1,
@@ -14,7 +14,7 @@
   "entrypoint": "main.py",
   "mode": "service",
   "session_required": true,
-  "state_version": 2,
+  "state_version": 3,
   "subscriptions": [
     {
       "name": "chat",

@@ -9,7 +9,7 @@ from datetime import timedelta
 
 from neomega_runtime.players import player_target
 
-from .provider import owner, identifier, reject, utcnow, instant, stamp
+from .provider import owner, identifier, reject, utcnow, instant, stamp, AdmissionLock
 
 KEY = 'display/channels/v1'
 TERMINAL = {'succeeded', 'failed', 'unknown', 'cancelled', 'expired', 'rejected'}
@@ -18,7 +18,7 @@ TERMINAL = {'succeeded', 'failed', 'unknown', 'cancelled', 'expired', 'rejected'
 class Channels:
     def __init__(self, ctx, *, clock=utcnow):
         self.ctx, self.clock = ctx, clock
-        self.lock = asyncio.Lock()
+        self.lock = AdmissionLock()
 
     def initial(self):
         return dict(session=self.ctx.operations.session, leases={}, slots={}, requests={}, rates={}, sequence=0)
@@ -36,6 +36,8 @@ class Channels:
             request = identifier(args['request_id'])
             request_key = KEY + '/request/' + hashlib.sha256(json.dumps([who, request], sort_keys=True).encode()).hexdigest()
         async with self.lock:
+            if method != 'channel_get':
+                self.lock.admit()
             tx = await self.ctx.storage.transaction(keys=[KEY] + ([request_key] if request_key else []))
             state = tx.get(KEY, self.initial())
             now = self.clock()
@@ -153,8 +155,27 @@ class Channels:
             if not slot['frozen'] and not slot['pending'] and not slot['shown']:
                 del state['slots'][key]
 
+    def has_unsettled(self, state):
+        now = self.clock()
+        winners = {}
+        for lease in state['leases'].values():
+            if lease['state'] != 'active' or instant(lease['expires_at']) <= now:
+                continue
+            key = json.dumps([lease['player'], lease['channel']])
+            prior = winners.get(key)
+            if prior is None or (-lease['priority'], lease['sequence']) < (-prior['priority'], prior['sequence']):
+                winners[key] = lease
+        for key in set(state['slots']) | set(winners):
+            slot = state['slots'].get(key, {})
+            desired = winners[key]['lease_id'] if key in winners else None
+            if slot.get('pending') or slot.get('frozen') or slot.get('shown') != desired:
+                return True
+        return False
+
     async def recover(self):
         async with self.lock:
+            if self.lock.sealed:
+                return
             tx = await self.ctx.storage.transaction(keys=[KEY])
             state = tx.get(KEY, self.initial())
             for lease in state['leases'].values():
@@ -169,6 +190,8 @@ class Channels:
 
     async def tick(self):
         async with self.lock:
+            if self.lock.sealed:
+                return
             tx = await self.ctx.storage.transaction(keys=[KEY])
             state = tx.get(KEY, self.initial())
             if state['session'] != self.ctx.operations.session:

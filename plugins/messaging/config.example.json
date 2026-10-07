@@ -25,5 +25,8 @@
   "poll_seconds": 2.0,
   "max_records": 10000,
   "max_text_bytes": 3000,
-  "subscription_history": 1000
+  "subscription_history": 1000,
+  "retention_seconds": 86400,
+  "inbound_retention_seconds": 86400,
+  "clock_skew_seconds": 60
 }

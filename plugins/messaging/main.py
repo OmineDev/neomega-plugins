@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -94,12 +95,19 @@ class Settings:
     max_records: int = 10000
     max_text_bytes: int = 3000
     subscription_history: int = 1000
+    retention_seconds: int = 86400
+    inbound_retention_seconds: int = 86400
+    clock_skew_seconds: int = 60
 
     def __post_init__(self):
         if not 0 <= self.webhook_port <= 65535 or not 0.25 <= self.poll_seconds <= 60:
             raise ValueError('invalid webhook/poll settings')
         if not 10 <= self.max_records <= 100000 or not 64 <= self.max_text_bytes <= 4096 or not 10 <= self.subscription_history <= 10000:
             raise ValueError('invalid capacity')
+        if (type(self.retention_seconds) is not int or not 1 <= self.retention_seconds <= 2592000
+                or type(self.inbound_retention_seconds) is not int or not 1 <= self.inbound_retention_seconds <= 2592000
+                or type(self.clock_skew_seconds) is not int or not 0 <= self.clock_skew_seconds <= 300):
+            raise ValueError('invalid retention or clock skew')
         if len(self.routes) > 20 or len({r.id for r in self.routes}) != len(self.routes):
             raise ValueError('duplicate or excessive routes')
         tg = [r.secret for r in self.routes if r.adapter == 'telegram']
@@ -168,7 +176,14 @@ class Messaging(Plugin):
                 raise RuntimeError('legacy draft messaging storage requires explicit migration')
             meta = {'schema_version': 2, 'offsets': {}, 'sequence': 0, 'delivery_count': 0,
                     'seen_count': 0, 'unresolved': 0}
-        if meta.get('schema_version') != 2:
+        if meta.get('schema_version') == 2:
+            # No full snapshot: old counts and all original per-record keys survive.
+            now = int(time.time() * 1000)
+            meta = dict(meta, schema_version=3, legacy_cutoff=now, last_seen_clock=now,
+                        expired_before=now - ctx.config.retention_seconds * 1000,
+                        inbound_expired_before=now - ctx.config.inbound_retention_seconds * 1000,
+                        gc_delivery_cursor=None, gc_seen_cursor=None, clock_rollback=False)
+        if meta.get('schema_version') != 3:
             raise RuntimeError('unsupported messaging state version')
         state = dict(meta, deliveries={}, seen={}, events=[], queues={}, owners={})
         selected = list(ids)
@@ -192,10 +207,12 @@ class Messaging(Plugin):
                     state['events'].append(row)
         return state
 
-    async def save(self, ctx, state, *, event=None, intent=None):
+    async def save(self, ctx, state, *, event=None, intent=None, deletes=()):
         await self.writable(ctx)
         tx = await ctx.storage.transaction(keys=[], event=event.payload if event is not None else None)
-        tx.set('msg_meta', {k: state[k] for k in ('schema_version', 'offsets', 'sequence', 'delivery_count', 'seen_count', 'unresolved')})
+        tx.set('msg_meta', {k: state[k] for k in ('schema_version', 'offsets', 'sequence', 'delivery_count', 'seen_count', 'unresolved',
+                   'legacy_cutoff', 'last_seen_clock', 'expired_before', 'inbound_expired_before',
+                   'gc_delivery_cursor', 'gc_seen_cursor', 'clock_rollback')})
         for key, row in state['deliveries'].items():
             tx.set('msg_delivery_' + key, row)
         for key, row in state['seen'].items():
@@ -207,6 +224,8 @@ class Messaging(Plugin):
             tx.set('msg_owner_' + digest(owner), keys)
         for row in state['events']:
             tx.set('msg_event_' + str(row['sequence'] % ctx.config.subscription_history), row)
+        for key in deletes:
+            tx.delete(key)
         if intent is not None:
             tx.action(intent)
         tx.prepare()
@@ -232,6 +251,82 @@ class Messaging(Plugin):
         # Cancellation preserves the original commit ID for receipt-only reconciliation.
         self.clear_pending()
 
+    async def housekeeping(self, ctx):
+        """Called under the admission lock; cutoff commits before any record deletion."""
+        await self.writable(ctx)
+        state = await self.state(ctx)
+        system_now = int(time.time() * 1000)
+        now = max(system_now, state['last_seen_clock'])
+        state['clock_rollback'] = system_now < state['last_seen_clock']
+        state['last_seen_clock'] = now
+        state['expired_before'] = max(state['expired_before'], now - ctx.config.retention_seconds * 1000)
+        state['inbound_expired_before'] = max(state['inbound_expired_before'], now - ctx.config.inbound_retention_seconds * 1000)
+        await self.save(ctx, state)
+        for kind, prefix, count, cursor in (
+                ('delivery', 'msg_delivery_', 'delivery_count', 'gc_delivery_cursor'),
+                ('seen', 'msg_seen_', 'seen_count', 'gc_seen_cursor')):
+            page = await ctx.storage.scan_keys(prefix=prefix, after_key=state[cursor], limit=32)
+            deletes = []
+            for key in page['keys']:
+                row = await ctx.storage.get(key)
+                if row is None:
+                    continue
+                if kind == 'delivery':
+                    if row['state'] not in ('delivered', 'rejected'):
+                        continue
+                    if row.get('id_policy') == 'source_window':
+                        expired = row['created_at'] * 1000 < state['inbound_expired_before']
+                    else:
+                        issued = self.request_time(row['request_id'])
+                        expired = (issued < state['expired_before'] if issued is not None
+                                   else now >= state['legacy_cutoff'] + ctx.config.retention_seconds * 1000)
+                    # Also keep a complete window of terminal result history.
+                    expired = expired and row.get('updated_at', row['created_at']) * 1000 < now - ctx.config.retention_seconds * 1000
+                else:
+                    born = row.get('source_time_ms', int(row['received_at'] * 1000))
+                    expired = born < state['inbound_expired_before']
+                    if 'source_time_ms' not in row and row.get('id_policy') != 'source_window':
+                        expired = expired and now >= state['legacy_cutoff'] + ctx.config.inbound_retention_seconds * 1000
+                    if expired:
+                        expired = await self.inbound_settled(ctx, row)
+                if expired:
+                    deletes.append(key)
+            if deletes or state[cursor] != page['next_after_key']:
+                state[count] -= len(deletes)
+                state[cursor] = page['next_after_key']
+                await self.save(ctx, state, deletes=deletes)
+        return state
+
+    @staticmethod
+    def request_time(request_id):
+        if not isinstance(request_id, str):
+            return None
+        match = re.fullmatch(r'v2:([0-9]{1,16}):[A-Za-z0-9_-]{8,128}', request_id)
+        return int(match[1]) if match else None
+
+    async def inbound_settled(self, ctx, row):
+        receipt = await ctx.storage.receipt(row['commit_id'])
+        if receipt is None:
+            return False
+        for operation_id in receipt['operation_ids']:
+            try:
+                result = await ctx.operations.get(operation_id)
+            except IPCRejected as exc:
+                if exc.code == 'not_found':
+                    return False
+                raise
+            evidence = result.get('result')
+            if (result.get('state') not in ('succeeded', 'failed', 'cancelled')
+                    or not isinstance(evidence, dict) or evidence.get('state') != result['state']
+                    or evidence.get('partial_effects')):
+                return False
+        return True
+
+    async def collect(self, ctx):
+        async with self.lock:
+            if not self.sealed:
+                await self.housekeeping(ctx)
+
     def route(self, ctx, route_id):
         for route in ctx.config.routes:
             if route.id == route_id:
@@ -256,25 +351,35 @@ class Messaging(Plugin):
         state['events'].append({'sequence': state['sequence'], **record})
         state['events'] = state['events'][-ctx.config.subscription_history:]
 
-    async def enqueue(self, ctx, state, owner, route, text, request_id):
+    async def enqueue(self, ctx, state, owner, route, text, request_id, *, internal=False):
         if self.sealed:
             raise ServiceRejected('busy')
         if not isinstance(text, str) or not 1 <= len(text.encode()) <= ctx.config.max_text_bytes:
             raise ServiceRejected('invalid_argument')
-        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 160:
             raise ServiceRejected('invalid_argument')
         key = digest([owner, request_id])
         parameters = digest([route.id, text])
         await self.writable(ctx)
         previous = state['deliveries'].get(key) or await ctx.storage.get('msg_delivery_' + key)
+        if not internal:
+            issued = self.request_time(request_id)
+            if issued is None:
+                if not previous:
+                    raise ServiceRejected('request_id_upgrade_required' if not request_id.startswith('v2:') else 'invalid_request_id')
+            elif issued < state['expired_before']:
+                raise ServiceRejected('request_expired')
+            elif issued > state['last_seen_clock'] + ctx.config.clock_skew_seconds * 1000:
+                raise ServiceRejected('request_in_future')
         if previous:
             if previous['parameters'] != parameters:
                 raise ServiceRejected('conflict')
             return previous
         if state['delivery_count'] >= ctx.config.max_records:
-            raise ServiceRejected('busy')
+            raise ServiceRejected('capacity_exhausted')
         record = {'delivery_id': key, 'owner': owner, 'request_id': request_id, 'parameters': parameters,
-                  'route_id': route.id, 'text': text, 'state': 'queued', 'created_at': time.time(), 'direction': 'outbound'}
+                  'route_id': route.id, 'text': text, 'state': 'queued', 'created_at': state['last_seen_clock'] / 1000, 'direction': 'outbound',
+                  'id_policy': 'source_window' if internal else 'v2'}
         queue = state['queues'].setdefault(route.id, await ctx.storage.get('msg_queue_' + route.id, []))
         if len(queue) >= 64:
             raise ServiceRejected('busy')
@@ -298,7 +403,7 @@ class Messaging(Plugin):
         action = arguments.get('action')
         async with self.lock:
             if action == 'send':
-                await self.writable(ctx)
+                await self.housekeeping(ctx)
             after = arguments.get('after', 0)
             if action == 'subscribe' and (type(after) is not int or after < 0):
                 raise ServiceRejected('invalid_argument')
@@ -333,7 +438,8 @@ class Messaging(Plugin):
                     if size > 45000:
                         break
                     rows.append(public)
-                return {'deliveries': list(reversed(rows)), 'sealed': self.sealed, 'limited': len(rows) < len(records)}
+                return {'deliveries': list(reversed(rows)), 'sealed': self.sealed, 'limited': len(rows) < len(records),
+                        'clock_rollback': state['clock_rollback'], 'expired_before': state['expired_before']}
             if action == 'subscribe':
                 after, limit = arguments.get('after', 0), arguments.get('limit', 100)
                 if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 200:
@@ -443,21 +549,35 @@ class Messaging(Plugin):
                 self.emit(ctx, state, self.public(record))
                 await self.save(ctx, state)
 
-    async def incoming(self, ctx, route, message_id, sender, text, *, self_message=False, external_id=None):
+    async def incoming(self, ctx, route, message_id, sender, text, *, self_message=False, external_id=None, source_time=None):
         if self_message or not route.group_to_game:
             return
         if not isinstance(text, str) or not text or len(text.encode()) > ctx.config.max_text_bytes:
             return
-        key = digest([route.id, str(message_id)])
+        if message_id is None:
+            raise ServiceRejected('event_id_required')
+        key = digest([route.adapter, route.id, str(message_id)])
         async with self.lock:
             if self.sealed:
                 raise ServiceRejected('busy')
             await self.writable(ctx)
-            state = await self.state(ctx)
-            if await ctx.storage.get('msg_seen_' + key):
+            state = await self.housekeeping(ctx)
+            if source_time is None and route.adapter == 'polaris_ws':
+                source_ms = None  # This gateway may emit valid untimed events.
+            elif type(source_time) is not int or source_time <= 0:
+                raise ServiceRejected('event_time_required')
+            else:
+                source_ms = source_time * 1000
+                if source_ms < state['inbound_expired_before']:
+                    raise ServiceRejected('event_expired')
+                if source_ms > state['last_seen_clock'] + ctx.config.clock_skew_seconds * 1000:
+                    raise ServiceRejected('event_in_future')
+            # Preserve the pre-v3 route/message dedup key while its evidence exists.
+            if (await ctx.storage.get('msg_seen_' + key)
+                    or await ctx.storage.get('msg_seen_' + digest([route.id, str(message_id)]))):
                 return
             if state['seen_count'] >= ctx.config.max_records:
-                raise ServiceRejected('busy')
+                raise ServiceRejected('capacity_exhausted')
             if not self.rate(route, 'inbound'):
                 raise ServiceRejected('busy')
             # Only a configured immutable command may cross the administration boundary.
@@ -480,7 +600,11 @@ class Messaging(Plugin):
             intent = None if rejected else ctx.commands.prepare(command_text or ('tellraw @a ' + json.dumps({'rawtext': [{'text': formatted}]}, ensure_ascii=False)),
                                           idempotency_key='bridge_' + key, deadline=deadline())
             state['seen_count'] += 1
-            state['seen'][key] = {'route_id': route.id, 'received_at': time.time(), 'commit_id': 'bridge_' + key}
+            state['seen'][key] = {'route_id': route.id, 'source': route.adapter,
+                                  'received_at': state['last_seen_clock'] / 1000,
+                                  'id_policy': 'source_window', 'commit_id': 'bridge_' + key}
+            if source_ms is not None:
+                state['seen'][key]['source_time_ms'] = source_ms
             self.emit(ctx, state, {'route_id': route.id, 'owner': 'external', 'direction': 'inbound',
                                   'message_id': str(message_id), 'sender': str(sender)[:80], 'text': text, 'state': 'permission_denied' if rejected else 'accepted'})
             await self.save(ctx, state, intent=intent)
@@ -498,18 +622,25 @@ class Messaging(Plugin):
                 if result.get('ok') is not True:
                     self.health[route.id] = 'unavailable'
                     continue
+                event_error = None
                 for update in result['result']:
                     message = update.get('message', {})
                     if str(message.get('chat', {}).get('id')) == route.group_id:
                         sender = message.get('from', {})
-                        await self.incoming(ctx, route, message.get('message_id'), sender.get('first_name', sender.get('id', '')),
-                                            message.get('text', ''), self_message=sender.get('is_bot') is True, external_id=sender.get('id'))
+                        try:
+                            await self.incoming(ctx, route, message.get('message_id'), sender.get('first_name', sender.get('id', '')),
+                                                message.get('text', ''), self_message=sender.get('is_bot') is True,
+                                                external_id=sender.get('id'), source_time=message.get('date'))
+                        except ServiceRejected as exc:
+                            if exc.code not in ('event_expired', 'event_time_required', 'event_in_future', 'event_id_required'):
+                                raise
+                            event_error = exc.code
                     async with self.lock:
                         await self.writable(ctx)
                         state = await self.state(ctx)
                         state['offsets'][route.id] = int(update['update_id']) + 1
                         await self.save(ctx, state)
-                self.health[route.id] = 'connected'
+                self.health[route.id] = event_error or 'connected'
             except Exception:
                 self.health[route.id] = 'unavailable'
 
@@ -527,7 +658,7 @@ class Messaging(Plugin):
             return
         sender = event.get('sender', {})
         await self.incoming(ctx, route, event['message_id'], sender.get('card') or sender.get('nickname') or event.get('user_id'),
-                            text, self_message=event.get('self_id') == event.get('user_id'), external_id=event.get('user_id'))
+                            text, self_message=event.get('self_id') == event.get('user_id'), external_id=event.get('user_id'), source_time=event.get('time'))
 
     async def socket_loop(self, ctx, route):
         while not self.stopping:
@@ -546,8 +677,8 @@ class Messaging(Plugin):
                         if next_event in ready:
                             try:
                                 await self.onebot_event(ctx, route, next_event.result())
-                            except ServiceRejected:
-                                self.health[route.id] = 'backpressured'
+                            except ServiceRejected as exc:
+                                self.health[route.id] = exc.code
                     finally:
                         next_event.cancel()
                         await asyncio.gather(next_event, return_exceptions=True)
@@ -584,10 +715,10 @@ class Messaging(Plugin):
                 for event in result['events']:
                     async with self.lock:
                         await self.writable(ctx)
-                        state = await self.state(ctx)
+                        state = await self.housekeeping(ctx)
                         # Untrusted system text is never used as an administrative identity.
                         await self.enqueue(ctx, state, 'game', route, '[Command block] ' + event['payload'],
-                                           digest(['cb', route.id, event['connection_id'], event['source_sequence']]))
+                                           digest(['cb', route.id, event['connection_id'], event['source_sequence']]), internal=True)
                         await self.save(ctx, state)
                 subscription['cursor'] = result['cursor']
                 if result.get('gap'):
@@ -602,6 +733,7 @@ class Messaging(Plugin):
     async def webhook(self, ctx, reader, writer):
         self.webhooks += 1
         code = 400
+        error = None
         try:
             header = await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), 5)
             if len(header) > 8192:
@@ -628,15 +760,17 @@ class Messaging(Plugin):
                         text = ''.join(str(p.get('data', {}).get('text', '')) for p in segments if p.get('type') == 'text')
                         sender = event.get('sender', {})
                         await self.incoming(ctx, route, event['message_id'], sender.get('card') or sender.get('nickname') or event.get('user_id'),
-                                            text, self_message=event.get('self_id') == event.get('user_id'), external_id=event.get('user_id'))
+                                            text, self_message=event.get('self_id') == event.get('user_id'), external_id=event.get('user_id'), source_time=event.get('time'))
                 code = 200
-        except ServiceRejected:
-            code = 503
+        except ServiceRejected as exc:
+            code = 422 if exc.code in ('event_expired', 'event_time_required', 'event_in_future', 'event_id_required') else 503
+            error = exc.code
         except Exception:
             code = 400
         finally:
             self.webhooks -= 1
-            writer.write(f'HTTP/1.1 {code} Response\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}'.encode())
+            body = json.dumps({'error': error} if error else {}).encode()
+            writer.write(f'HTTP/1.1 {code} Response\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n'.encode() + body)
             try:
                 await writer.drain()
             except (ConnectionError, OSError):
@@ -651,6 +785,12 @@ class Messaging(Plugin):
         # Uncertain transactions are reconciled only by their original Host receipt.
         async with self.lock:
             await self.state(ctx)
+            try:
+                await self.housekeeping(ctx)
+            except ServiceRejected as exc:
+                if exc.code != 'unknown':
+                    raise
+                # Keep read-only status available while the original receipt is unresolved.
         if ctx.config.webhook_port:
             def accept(reader, writer):
                 if self.webhooks >= 64 or self.sealed:
@@ -658,6 +798,7 @@ class Messaging(Plugin):
                     return
                 ctx.spawn(self.webhook(ctx, reader, writer), name='bridge-webhook')
             self.server = await asyncio.start_server(accept, ctx.config.webhook_host, ctx.config.webhook_port, limit=8192)
+        ctx.every(ctx.config.poll_seconds, lambda: self.collect(ctx), name='bridge-gc')
         ctx.every(ctx.config.poll_seconds, lambda: self.flush(ctx), name='bridge-outbox')
         ctx.every(ctx.config.poll_seconds, lambda: self.poll(ctx), name='bridge-inbound')
         ctx.every(ctx.config.poll_seconds, lambda: self.poll_cbbridge(ctx), name='bridge-cbbridge')
@@ -681,15 +822,15 @@ class Messaging(Plugin):
             return
         async with self.lock:
             await self.writable(ctx)
-            state = await self.state(ctx)
+            state = await self.housekeeping(ctx)
             token = event.payload['delivery_token']
             for route in ctx.config.routes:
                 if route.game_to_group and text.startswith(route.prefix):
                     try:
                         await self.enqueue(ctx, state, 'game', route, '<' + name + '> ' + text,
-                                           digest([token, route.id]))
+                                           digest([token, route.id]), internal=True)
                     except ServiceRejected as exc:
-                        if exc.code == 'busy':
+                        if exc.code in ('busy', 'capacity_exhausted', 'unknown'):
                             raise
                         continue
             await self.save(ctx, state, event=event)

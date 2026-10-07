@@ -35,3 +35,7 @@ await client.channel_release(lease["lease_id"], request_id="quest-step-1-close",
 ## 许可证
 
 原始实现遵循随包 LICENSE；世界物品展示 profile 的来源与适用范围见项目完整说明。
+
+## 维护接口
+
+对象创建/更新/续期/关闭、屏幕通道租约、后台刷新和停止清理共用同一准入锁。`seal` 在写入执行中、存在待执行计划、在途命令、未知结果或未解决清理时返回 `busy`；未决提交仅按原 commit ID 读取回执，不重放。成功封闭后暂停后台写入，所有新写请求返回 busy，只读查询仍可用。相同 token 可重复 seal/release，不同 token 不能释放已有维护状态。升级停止阶段保持封闭，由重启恢复流程处理原状态。

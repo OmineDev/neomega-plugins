@@ -57,11 +57,38 @@ def business_id(call, request_id):
     return 'display_' + hashlib.sha256(raw.encode()).hexdigest()
 
 
+class AdmissionLock:
+    """One writer boundary shared by objects, channels and maintenance."""
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.sealed = False
+        self.token = None
+        self.uncertain = set()
+
+    def locked(self):
+        return self.lock.locked()
+
+    async def __aenter__(self):
+        await self.lock.acquire()
+        return self
+
+    async def __aexit__(self, kind, value, traceback):
+        if kind is not None and issubclass(kind, (CommitUncertain, asyncio.CancelledError)):
+            intent = getattr(value, 'intent', None)
+            if intent is not None:
+                self.uncertain.add(intent.payload()['commit_id'])
+        self.lock.release()
+
+    def admit(self):
+        if self.sealed:
+            reject('busy')
+
+
 class Provider:
     def __init__(self, ctx, profile, *, clock=utcnow, limits=None):
         self.ctx, self.profile, self.clock = ctx, profile, clock
         self.limits = dict(DEFAULTS, **(limits or {}))
-        self.lock = asyncio.Lock()
+        self.lock = AdmissionLock()
         self.active_ids = None
 
     async def describe(self):
@@ -115,6 +142,7 @@ class Provider:
 
     async def mutate(self, kind, args, call):
         async with self.lock:
+            self.lock.admit()
             return await self._mutate(kind, args, call)
 
     async def _mutate(self, kind, args, call):
@@ -239,6 +267,8 @@ class Provider:
 
     async def recover(self):
         async with self.lock:
+            if self.lock.sealed:
+                return
             meta = await self.ctx.storage.get(META, {'objects': []})
             for oid in meta['objects']:
                 tx = await self.ctx.storage.transaction(keys=[PREFIX + oid])
@@ -253,6 +283,8 @@ class Provider:
 
     async def tick(self):
         async with self.lock:
+            if self.lock.sealed:
+                return
             if self.active_ids is None:
                 meta = await self.ctx.storage.get(META, {'objects': []})
                 self.active_ids = set(meta['objects'])

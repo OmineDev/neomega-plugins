@@ -1,5 +1,6 @@
 """Call from an authorized consumer Plugin.on_start or managed callback."""
 async def send_notice(ctx, request_id: str):
+    """Pass a persisted v2:<issued_at_ms>:<random> ID; reuse it on retries."""
     routes = await ctx.services.call('plugin.neomega.messaging.routes', {})
     if not routes['routes']:
         raise RuntimeError('configure a route ACL for this installation')

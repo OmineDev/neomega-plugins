@@ -9,50 +9,74 @@
         "properties": {
           "id": {
             "type": "string",
-            "default": "group"
+            "default": "group",
+            "title": "路由名称",
+            "description": "1 至 64 字符；使用字母、数字、下划线或连字符。"
           },
           "adapter": {
             "type": "string",
-            "default": "polaris_ws"
+            "default": "polaris_ws",
+            "title": "连接方式",
+            "description": "填写 polaris_ws、onebot 或 telegram。"
           },
           "endpoint": {
             "type": "string",
-            "default": "ws://localhost:18766/"
+            "default": "ws://localhost:18766/",
+            "title": "服务地址",
+            "description": "远程地址必须使用 HTTPS 或 WSS；Telegram 填 https://api.telegram.org。"
           },
           "secret": {
             "type": "string",
-            "default": ""
+            "default": "",
+            "title": "接口密钥引用",
+            "description": "填写 secret:名称；本机 Polaris 网关无认证时可留空。"
           },
           "webhook_secret": {
             "type": "string",
-            "default": "secret:bridge-webhook"
+            "default": "secret:bridge-webhook",
+            "title": "回调签名密钥引用",
+            "description": "填写 secret:名称，用于核验 OneBot 回调签名。"
           },
           "group_id": {
             "type": "string",
-            "default": ""
+            "default": "",
+            "title": "目标群编号",
+            "description": "QQ 群为正整数；Telegram chat ID 可为负数。"
           },
           "game_to_group": {
             "type": "boolean",
-            "default": true
+            "default": true,
+            "title": "游戏消息发往群",
+            "description": "开启后转发符合前缀的玩家聊天及已配置命令方块消息。"
           },
           "group_to_game": {
             "type": "boolean",
-            "default": true
+            "default": true,
+            "title": "群消息发往游戏",
+            "description": "开启后把外部群消息作为普通文本显示在游戏中。"
           },
           "allowed_installations": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "title": "允许发送的插件安装 ID条目",
+              "description": "仅这些安装可调用本路由；留空不向其他插件开放。"
             },
-            "default": []
+            "default": [],
+            "title": "允许发送的插件安装 ID",
+            "description": "仅这些安装可调用本路由；留空不向其他插件开放。"
           },
           "prefix": {
             "type": "string",
-            "default": ""
+            "default": "",
+            "title": "玩家聊天前缀",
+            "description": "仅转发以此前缀开头的玩家聊天；留空转发全部。"
           },
           "cb_prefix": {
             "type": "string",
-            "default": ""
+            "default": "",
+            "title": "命令方块前缀",
+            "description": "留空禁用；非空时需安装并授权命令方块桥。"
           },
           "admin_commands": {
             "type": "array",
@@ -60,13 +84,19 @@
               "type": "object",
               "properties": {
                 "name": {
-                  "type": "string"
+                  "type": "string",
+                  "title": "命令名称",
+                  "description": "不含空白；用户发送 /admin 名称 调用。"
                 },
                 "command": {
-                  "type": "string"
+                  "type": "string",
+                  "title": "游戏命令",
+                  "description": "预先配置的固定游戏命令，不接受外部消息拼接参数。"
                 },
                 "capability": {
-                  "type": "string"
+                  "type": "string",
+                  "title": "所需角色能力",
+                  "description": "外部账号绑定的玩家须拥有此能力。"
                 }
               },
               "required": [
@@ -74,9 +104,13 @@
                 "command",
                 "capability"
               ],
-              "additionalProperties": false
+              "additionalProperties": false,
+              "title": "固定管理命令条目",
+              "description": "仅精确匹配的命令名称且通过角色权限核验才执行。"
             },
-            "default": []
+            "default": [],
+            "title": "固定管理命令",
+            "description": "仅精确匹配的命令名称且通过角色权限核验才执行。"
           },
           "identities": {
             "type": "array",
@@ -84,59 +118,113 @@
               "type": "object",
               "properties": {
                 "external_id": {
-                  "type": "string"
+                  "type": "string",
+                  "title": "外部账号 ID",
+                  "description": "填写 QQ 或 Telegram 用户 ID。"
                 },
                 "player_id": {
-                  "type": "string"
+                  "type": "string",
+                  "title": "玩家身份",
+                  "description": "填写玩家档案 canonical player_id，例如 xuid:1234567890。"
                 }
               },
               "required": [
                 "external_id",
                 "player_id"
               ],
-              "additionalProperties": false
+              "additionalProperties": false,
+              "title": "外部账号绑定条目",
+              "description": "将外部账号 ID 映射到玩家稳定身份；显示名不作鉴权。"
             },
-            "default": []
+            "default": [],
+            "title": "外部账号绑定",
+            "description": "将外部账号 ID 映射到玩家稳定身份；显示名不作鉴权。"
           },
           "roles_namespace": {
             "type": "string",
-            "default": ""
+            "default": "",
+            "title": "共享角色空间",
+            "description": "配置管理命令时必填；需在角色插件授予本安装 reader 权限。"
           },
           "messages_per_minute": {
             "type": "integer",
-            "default": 30
+            "default": 30,
+            "title": "每分钟消息数",
+            "description": "每条路由的入站和出站分别限速，范围 1 至 600。"
           }
         },
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "title": "转发路由条目",
+        "description": "分别设置每个群的连接方式、转发方向和调用权限。"
       },
-      "default": []
+      "default": [],
+      "title": "转发路由",
+      "description": "分别设置每个群的连接方式、转发方向和调用权限。"
     },
     "webhook_host": {
       "type": "string",
-      "default": "127.0.0.1"
+      "default": "127.0.0.1",
+      "title": "回调监听地址",
+      "description": "默认仅监听本机；跨主机接收应使用 TLS 反向代理。"
     },
     "webhook_port": {
       "type": "integer",
-      "default": 0
+      "default": 0,
+      "title": "回调监听端口",
+      "description": "0 为关闭；开启 OneBot HTTP 回调时填写 1 至 65535。"
     },
     "poll_seconds": {
       "type": "number",
-      "default": 2.0
+      "default": 2.0,
+      "title": "轮询间隔（秒）",
+      "description": "0.25 至 60 秒；控制投递、Telegram 轮询和分批回收周期。"
     },
     "max_records": {
       "type": "integer",
-      "default": 10000
+      "default": 10000,
+      "title": "每类记录容量",
+      "description": "10 至 100000；出站与入站分别计数。未决记录保留，满额返回 capacity_exhausted。"
     },
     "max_text_bytes": {
       "type": "integer",
-      "default": 3000
+      "default": 3000,
+      "title": "消息字节上限",
+      "description": "按 UTF-8 计算，范围 64 至 4096。"
     },
     "subscription_history": {
       "type": "integer",
-      "default": 1000
+      "default": 1000,
+      "title": "订阅历史条数",
+      "description": "10 至 10000；超出范围的旧事件被截断，读取时标记 gap。"
+    },
+    "retention_seconds": {
+      "type": "integer",
+      "default": 86400,
+      "minimum": 1,
+      "maximum": 2592000,
+      "title": "发送去重保留时间（秒）",
+      "description": "1 至 2592000 秒。缩短后旧请求可能立即过期；之后调大不会使已过期请求复活。未决记录不删除。"
+    },
+    "inbound_retention_seconds": {
+      "type": "integer",
+      "default": 86400,
+      "minimum": 1,
+      "maximum": 2592000,
+      "title": "来源事件保留时间（秒）",
+      "description": "1 至 2592000 秒；群入站及游戏来源使用独立有限窗口。无时间事件以首次接收计时，未决动作保留。"
+    },
+    "clock_skew_seconds": {
+      "type": "integer",
+      "default": 60,
+      "minimum": 0,
+      "maximum": 300,
+      "title": "允许来源时间超前（秒）",
+      "description": "0 至 300 秒；超过该值拒绝单条消息。时钟回退时继续使用已记录的最大时间。"
     }
   },
   "required": [],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "title": "消息桥配置",
+  "description": "配置群连接、转发权限和消息保留时间。"
 }
