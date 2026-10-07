@@ -297,7 +297,15 @@ class PersonalHomes(Plugin):
             updated = {**current, **self.record(commit, current['kind'], [intent]), 'business_key': key}
             tx.set('action:' + key, updated)
             tx.action(intent)
-            await tx.save()
+            try:
+                await tx.save()
+            except IPCRejected as error:
+                if error.code != 'quota_exceeded':
+                    raise
+                # Host explicitly refused admission: this atomic transaction
+                # did not persist its action. The caller cancels the original
+                # reservation; do not classify a rejection as unknown/retry.
+                raise ValueError('服务器操作繁忙，本次请求未提交且已取消，请稍后重新发起') from None
         # No business lock while waiting for the original operation.
         updated = await recover_actions(ctx, updated)
         operation = updated['actions'][0].get('operation_id')
@@ -468,14 +476,14 @@ class PersonalHomes(Plugin):
         key = 'home_' + hashlib.sha256(str(event.payload['event_id']).encode()).hexdigest()
         try:
             identity = self.roster.resolve_chat(payload)
-            if self.stopping or not ctx.config.enabled:
-                await self.ack(event)
-                await self.reply(ctx, identity, '个人传送点已关闭。')
-                return
             if len(text.encode()) > 512:
                 raise ValueError('指令过长')
             args = shlex.split(text)
             verb = args[1] if len(args) > 1 else 'help'
+            if self.stopping or (not ctx.config.enabled and not (verb == 'status' and len(args) == 2)):
+                await self.ack(event)
+                await self.reply(ctx, identity, '个人传送点已关闭。')
+                return
             await self.reconcile(ctx, identity.uuid)
             # Deduplicate before any business validation or position probe.
             if await ctx.storage.get('action:' + key) is not None:
