@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "same_dimension_only": true,
+  "check_for_blocks": true,
+  "expiry_seconds": 60,
+  "cooldown_seconds": 30,
+  "incoming_limit": 5,
+  "warmup_seconds": 0,
+  "aliases": [
+    "tpa"
+  ],
+  "max_distance": 0
+}
