@@ -783,7 +783,7 @@
         "service:plugin.neomega.display.channel_acquire": "调用展示、玩家档案与角色权限前置",
         "service:plugin.neomega.roles.check": "调用展示、玩家档案与角色权限前置",
         "service:plugin.neomega.players.resolve": "调用展示、玩家档案与角色权限前置",
-        "packet_observe:9": "读取雪球命令方块的Text预览，实际选择仍需玩家聊天确认"
+        "packet_observe:9": "仅观察雪球命令方块文本预览；敏感选择由真实聊天确认"
       },
       "description": "统一聊天命令、分页选择、确认、多步输入与雪球朝向预览；共享玩家输入会话，按调用者隔离结果。",
       "readme": {

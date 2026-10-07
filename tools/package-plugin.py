@@ -62,6 +62,9 @@ def validate(root):
     purposes = meta.get('permission_purposes', permissions.get('purposes', {}))
     if not isinstance(purposes, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in purposes.items()):
         raise ValueError('permission purposes must be a string map')
+    for permission, purpose in permissions.get('purposes', {}).items():
+        if permission in purposes and purposes[permission] != purpose:
+            raise ValueError('conflicting permission purpose: ' + permission)
     required = []
     for field, prefix in [('operations', 'operation'), ('services', 'service'), ('players', 'players'), ('packet_send_ids', 'packet_send'), ('packet_observe_ids', 'packet_observe')]:
         values = permissions.get(field, [])
