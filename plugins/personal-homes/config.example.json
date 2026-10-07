@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "aliases": [
+    "!home",
+    "!家"
+  ],
+  "max_homes": 3,
+  "cooldown_seconds": 30,
+  "warmup_seconds": 0,
+  "allowed_dimensions": [
+    "overworld"
+  ],
+  "cross_dimension": false,
+  "check_for_blocks": true
+}

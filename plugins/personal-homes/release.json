@@ -1,0 +1,18 @@
+{
+  "name": "个人传送点",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "community_support.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ],
+  "permission_purposes": {
+    "operation:framework.command.execute": "查询脚部所在格、发送反馈及执行本人传送",
+    "operation:framework.entities.query": "精确采样本人位置并核对移动与维度",
+    "players:list": "以当前观察身份绑定聊天与个人账本",
+    "event:chat.received": "处理本人地点管理指令"
+  }
+}
