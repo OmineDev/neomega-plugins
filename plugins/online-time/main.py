@@ -1,21 +1,67 @@
 """Observed online time; conservative checkpoints and immutable reward claims."""
 import asyncio
+import base64
+import copy
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 import hashlib
 import heapq
 import json
 import re
+from types import SimpleNamespace
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from neomega_runtime import Plugin
 from neomega_runtime.managed import IPCRejected
+from neomega_runtime.game import Commands
+from neomega_runtime.player_actions import PlayerActions
+from neomega_runtime.operations import Operations, OperationSubmissionError, OperationSubmissionTimeout
 from neomega_runtime.storage import CommitUncertain
 from community_support import ObservedRoster, exact_target, config_fingerprint, recover_actions
 
 NS = 1_000_000_000
 PAGE = 100
+
+
+def encoded_size(value):
+    """Upper bound for SDK JSON and Host Go JSON HTML escaping."""
+    raw = json.dumps(value, ensure_ascii=False, allow_nan=False)
+    for character in '<>&\u2028\u2029':
+        raw = raw.replace(character, '\\u%04x' % ord(character))
+    return len(raw.encode())
+
+
+def prepare_reward(ctx, name, reward, key, deadline):
+    target = exact_target(name)
+    if reward['kind'] == 'item':
+        return ctx.player_actions.give(name, reward['item'], count=reward['count'],
+                                       idempotency_key=key, deadline=deadline)
+    command = (f'scoreboard players add {target} {reward["objective"]} {reward["amount"]}'
+               if reward['kind'] == 'scoreboard' else reward['command'].replace('{player}', target))
+    if len(command.encode()) > 32 << 10:
+        raise ValueError('expanded reward command exceeds 32 KiB')
+    return ctx.commands.prepare(command, idempotency_key=key, deadline=deadline)
+
+
+def validate_reward_budget(rewards):
+    operations = Operations(None, 's' * 256)
+    ctx = SimpleNamespace(commands=Commands(operations), player_actions=PlayerActions(operations))
+    stored, submitted = [], []
+    for i, reward in enumerate(rewards):
+        intent = prepare_reward(ctx, '<' * 256, reward, '0' * 64 + '_' + str(i),
+                                '2000-01-01T00:00:00.000000+00:00').payload()
+        stored.append(dict(intent=intent, operation_id=None, receipt=None, state='pending'))
+        action = dict(intent)
+        action.pop('session')
+        submitted.append(action)
+    if encoded_size(dict(rewards=rewards, stored=stored, submitted=submitted)) > 192 << 10:
+        raise ValueError('expanded reward snapshot and dual intents exceed 192 KiB')
+
+
+def check_commit_budget(tx):
+    if encoded_size(tx.prepare().payload()) > 256 << 10:
+        raise ValueError('Host-encoded storage commit exceeds 256 KiB')
 
 
 @dataclass(frozen=True)
@@ -69,6 +115,7 @@ class Rule:
             raise ValueError('invalid rule ID or period')
         if not 1 <= len(self.rewards) <= 16:
             raise ValueError('each rule needs 1..16 rewards')
+        validate_reward_budget([asdict(r) for r in self.rewards])
 
 
 @dataclass(frozen=True)
@@ -292,7 +339,8 @@ class OnlineTime(Plugin):
         async with self.lock:
             identities = [state['identity'] for state in self.active.values()]
         for identity in identities:
-            await self.submit_earned(identity)
+            if await self.submit_earned(identity) is False:
+                break  # Installation quota: defer remaining claims to the next tick.
 
     async def checkpoint(self, state, now):
         player_uuid = state['identity'].uuid
@@ -375,13 +423,13 @@ class OnlineTime(Plugin):
                 yield business
 
     def reward_intent(self, identity, reward, key, deadline):
-        target = exact_target(identity.name)
-        if reward['kind'] == 'item':
-            return self.ctx.player_actions.give(identity.name, reward['item'], count=reward['count'],
-                                                idempotency_key=key, deadline=deadline)
-        command = (f'scoreboard players add {target} {reward["objective"]} {reward["amount"]}'
-                   if reward['kind'] == 'scoreboard' else reward['command'].replace('{player}', target))
-        return self.ctx.commands.prepare(command, idempotency_key=key, deadline=deadline)
+        return prepare_reward(self.ctx, identity.name, reward, key, deadline)
+
+    async def reject_budget(self, key, original):
+        tx = await self.ctx.storage.transaction(keys=[key])
+        tx.set(key, dict(original, admission_rejection='config_budget_exceeded'))
+        await self.save(tx)
+        self.ctx.log.warning('online-time reward configuration exceeds admission budget; eligibility retained: %s', original['business_key'])
 
     async def submit_earned(self, identity):
         async for business in self.action_ids(identity.uuid):
@@ -391,20 +439,38 @@ class OnlineTime(Plugin):
                 key = 'action:' + business
                 plan = await self.ctx.storage.transaction(keys=[key])
                 record = plan.get(key)
-                if record['state'] != 'earned_pending':
+                if record['state'] != 'earned_pending' or record.get('admission_rejection') == 'config_budget_exceeded':
                     continue
                 try:
                     identity = self.roster.require_current(identity)
                 except ValueError:
                     return
-                deadline = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
-                intents = [self.reward_intent(identity, r, business + '_' + str(i), deadline)
-                           for i, r in enumerate(record['rewards'])]
-                record.update(commit_id=uuid4().hex, state='pending', actions=[
-                    dict(intent=intent.payload(), operation_id=None, receipt=None, state='pending') for intent in intents])
+                original = copy.deepcopy(record)
+                try:
+                    validate_reward_budget(record['rewards'])
+                    deadline = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
+                    intents = [self.reward_intent(identity, r, business + '_' + str(i), deadline)
+                               for i, r in enumerate(record['rewards'])]
+                    record.update(commit_id=uuid4().hex, state='pending', actions=[
+                        dict(intent=intent.payload(), operation_id=None, receipt=None, state='pending') for intent in intents])
+                except ValueError:
+                    await self.reject_budget(key, original)
+                    continue
+                preview = await self.ctx.storage.transaction(keys=[key], commit_id=record['commit_id'])
+                try:
+                    preview.set(key, record)
+                    for intent in intents:
+                        preview.action(intent)
+                    check_commit_budget(preview)
+                    plan.set(key, record)
+                    check_commit_budget(plan)
+                except ValueError:
+                    # Old, pre-validation earned snapshots remain owned claims.
+                    # Do not rewrite their rewards, split actions, or stop timing.
+                    await self.reject_budget(key, original)
+                    continue
                 # Persist the fixed plan BEFORE admission. A crash in this gap leaves
                 # an unresolved claim; it can never invent another commit on restart.
-                plan.set(key, record)
                 await self.save(plan)
                 tx = await self.ctx.storage.transaction(keys=[key], commit_id=record['commit_id'])
                 try:
@@ -415,29 +481,131 @@ class OnlineTime(Plugin):
                 tx.set(key, record)
                 for intent in intents:
                     tx.action(intent)
-                await self.save(tx)
+                try:
+                    check_commit_budget(tx)
+                except ValueError:
+                    await self.reject_budget(key, original)
+                    continue
+                try:
+                    await self.save(tx)
+                except IPCRejected as exc:
+                    if exc.code != 'quota_exceeded':
+                        raise
+                    # Host rejected the entire action transaction. Only this
+                    # definite outcome may restore the original earned claim.
+                    rejected = await self.ctx.storage.transaction(keys=[key])
+                    record.update(state='earned_pending', actions=[], commit_id=None,
+                                  last_rejection_commit_id=tx.commit_id,
+                                  last_rejection_reason=exc.code)
+                    rejected.set(key, record)
+                    await self.save(rejected)
+                    self.ctx.log.warning('online-time reward admission rejected: quota_exceeded; eligibility retained')
+                    return False
             await self.reconcile_one(business)
+
+    @staticmethod
+    def evidence_prefix(key):
+        return 'evidence:' + hashlib.sha256(key.encode()).hexdigest()
+
+    async def hydrate(self, record):
+        """Caller holds lock so referenced evidence cannot be reclaimed."""
+        hydrated = copy.deepcopy(record)
+        for action in hydrated['actions']:
+            ref = action.get('receipt_ref')
+            if ref is None:
+                continue
+            pieces = [await self.ctx.storage.get(ref['key'] + ':' + str(i))
+                      for i in range(ref['chunks'])]
+            raw = b''.join(base64.b64decode(piece, validate=True) for piece in pieces)
+            if len(raw) != ref['bytes'] or hashlib.sha256(raw).hexdigest() != ref['sha256']:
+                raise ValueError('online-time receipt evidence integrity mismatch')
+            action['receipt'] = json.loads(raw)
+        return hydrated
+
+    async def persist_receipts(self, key, record):
+        """Register first, write bounded chunks, then let caller publish refs."""
+        saved = copy.deepcopy(record)
+        prefix = self.evidence_prefix(key)
+        for action in saved['actions']:
+            receipt = action.get('receipt')
+            if receipt is None:
+                continue
+            raw = json.dumps(receipt, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
+            digest = hashlib.sha256(raw).hexdigest()
+            node_key = prefix + ':' + digest
+            chunks = [base64.b64encode(raw[i:i + 32768]).decode('ascii')
+                      for i in range(0, len(raw), 32768)]
+            tx = await self.ctx.storage.transaction(keys=[prefix, node_key])
+            if tx.get(node_key) is None:
+                tx.set(node_key, dict(next=tx.get(prefix), chunks=len(chunks), cursor=0))
+                tx.set(prefix, node_key)
+                await self.save(tx)
+            for i, chunk in enumerate(chunks):
+                chunk_key = node_key + ':' + str(i)
+                tx = await self.ctx.storage.transaction(keys=[chunk_key])
+                if tx.get(chunk_key) != chunk:
+                    tx.set(chunk_key, chunk)
+                    await self.save(tx)
+            action['receipt_ref'] = dict(key=node_key, chunks=len(chunks), bytes=len(raw), sha256=digest)
+            action['receipt'] = None
+        return saved
+
+    async def clean_evidence(self, key, record):
+        """Caller holds lock; preserve all live refs, reclaim interrupted writes."""
+        live = {a['receipt_ref']['key'] for a in record['actions'] if a.get('receipt_ref')}
+        prefix = self.evidence_prefix(key)
+        previous = None
+        node_key = await self.ctx.storage.get(prefix)
+        while node_key is not None:
+            node = await self.ctx.storage.get(node_key)
+            if node_key in live:
+                previous, node_key = node_key, node['next']
+                continue
+            for i in range(node['cursor'], node['chunks']):
+                chunk_key = node_key + ':' + str(i)
+                tx = await self.ctx.storage.transaction(keys=[node_key, chunk_key])
+                node = dict(node, cursor=i + 1)
+                tx.delete(chunk_key).set(node_key, node)
+                await self.save(tx)
+            link = previous or prefix
+            tx = await self.ctx.storage.transaction(keys=[link, node_key])
+            if previous is None:
+                tx.set(prefix, node['next'])
+            else:
+                tx.set(previous, dict(tx.get(previous), next=node['next']))
+            tx.delete(node_key)
+            await self.save(tx)
+            node_key = node['next']
 
     async def reconcile_one(self, business):
         key = 'action:' + business
-        original = await self.ctx.storage.get(key)
-        if original['state'] in ('earned_pending', 'succeeded', 'failed'):
-            return
-        updated = await recover_actions(self.ctx, original)
-        if updated == original:
+        async with self.lock:
+            original = await self.ctx.storage.get(key)
+            await self.clean_evidence(key, original)
+            if original['state'] == 'earned_pending':
+                return
+            hydrated = await self.hydrate(original)
+        updated = (hydrated if original['state'] in ('succeeded', 'failed')
+                   else await recover_actions(self.ctx, hydrated))
+        inline = any(a.get('receipt') is not None and not a.get('receipt_ref') for a in original['actions'])
+        if updated == hydrated and not inline:
             return
         async with self.lock:
+            if await self.ctx.storage.get(key) != original:
+                return
+            saved = await self.persist_receipts(key, updated)
             for attempt in range(4):
                 tx = await self.ctx.storage.transaction(keys=[key])
                 if tx.get(key) != original:
                     return
-                tx.set(key, updated)
+                tx.set(key, saved)
                 try:
                     await self.save(tx)
-                    return
+                    break
                 except IPCRejected as exc:
                     if exc.code != 'revision_conflict' or attempt == 3:
                         raise
+            await self.clean_evidence(key, saved)
 
     async def reconcile_all(self):
         async for player_uuid in self.account_ids():
@@ -466,12 +634,21 @@ class OnlineTime(Plugin):
             f'{i}. {name}：{duration(score)}' for i, (score, _, name) in enumerate(sorted(top, reverse=True), 1))
 
     async def reply(self, identity, message):
-        identity = self.roster.require_current(identity)
+        try:
+            identity = self.roster.require_current(identity)
+        except ValueError:
+            self.ctx.log.info('online-time notification skipped: player no longer current')
+            return
         # Notifications are not reward claims and cannot cause reward replay.
         intent = self.ctx.commands.prepare('tellraw ' + exact_target(identity.name) + ' ' + json.dumps(
             {'rawtext': [{'text': message}]}, ensure_ascii=False), idempotency_key=uuid4().hex,
             deadline=(datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat())
-        await self.ctx.operations.submit(intent)
+        try:
+            await self.ctx.operations.submit(intent)
+        except IPCRejected as exc:
+            self.ctx.log.warning('online-time notification rejected: %s', exc.code)
+        except (OperationSubmissionError, OperationSubmissionTimeout) as exc:
+            self.ctx.log.warning('online-time notification unresolved: %s; no retry', type(exc).__name__)
 
     async def acknowledge(self, event):
         async with self.lock:
