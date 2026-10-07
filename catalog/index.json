@@ -2,6 +2,237 @@
   "schema_version": 1,
   "plugins": [
     {
+      "plugin_id": "community.daily-signin",
+      "version": "0.1.0",
+      "name": "每日签到",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.daily-signin-v0.1.0/community.daily-signin-0.1.0.zip",
+      "sha256": "1a784e82e98dcbcba8c7db55b08e7e0c50caa69b48752257c04dd482f2b28945",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.scoreboard.add"
+        ],
+        "services": [],
+        "players": [
+          "list"
+        ],
+        "purposes": {
+          "operation:framework.command.execute": "发送签到反馈、可选物品/管理员命令奖励和单次公告",
+          "operation:framework.scoreboard.add": "仅在配置开启时增加本人指定计分板奖励",
+          "players:list": "用当前观察名单的 UUID、XUID 与姓名校验聊天身份",
+          "event:chat.received": "接收本人签到、状态、历史与原回执查询"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "发送签到反馈、可选物品/管理员命令奖励和单次公告",
+        "operation:framework.scoreboard.add": "仅在配置开启时增加本人指定计分板奖励",
+        "players:list": "用当前观察名单的 UUID、XUID 与姓名校验聊天身份",
+        "event:chat.received": "接收本人签到、状态、历史与原回执查询"
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/daily-signin"
+      }
+    },
+    {
+      "plugin_id": "community.online-time",
+      "version": "0.1.0",
+      "name": "在线时长",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.online-time-v0.1.0/community.online-time-0.1.0.zip",
+      "sha256": "abae4fd7ee583bade5d9b04af6b389daef467bea7e658bce949ca140d2dfe4ed",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "operation:framework.command.execute": "发送本人查询、排行通知及管理员启用的阈值奖励",
+          "players:list": "观察玩家身份和在线变化、读取机器人名称以固定排除机器人 UUID",
+          "event:chat.received": "接收在线时长查询与可选排行命令"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "发送本人查询、排行通知及管理员启用的阈值奖励",
+        "players:list": "观察玩家身份和在线变化、读取机器人名称以固定排除机器人 UUID",
+        "event:chat.received": "接收在线时长查询与可选排行命令"
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/online-time"
+      }
+    },
+    {
+      "plugin_id": "community.personal-homes",
+      "version": "0.1.0",
+      "name": "个人传送点",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.personal-homes-v0.1.0/community.personal-homes-0.1.0.zip",
+      "sha256": "ad2f8222f2849c2711c557e5e7ba19a3b7fc5c7335b7da2083b1942dd7bfc63c",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "services": [],
+        "players": [
+          "list"
+        ],
+        "purposes": {
+          "operation:framework.command.execute": "查询脚部所在格、发送反馈及执行本人传送",
+          "operation:framework.entities.query": "精确采样本人位置并核对移动与维度",
+          "players:list": "以当前观察身份绑定聊天与个人账本",
+          "event:chat.received": "处理本人地点管理指令"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "查询脚部所在格、发送反馈及执行本人传送",
+        "operation:framework.entities.query": "精确采样本人位置并核对移动与维度",
+        "players:list": "以当前观察身份绑定聊天与个人账本",
+        "event:chat.received": "处理本人地点管理指令"
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/personal-homes"
+      }
+    },
+    {
+      "plugin_id": "community.player-tpa",
+      "version": "0.1.0",
+      "name": "玩家互传",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.player-tpa-v0.1.0/community.player-tpa-0.1.0.zip",
+      "sha256": "451f5c7cdc0e26554944cd7db197e8f2b101650cb4b3ba5fae79b48e82d4bc97",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": []
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "执行同意后的玩家互传及私聊通知",
+        "operation:framework.entities.query": "校验准确玩家位置、维度、距离与倒计时移动",
+        "players:list": "以当前观察名单核对聊天XUID、UUID及实体身份",
+        "event:chat.received": "接收互传请求、处理同意拒绝和玩家偏好"
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/player-tpa"
+      }
+    },
+    {
+      "plugin_id": "community.scheduled-commands",
+      "version": "0.1.0",
+      "name": "定时命令",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.scheduled-commands-v0.1.0/community.scheduled-commands-0.1.0.zip",
+      "sha256": "316619e5c3cab6e6bdfcb7a75bdaa6a69dceff41266a42d1089bdeb61f0933fd",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "services": [],
+        "players": [],
+        "purposes": {
+          "operation:framework.command.execute": "按服主配置的时间表逐条执行游戏命令"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "按服主配置的时间表逐条执行游戏命令"
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/scheduled-commands"
+      }
+    },
+    {
       "plugin_id": "example.go-state-darwin-amd64",
       "version": "1.0.0",
       "name": "Go 状态与事件服务 (darwin/amd64)",
