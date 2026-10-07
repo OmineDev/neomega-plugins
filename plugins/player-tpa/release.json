@@ -1,0 +1,18 @@
+{
+  "name": "玩家互传",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "community_support.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ],
+  "permission_purposes": {
+    "operation:framework.command.execute": "执行同意后的玩家互传及私聊通知",
+    "operation:framework.entities.query": "校验准确玩家位置、维度、距离与倒计时移动",
+    "players:list": "以当前观察名单核对聊天XUID、UUID及实体身份",
+    "event:chat.received": "接收互传请求、处理同意拒绝和玩家偏好"
+  }
+}

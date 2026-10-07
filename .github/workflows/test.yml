@@ -7,14 +7,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: OmineDev/neomega-agent
-          ref: 675d7e0e52bfa854a7ab79b19c61db59d1921210
-          path: .ci-sdk
-          persist-credentials: false
+      - name: Fetch pinned public SDK and checker
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 --output "$RUNNER_TEMP/neomega-toolkit.tar.gz" https://wiki.wuxie233.com/downloads/neomega-toolkit-1.1.0-linux-amd64.tar.gz
+          echo "1865efc93815c031cbe8f6a2cd353683868c0837f97c43dbd42c63a2495140ed  $RUNNER_TEMP/neomega-toolkit.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/neomega-toolkit"
+          tar -xzf "$RUNNER_TEMP/neomega-toolkit.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/neomega-toolkit"
+          (cd "$RUNNER_TEMP/neomega-toolkit" && sha256sum --check --quiet FILES.sha256)
+          echo "NEOMEGA_TOOLKIT=$RUNNER_TEMP/neomega-toolkit" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: PYTHONPATH="$GITHUB_WORKSPACE/.ci-sdk/sdk/python" python3 tools/check-plugins.py
+      - run: PYTHONPATH="$NEOMEGA_TOOLKIT/sdk/python" python3 tools/check-plugins.py
       - run: python3 -m unittest discover -s tests

@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "timezone": {
+      "type": "string",
+      "default": "Asia/Shanghai"
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "!签到",
+        "!signin"
+      ]
+    },
+    "rewards": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "base": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "default": "item"
+              },
+              "item": {
+                "type": "string",
+                "default": "minecraft:apple"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32767,
+                "default": 1
+              },
+              "data": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "default": 0
+              },
+              "objective": {
+                "type": "string",
+                "default": ""
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647,
+                "default": 1
+              },
+              "command": {
+                "type": "string",
+                "description": "单行模板最多4096 UTF-8字节，最大合法玩家名展开后须满足Host的32 KiB单条上限；整组奖励按最大合法玩家名展开后的双份SDK/Host意图JSON合计最多192 KiB，另留64 KiB给账本、事件及公告。",
+                "default": ""
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "default": []
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {
+        "enabled": false,
+        "base": []
+      }
+    },
+    "consecutive": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rule_id": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "rewards": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "default": "item"
+                    },
+                    "item": {
+                      "type": "string",
+                      "default": "minecraft:apple"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 32767,
+                      "default": 1
+                    },
+                    "data": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647,
+                      "default": 0
+                    },
+                    "objective": {
+                      "type": "string",
+                      "default": ""
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2147483647,
+                      "default": 1
+                    },
+                    "command": {
+                      "type": "string",
+                      "description": "单行模板最多4096 UTF-8字节，最大合法玩家名展开后须满足Host的32 KiB单条上限；整组奖励按最大合法玩家名展开后的双份SDK/Host意图JSON合计最多192 KiB，另留64 KiB给账本、事件及公告。",
+                      "default": ""
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "rule_id",
+              "count",
+              "rewards"
+            ],
+            "additionalProperties": false
+          },
+          "default": []
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {
+        "enabled": false,
+        "rules": []
+      }
+    },
+    "cumulative": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rule_id": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "rewards": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "default": "item"
+                    },
+                    "item": {
+                      "type": "string",
+                      "default": "minecraft:apple"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 32767,
+                      "default": 1
+                    },
+                    "data": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647,
+                      "default": 0
+                    },
+                    "objective": {
+                      "type": "string",
+                      "default": ""
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2147483647,
+                      "default": 1
+                    },
+                    "command": {
+                      "type": "string",
+                      "description": "单行模板最多4096 UTF-8字节，最大合法玩家名展开后须满足Host的32 KiB单条上限；整组奖励按最大合法玩家名展开后的双份SDK/Host意图JSON合计最多192 KiB，另留64 KiB给账本、事件及公告。",
+                      "default": ""
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "rule_id",
+              "count",
+              "rewards"
+            ],
+            "additionalProperties": false
+          },
+          "default": []
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {
+        "enabled": false,
+        "rules": []
+      }
+    },
+    "announcement": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {
+        "enabled": false
+      }
+    },
+    "history": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {
+        "enabled": true
+      }
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

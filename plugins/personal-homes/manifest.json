@@ -1,0 +1,43 @@
+{
+  "manifest_version": 1,
+  "id": "community.personal-homes",
+  "version": "0.1.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 10
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute",
+      "framework.entities.query"
+    ],
+    "services": [],
+    "players": [
+      "list"
+    ],
+    "purposes": {
+      "operation:framework.command.execute": "查询脚部所在格、发送反馈及执行本人传送",
+      "operation:framework.entities.query": "精确采样本人位置并核对移动与维度",
+      "players:list": "以当前观察身份绑定聊天与个人账本",
+      "event:chat.received": "处理本人地点管理指令"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

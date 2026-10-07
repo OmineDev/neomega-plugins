@@ -1,0 +1,11 @@
+{
+  "name": "在线时长",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "community_support.py",
+    "manifest.json",
+    "config.schema.json"
+  ]
+}

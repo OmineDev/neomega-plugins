@@ -1,0 +1,26 @@
+{
+  "enabled": true,
+  "timezone": "Asia/Shanghai",
+  "aliases": [
+    "!签到",
+    "!signin"
+  ],
+  "rewards": {
+    "enabled": false,
+    "base": []
+  },
+  "consecutive": {
+    "enabled": false,
+    "rules": []
+  },
+  "cumulative": {
+    "enabled": false,
+    "rules": []
+  },
+  "announcement": {
+    "enabled": false
+  },
+  "history": {
+    "enabled": true
+  }
+}

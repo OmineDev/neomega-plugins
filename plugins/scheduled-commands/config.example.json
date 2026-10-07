@@ -1,0 +1,35 @@
+{
+  "enabled": true,
+  "tasks": [
+    {
+      "id": "daily-announcement",
+      "enabled": false,
+      "commands": [
+        "say 欢迎来到服务器！"
+      ],
+      "schedule": {
+        "kind": "daily",
+        "times": [
+          "12:00",
+          "20:00"
+        ],
+        "timezone": "Asia/Shanghai"
+      },
+      "run_on_start": false,
+      "resume_token": ""
+    },
+    {
+      "id": "regular-announcement",
+      "enabled": false,
+      "commands": [
+        "say 请遵守服务器规则。"
+      ],
+      "schedule": {
+        "kind": "interval",
+        "seconds": 3600
+      },
+      "run_on_start": false,
+      "resume_token": ""
+    }
+  ]
+}

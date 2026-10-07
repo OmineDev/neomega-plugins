@@ -1,0 +1,43 @@
+{
+  "manifest_version": 1,
+  "id": "community.daily-signin",
+  "version": "0.1.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 10
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute",
+      "framework.scoreboard.add"
+    ],
+    "services": [],
+    "players": [
+      "list"
+    ],
+    "purposes": {
+      "operation:framework.command.execute": "发送签到反馈、可选物品/管理员命令奖励和单次公告",
+      "operation:framework.scoreboard.add": "仅在配置开启时增加本人指定计分板奖励",
+      "players:list": "用当前观察名单的 UUID、XUID 与姓名校验聊天身份",
+      "event:chat.received": "接收本人签到、状态、历史与原回执查询"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

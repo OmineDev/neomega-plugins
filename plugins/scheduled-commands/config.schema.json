@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "小写字母开头的 1..48 位字母/数字/_/-，必须唯一。"
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "1..16 条单行命令，每条最多 4096 UTF-8 bytes。"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "description": "必须为 interval；由插件业务校验。"
+                  },
+                  "seconds": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 31536000
+                  }
+                },
+                "required": [
+                  "kind",
+                  "seconds"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "description": "必须为 daily；由插件业务校验。"
+                  },
+                  "times": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "1..48 个不重复 HH:MM；由插件业务校验。"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "default": "Asia/Shanghai"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "times"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "run_on_start": {
+            "type": "boolean",
+            "default": false
+          },
+          "resume_token": {
+            "type": "string",
+            "description": "最多 80 字符；恢复须使用新的非空值。",
+            "default": ""
+          }
+        },
+        "required": [
+          "id",
+          "commands",
+          "schedule"
+        ],
+        "additionalProperties": false
+      },
+      "description": "最多 100 项；业务限制在加载配置时校验。",
+      "default": []
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

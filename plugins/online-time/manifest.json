@@ -1,0 +1,41 @@
+{
+  "manifest_version": 1,
+  "id": "community.online-time",
+  "version": "0.1.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 10
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [],
+    "purposes": {
+      "operation:framework.command.execute": "发送本人查询、排行通知及管理员启用的阈值奖励",
+      "players:list": "观察玩家身份和在线变化、读取机器人名称以固定排除机器人 UUID",
+      "event:chat.received": "接收在线时长查询与可选排行命令"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

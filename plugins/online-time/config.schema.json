@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "!在线"
+      ]
+    },
+    "calendar": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "timezone": {
+          "type": "string",
+          "default": "Asia/Shanghai"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {
+        "enabled": true,
+        "timezone": "Asia/Shanghai"
+      }
+    },
+    "leaderboard": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "top": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {
+        "enabled": false,
+        "top": 10
+      }
+    },
+    "rewards": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "default": ""
+              },
+              "period": {
+                "type": "string",
+                "default": "total"
+              },
+              "seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3153600000,
+                "default": 3600
+              },
+              "rewards": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "default": "item"
+                    },
+                    "item": {
+                      "type": "string",
+                      "default": "minecraft:apple"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 32767,
+                      "default": 1
+                    },
+                    "objective": {
+                      "type": "string",
+                      "default": ""
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2147483647,
+                      "default": 1
+                    },
+                    "command": {
+                      "type": "string",
+                      "default": ""
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                },
+                "default": []
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "default": []
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {
+        "enabled": false,
+        "rules": []
+      }
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

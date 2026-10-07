@@ -1,0 +1,12 @@
+{
+  "name": "每日签到",
+  "files": [
+    "manifest.json",
+    "main.py",
+    "community_support.py",
+    "config.schema.json",
+    "config.example.json",
+    "README.md",
+    "LICENSE"
+  ]
+}

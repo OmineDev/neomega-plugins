@@ -1,0 +1,37 @@
+{
+  "manifest_version": 1,
+  "id": "community.player-tpa",
+  "version": "0.1.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 10
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute",
+      "framework.entities.query"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": []
+  },
+  "dependencies": [],
+  "exports": []
+}

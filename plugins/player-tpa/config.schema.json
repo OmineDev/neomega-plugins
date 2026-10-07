@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "title": "启用互传",
+      "default": true
+    },
+    "same_dimension_only": {
+      "type": "boolean",
+      "title": "仅允许同维度互传",
+      "default": true
+    },
+    "check_for_blocks": {
+      "type": "boolean",
+      "title": "检查目标阻挡方块",
+      "default": true
+    },
+    "expiry_seconds": {
+      "type": "integer",
+      "title": "请求有效秒数",
+      "default": 60,
+      "minimum": 5,
+      "maximum": 600
+    },
+    "cooldown_seconds": {
+      "type": "integer",
+      "title": "发起冷却秒数",
+      "default": 30,
+      "minimum": 0,
+      "maximum": 3600
+    },
+    "incoming_limit": {
+      "type": "integer",
+      "title": "每人待收和待发上限",
+      "default": 5,
+      "minimum": 1,
+      "maximum": 20
+    },
+    "warmup_seconds": {
+      "type": "integer",
+      "title": "传送前等待秒数",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 30
+    },
+    "aliases": {
+      "type": "array",
+      "title": "命令别名（不含!）",
+      "default": [
+        "tpa"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "1至8个不重复别名，每个包含1至24个小写英文字母或数字；不含!。保存配置时由插件校验。"
+    },
+    "max_distance": {
+      "type": "number",
+      "title": "最大距离（0为不限）",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 30000000
+    }
+  },
+  "additionalProperties": false
+}
