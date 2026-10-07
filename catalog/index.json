@@ -522,6 +522,883 @@
         "players:observe": "核对 Worker 机器人身份及权限变更读回",
         "packet_send:185": "发送 RequestPermissions，为已核验机器人授予 OP 或按配置恢复原权限"
       }
+    },
+    {
+      "plugin_id": "fatalder.cloud-import",
+      "version": "1.2.0",
+      "name": "Fatalder 云导入",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/fatalder.cloud-import-v1.2.0/fatalder.cloud-import-1.2.0.zip",
+      "sha256": "e0e23913c0f0c62a0ab7c0ad493a3ed339886fcf72dba120a96fe045ea6122cb",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.packet.send_json"
+        ],
+        "services": [],
+        "players": [
+          "list",
+          "observe"
+        ],
+        "packet_send_ids": [
+          185
+        ],
+        "purposes": {
+          "operation:framework.command.execute": "向管理员反馈导入报价、状态与操作结果",
+          "operation:framework.packet.send_json": "发送经过身份核对的机器人权限请求",
+          "event:chat.received": "接收并校验管理员发出的导入命令",
+          "players:list": "将聊天玩家唯一匹配到管理员 UUID 白名单",
+          "players:observe": "核对 Worker 机器人身份及权限变更读回",
+          "packet_send:185": "发送 RequestPermissions，为已核验机器人授予 OP 或按配置恢复原权限"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "向管理员反馈导入报价、状态与操作结果",
+        "operation:framework.packet.send_json": "发送经过身份核对的机器人权限请求",
+        "event:chat.received": "接收并校验管理员发出的导入命令",
+        "players:list": "将聊天玩家唯一匹配到管理员 UUID 白名单",
+        "players:observe": "核对 Worker 机器人身份及权限变更读回",
+        "packet_send:185": "发送 RequestPermissions，为已核验机器人授予 OP 或按配置恢复原权限"
+      },
+      "description": "查看建筑导入报价，明确确认后由 Fatalder Worker 建造；支持可信插件调用与任务恢复。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "3f7617bb2475badf8a4e21401654a6ebc4bd0a0d924ccb85b13bf02ff9b94035",
+        "size": 16735
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/fatalder-cloud-import"
+      }
+    },
+    {
+      "plugin_id": "neomega.cbbridge",
+      "version": "1.0.0",
+      "name": "命令方块通信",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.cbbridge-v1.0.0/neomega.cbbridge-1.0.0.zip",
+      "sha256": "42c541a2bb5065416f4937d3363b3dadc925d50dff85429362777a5abe39345f",
+      "permissions": {
+        "operations": [],
+        "services": [],
+        "packet_observe_ids": [
+          9
+        ],
+        "purposes": {
+          "packet_observe:9": "读取协议可见观察；前缀与实体编号不代表玩家认证"
+        }
+      },
+      "permission_purposes": {
+        "packet_observe:9": "读取协议可见观察；前缀与实体编号不代表玩家认证"
+      },
+      "description": "将命令方块系统文本分发给有租约的前缀路由，支持优先级、消费、限速与丢失诊断。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "4a15e8ba13ff06087805afa60b339e8d569cdcf0c817d3f071e1e9fd40257696",
+        "size": 2743
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/cbbridge"
+      }
+    },
+    {
+      "plugin_id": "neomega.chunks",
+      "version": "1.0.0",
+      "name": "共享区块服务",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.chunks-v1.0.0/neomega.chunks-1.0.0.zip",
+      "sha256": "5467d3df412bb3c711cee9c01ba92a508e8f01bfe5206e3341c5e41ca27c1ff7",
+      "permissions": {
+        "operations": [
+          "framework.world.subchunk.request"
+        ],
+        "services": [],
+        "purposes": {
+          "operation:framework.world.subchunk.request": "按调用方已准备的有界世界任务执行，保留原操作回执"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.world.subchunk.request": "按调用方已准备的有界世界任务执行，保留原操作回执"
+      },
+      "description": "共享主动区块请求、验证缓存、逐格读取与有期限订阅。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "225d371af43cc4d28cb89c87f15acdedad5a11a534291c35c36880007563fe48",
+        "size": 3931
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/chunks"
+      }
+    },
+    {
+      "plugin_id": "neomega.display",
+      "version": "1.1.0",
+      "name": "共享展示",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.display-v1.1.0/neomega.display-1.1.0.zip",
+      "sha256": "fe12648dccd83c36156d9bfeae86f375f9943982d586e9f091d14b7ecc5762e6",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "services": []
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "渲染共享屏幕消息并创建、更新和清理世界物品展示"
+      },
+      "description": "共享 Actionbar、Title 优先级租约及世界物品展示，让菜单、任务和商店协调显示。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "0bc0b6003002b40630055b5979ac0691dc9e7706223ac8e73e10a4dd2a34893d",
+        "size": 3298
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/display"
+      }
+    },
+    {
+      "plugin_id": "neomega.economy",
+      "version": "1.0.0",
+      "name": "经济账本",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.economy-v1.0.0/neomega.economy-1.0.0.zip",
+      "sha256": "173121204251c25f0b828b40d4e9b7e5a181a97b8ca78a21af1c8579761a4308",
+      "permissions": {
+        "operations": [],
+        "services": [],
+        "purposes": {}
+      },
+      "permission_purposes": {},
+      "description": "多货币整数余额、原子转账、冻结释放及可追溯流水。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "858d391ea891850aed00b0d03ea4d48d47f97d65f02c1de36df9984b65b41c8c",
+        "size": 3914
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.players",
+          "major": 1,
+          "min_version": "1.0.0"
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/economy"
+      }
+    },
+    {
+      "plugin_id": "neomega.interaction",
+      "version": "1.0.0",
+      "name": "交互菜单",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.interaction-v1.0.0/neomega.interaction-1.0.0.zip",
+      "sha256": "8b534476ca8bc2a3a057b3bb6c3d70c8c3988450c97eef72fd0dcd5d023722f9",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.display.channel_acquire",
+          "plugin.neomega.roles.check",
+          "plugin.neomega.players.resolve"
+        ],
+        "packet_observe_ids": [
+          9
+        ],
+        "purposes": {
+          "packet_observe:9": "仅观察雪球命令方块文本预览；敏感选择由真实聊天确认"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "发送交互提示",
+        "players:list": "核对真实在线玩家身份",
+        "event:chat.received": "接收玩家聊天回复",
+        "event:player.list_removed": "退出时回收输入会话",
+        "service:plugin.neomega.display.channel_acquire": "调用展示、玩家档案与角色权限前置",
+        "service:plugin.neomega.roles.check": "调用展示、玩家档案与角色权限前置",
+        "service:plugin.neomega.players.resolve": "调用展示、玩家档案与角色权限前置",
+        "packet_observe:9": "读取雪球命令方块的Text预览，实际选择仍需玩家聊天确认"
+      },
+      "description": "统一聊天命令、分页选择、确认、多步输入与雪球朝向预览；共享玩家输入会话，按调用者隔离结果。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "7ffc0458ef5c5b1616fb87c62ad8162e288d3e8e67edaeb2e8af8538beb36af6",
+        "size": 4821
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "leave",
+          "kind": "player.list_removed",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 5
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.display",
+          "major": 1,
+          "min_version": "1.1.0"
+        },
+        {
+          "id": "neomega.roles",
+          "major": 1,
+          "min_version": "1.0.0",
+          "optional": true
+        },
+        {
+          "id": "neomega.players",
+          "major": 1,
+          "min_version": "1.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/interaction"
+      }
+    },
+    {
+      "plugin_id": "neomega.messaging",
+      "version": "1.1.0",
+      "name": "消息桥",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.messaging-v1.1.0/neomega.messaging-1.1.0.zip",
+      "sha256": "592bfa520912a66920ec4964484777408c02987c66f8ad8bf2dde7edb345aa8a",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.roles.check",
+          "plugin.neomega.cbbridge.register",
+          "plugin.neomega.cbbridge.subscribe",
+          "plugin.neomega.cbbridge.poll",
+          "plugin.neomega.cbbridge.unregister"
+        ],
+        "purposes": {
+          "operation:framework.command.execute": "向游戏发送群消息及执行已配置且经角色鉴权的固定管理命令",
+          "players:list": "核实转发玩家聊天的身份",
+          "event:chat.received": "把玩家聊天转发到已配置群",
+          "service:plugin.neomega.roles.check": "对外部管理命令检查角色能力，依赖不可用时拒绝执行",
+          "service:plugin.neomega.cbbridge.register": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+          "service:plugin.neomega.cbbridge.subscribe": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+          "service:plugin.neomega.cbbridge.poll": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+          "service:plugin.neomega.cbbridge.unregister": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "向游戏发送群消息及执行已配置且经角色鉴权的固定管理命令",
+        "players:list": "核实转发玩家聊天的身份",
+        "event:chat.received": "把玩家聊天转发到已配置群",
+        "service:plugin.neomega.roles.check": "对外部管理命令检查角色能力，依赖不可用时拒绝执行",
+        "service:plugin.neomega.cbbridge.register": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+        "service:plugin.neomega.cbbridge.subscribe": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+        "service:plugin.neomega.cbbridge.poll": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+        "service:plugin.neomega.cbbridge.unregister": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份"
+      },
+      "description": "现有 Polaris WebSocket 群桥、OneBot HTTP 和 Telegram 双向路由、持久回执与固定管理命令。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "a6869bd01e83ca5a8a816a28485ff1f22497c4546886fe4980dbb5ae9662be6c",
+        "size": 11978
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 11
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.roles",
+          "major": 1,
+          "min_version": "1.0.0",
+          "optional": true
+        },
+        {
+          "id": "neomega.cbbridge",
+          "major": 1,
+          "min_version": "1.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/messaging"
+      }
+    },
+    {
+      "plugin_id": "neomega.moderation",
+      "version": "1.0.0",
+      "name": "封禁管理",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.moderation-v1.0.0/neomega.moderation-1.0.0.zip",
+      "sha256": "2206c22fd6d46673f007430a4b19d38123ee84207a0f88f9ebf456d4c8c0069a",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "services": [
+          "plugin.neomega.players.resolve",
+          "plugin.neomega.scheduler.schedule",
+          "plugin.neomega.scheduler.query",
+          "plugin.neomega.scheduler.claim",
+          "plugin.neomega.scheduler.ack",
+          "plugin.neomega.scheduler.cancel"
+        ],
+        "players": [
+          "list"
+        ],
+        "purposes": {
+          "players:list": "将离线封禁对应到当前在线的稳定玩家身份",
+          "operation:framework.command.execute": "对生效的封禁玩家发送踢出命令",
+          "service:plugin.neomega.players.resolve": "解析玩家身份并管理封禁到期任务",
+          "service:plugin.neomega.scheduler.schedule": "解析玩家身份并管理封禁到期任务",
+          "service:plugin.neomega.scheduler.query": "解析玩家身份并管理封禁到期任务",
+          "service:plugin.neomega.scheduler.claim": "解析玩家身份并管理封禁到期任务",
+          "service:plugin.neomega.scheduler.ack": "解析玩家身份并管理封禁到期任务",
+          "service:plugin.neomega.scheduler.cancel": "取消已替换、解除或到期的封禁调度任务"
+        }
+      },
+      "permission_purposes": {
+        "players:list": "将离线封禁对应到当前在线的稳定玩家身份",
+        "operation:framework.command.execute": "对生效的封禁玩家发送踢出命令",
+        "service:plugin.neomega.players.resolve": "解析玩家身份并管理封禁到期任务",
+        "service:plugin.neomega.scheduler.schedule": "解析玩家身份并管理封禁到期任务",
+        "service:plugin.neomega.scheduler.query": "解析玩家身份并管理封禁到期任务",
+        "service:plugin.neomega.scheduler.claim": "解析玩家身份并管理封禁到期任务",
+        "service:plugin.neomega.scheduler.ack": "解析玩家身份并管理封禁到期任务",
+        "service:plugin.neomega.scheduler.cancel": "取消已替换、解除或到期的封禁调度任务"
+      },
+      "description": "统一永久、临时与离线封禁，绝对时间到期、上线后踢出和可查询的执行回执。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "8f626cf356fbd881aaf9b1cdf05faab37a0ce5f714cb20ff5b2fce7f10a9e746",
+        "size": 3971
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.players",
+          "major": 1,
+          "min_version": "1.0.0"
+        },
+        {
+          "id": "neomega.scheduler",
+          "major": 1,
+          "min_version": "1.0.0"
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/moderation"
+      }
+    },
+    {
+      "plugin_id": "neomega.music",
+      "version": "1.0.0",
+      "name": "音乐服务",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.music-v1.0.0/neomega.music-1.0.0.zip",
+      "sha256": "63b48da11f9e2e68e5ec0457b26c701fb807746d9de12439764660c8114e220a",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "services": [],
+        "players": [
+          "list"
+        ]
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "向指定玩家播放受限速的音乐声音",
+        "players:list": "验证音乐接收者并创建精确玩家目标"
+      },
+      "description": "为多个插件统一播放 MIDI 音乐，支持音色、速度、玩家目标、进度和停止。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "01a429a93f537600c420c9044c214d73b1b068f4d89810cd200c98e7ad6c5ada",
+        "size": 3147
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 1
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/music"
+      }
+    },
+    {
+      "plugin_id": "neomega.observations",
+      "version": "1.0.0",
+      "name": "共享观察",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.observations-v1.0.0/neomega.observations-1.0.0.zip",
+      "sha256": "dfda1c3f8774bed8b11d00f5a5551942902cbe8a6d07f4dbcd773d2814c36a84",
+      "permissions": {
+        "operations": [
+          "framework.entities.query",
+          "framework.self.inventory.observe"
+        ],
+        "services": [],
+        "packet_observe_ids": [
+          27,
+          45,
+          10
+        ],
+        "purposes": {
+          "operation:framework.entities.query": "只读采样共享缓存；不执行世界写入",
+          "operation:framework.self.inventory.observe": "只读采样共享缓存；不执行世界写入",
+          "packet_observe:27": "读取协议可见观察；前缀与实体编号不代表玩家认证",
+          "packet_observe:45": "读取协议可见观察；前缀与实体编号不代表玩家认证",
+          "packet_observe:10": "读取协议可见观察；前缀与实体编号不代表玩家认证"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.entities.query": "只读采样共享缓存；不执行世界写入",
+        "operation:framework.self.inventory.observe": "只读采样共享缓存；不执行世界写入",
+        "packet_observe:27": "读取协议可见观察；前缀与实体编号不代表玩家认证",
+        "packet_observe:45": "读取协议可见观察；前缀与实体编号不代表玩家认证",
+        "packet_observe:10": "读取协议可见观察；前缀与实体编号不代表玩家认证"
+      },
+      "description": "统一位置与自身背包采样，提供死亡、重生和 TPS 估计的有界观察流。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "e8509e036792b1c073ae1b115b44ef1e66a323b125872fa0a1213c45c7cd8a4d",
+        "size": 4050
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/observations"
+      }
+    },
+    {
+      "plugin_id": "neomega.players",
+      "version": "1.0.0",
+      "name": "玩家档案与身份服务",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.players-v1.0.0/neomega.players-1.0.0.zip",
+      "sha256": "9b75cc02e3e748f8dac69d232af91dd825aa46c0891d293e130c004d3be291e7",
+      "permissions": {
+        "operations": [],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "players:list": "从Host可信玩家列表维护身份和历史名称"
+        }
+      },
+      "permission_purposes": {
+        "players:list": "从Host可信玩家列表维护身份和历史名称"
+      },
+      "description": "可信玩家身份、离线名称历史和按插件隔离的持久字段，支持修订校验与幂等更新。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "f077f1f76db079ba65d447bd3447823d84d0232c39112b3ce4391ee5356eaf2c",
+        "size": 5179
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/players"
+      }
+    },
+    {
+      "plugin_id": "neomega.roles",
+      "version": "1.0.0",
+      "name": "角色权限",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.roles-v1.0.0/neomega.roles-1.0.0.zip",
+      "sha256": "e1435a27f10a2b332741720a36e0ec89c0dd07b59998d05a4eb8b6847f75a54c",
+      "permissions": {
+        "operations": [],
+        "services": [
+          "plugin.neomega.players.get"
+        ],
+        "purposes": {
+          "service:plugin.neomega.players.get": "确认既有玩家身份，不用姓名或调用方输入伪造身份"
+        }
+      },
+      "permission_purposes": {
+        "service:plugin.neomega.players.get": "确认既有玩家身份，不用姓名或调用方输入伪造身份"
+      },
+      "description": "按调用插件隔离的业务角色、到期授权与作用域权限判断。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "e5d2d00b62f956eeb503758d2c3bb9039aa24b9922ef28328f511d1b2d9d4d0f",
+        "size": 3624
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.players",
+          "major": 1,
+          "min_version": "1.0.0"
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/roles"
+      }
+    },
+    {
+      "plugin_id": "neomega.scheduler",
+      "version": "1.0.0",
+      "name": "持久调度",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.scheduler-v1.0.0/neomega.scheduler-1.0.0.zip",
+      "sha256": "3fd0f6fd1fe66ecdb2b2a1f8239c7edfbc7935d747afb3a870c4f838861df9dd",
+      "permissions": {
+        "operations": [],
+        "services": [],
+        "players": [],
+        "purposes": {}
+      },
+      "permission_purposes": {},
+      "description": "一次性与周期任务、错过策略、稳定触发 ID、租约领取和确认；按调用安装隔离。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "79ad2fca1ee7465df830ceacc3489529e5310902011caff035ebece14a4ffd71",
+        "size": 3862
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/scheduler"
+      }
+    },
+    {
+      "plugin_id": "neomega.scores",
+      "version": "1.0.0",
+      "name": "虚拟分数",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.scores-v1.0.0/neomega.scores-1.0.0.zip",
+      "sha256": "f1e372cd7e58b30a6188b43e87110d3122b4813a27f3333b0f94429adfd331a2",
+      "permissions": {
+        "operations": [
+          "framework.scoreboard.set",
+          "framework.scoreboard.reset"
+        ],
+        "services": [
+          "plugin.neomega.players.get"
+        ],
+        "purposes": {
+          "service:plugin.neomega.players.get": "确认既有玩家身份，不用姓名或调用方输入伪造身份",
+          "operation:framework.scoreboard.set": "按服主绑定显式同步虚拟分数并保留原操作回执",
+          "operation:framework.scoreboard.reset": "按服主绑定显式同步虚拟分数并保留原操作回执",
+          "players:list": "同步前以稳定身份匹配当前玩家列表，拒绝离线或冲突身份并使用当前名称"
+        },
+        "players": [
+          "list"
+        ]
+      },
+      "permission_purposes": {
+        "service:plugin.neomega.players.get": "确认既有玩家身份，不用姓名或调用方输入伪造身份",
+        "operation:framework.scoreboard.set": "按服主绑定显式同步虚拟分数并保留原操作回执",
+        "operation:framework.scoreboard.reset": "按服主绑定显式同步虚拟分数并保留原操作回执",
+        "players:list": "同步前以稳定身份匹配当前玩家列表，拒绝离线或冲突身份并使用当前名称"
+      },
+      "description": "持久虚拟计分板、稳定分页排行及显式游戏分数同步。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "9b783b50803ab39a986711103a205fd9d106d4a7b83e75d4491941a2ed044ed8",
+        "size": 4102
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 8
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.players",
+          "major": 1,
+          "min_version": "1.0.0"
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/scores"
+      }
+    },
+    {
+      "plugin_id": "neomega.worldtools",
+      "version": "1.0.0",
+      "name": "世界工具与区域备份",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.worldtools-v1.0.0/neomega.worldtools-1.0.0.zip",
+      "sha256": "9fc2c499578bb08576dbb57a532c33e4546b896fe0328e2cb8eff9170f49c7e0",
+      "permissions": {
+        "operations": [
+          "framework.world.block.read",
+          "framework.world.structure.save",
+          "framework.world.structure.load",
+          "framework.world.bdx.export",
+          "framework.world.bdx.import_artifact",
+          "framework.world.command_block",
+          "framework.nbt.sign",
+          "framework.nbt.item",
+          "framework.nbt.item.enhanced",
+          "framework.nbt.container",
+          "framework.world.structure_block",
+          "framework.world.pick_block",
+          "framework.world.place_block",
+          "framework.world.held_on_block",
+          "framework.world.item_frame",
+          "framework.world.set_block",
+          "framework.world.region.read"
+        ],
+        "services": [
+          "plugin.fatalder.cloud-import.prepare",
+          "plugin.fatalder.cloud-import.status",
+          "plugin.fatalder.cloud-import.confirm",
+          "plugin.fatalder.cloud-import.pause",
+          "plugin.fatalder.cloud-import.resume",
+          "plugin.fatalder.cloud-import.cancel",
+          "plugin.fatalder.cloud-import.recover"
+        ],
+        "purposes": {
+          "operation:framework.world.block.read": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.structure.save": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.structure.load": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.bdx.export": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.bdx.import_artifact": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.command_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.nbt.sign": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.nbt.item": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.nbt.item.enhanced": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.nbt.container": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.structure_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.pick_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.place_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.held_on_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.item_frame": "按调用方已准备的有界世界任务执行，保留原操作回执",
+          "operation:framework.world.set_block": "按明确维度读写快照覆盖的空气与方块状态",
+          "operation:framework.world.region.read": "按明确维度读写快照覆盖的空气与方块状态",
+          "service:plugin.fatalder.cloud-import.prepare": "可选大型导入的报价、显式确认及原任务恢复",
+          "service:plugin.fatalder.cloud-import.status": "可选大型导入的报价、显式确认及原任务恢复",
+          "service:plugin.fatalder.cloud-import.confirm": "可选大型导入的报价、显式确认及原任务恢复",
+          "service:plugin.fatalder.cloud-import.pause": "可选大型导入的报价、显式确认及原任务恢复",
+          "service:plugin.fatalder.cloud-import.resume": "可选大型导入的报价、显式确认及原任务恢复",
+          "service:plugin.fatalder.cloud-import.cancel": "可选大型导入的报价、显式确认及原任务恢复",
+          "service:plugin.fatalder.cloud-import.recover": "可选大型导入的报价、显式确认及原任务恢复"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.world.block.read": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.structure.save": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.structure.load": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.bdx.export": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.bdx.import_artifact": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.command_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.nbt.sign": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.nbt.item": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.nbt.item.enhanced": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.nbt.container": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.structure_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.pick_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.place_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.held_on_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.item_frame": "按调用方已准备的有界世界任务执行，保留原操作回执",
+        "operation:framework.world.set_block": "按明确维度读写快照覆盖的空气与方块状态",
+        "operation:framework.world.region.read": "按明确维度读写快照覆盖的空气与方块状态",
+        "service:plugin.fatalder.cloud-import.prepare": "可选大型导入的报价、显式确认及原任务恢复",
+        "service:plugin.fatalder.cloud-import.status": "可选大型导入的报价、显式确认及原任务恢复",
+        "service:plugin.fatalder.cloud-import.confirm": "可选大型导入的报价、显式确认及原任务恢复",
+        "service:plugin.fatalder.cloud-import.pause": "可选大型导入的报价、显式确认及原任务恢复",
+        "service:plugin.fatalder.cloud-import.resume": "可选大型导入的报价、显式确认及原任务恢复",
+        "service:plugin.fatalder.cloud-import.cancel": "可选大型导入的报价、显式确认及原任务恢复",
+        "service:plugin.fatalder.cloud-import.recover": "可选大型导入的报价、显式确认及原任务恢复"
+      },
+      "description": "方块与NBT操作、区域复制、分块备份和恢复，提供持久进度及原操作回执。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "c6683e75763b2b173a8e22ffcaa22a06761da0fbc8d7e3a238f462cd08cfc68e",
+        "size": 7613
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 11
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.chunks",
+          "major": 1,
+          "min_version": "1.0.0"
+        },
+        {
+          "id": "fatalder.cloud-import",
+          "major": 1,
+          "min_version": "1.2.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
+        "path": "plugins/worldtools"
+      }
     }
   ]
 }
