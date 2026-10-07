@@ -2,6 +2,57 @@
   "schema_version": 1,
   "plugins": [
     {
+      "plugin_id": "community.daily-signin",
+      "version": "0.1.0",
+      "name": "每日签到",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.daily-signin-v0.1.0/community.daily-signin-0.1.0.zip",
+      "sha256": "1a784e82e98dcbcba8c7db55b08e7e0c50caa69b48752257c04dd482f2b28945",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.scoreboard.add"
+        ],
+        "services": [],
+        "players": [
+          "list"
+        ],
+        "purposes": {
+          "operation:framework.command.execute": "发送签到反馈、可选物品/管理员命令奖励和单次公告",
+          "operation:framework.scoreboard.add": "仅在配置开启时增加本人指定计分板奖励",
+          "players:list": "用当前观察名单的 UUID、XUID 与姓名校验聊天身份",
+          "event:chat.received": "接收本人签到、状态、历史与原回执查询"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "发送签到反馈、可选物品/管理员命令奖励和单次公告",
+        "operation:framework.scoreboard.add": "仅在配置开启时增加本人指定计分板奖励",
+        "players:list": "用当前观察名单的 UUID、XUID 与姓名校验聊天身份",
+        "event:chat.received": "接收本人签到、状态、历史与原回执查询"
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/daily-signin"
+      }
+    },
+    {
       "plugin_id": "example.go-state-darwin-amd64",
       "version": "1.0.0",
       "name": "Go 状态与事件服务 (darwin/amd64)",
