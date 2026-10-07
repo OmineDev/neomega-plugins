@@ -89,18 +89,15 @@
         "properties": {
           "request_key": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           },
           "job_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           },
           "control_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           }
         }
       },
@@ -121,18 +118,15 @@
         "properties": {
           "request_key": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           },
           "job_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           },
           "control_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           }
         }
       },
@@ -153,18 +147,15 @@
         "properties": {
           "request_key": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           },
           "job_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           },
           "control_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           }
         }
       },

@@ -230,8 +230,7 @@
           },
           "control_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           }
         }
       },
@@ -254,8 +253,7 @@
           },
           "control_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           }
         }
       },
@@ -278,8 +276,7 @@
           },
           "control_id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "pattern": "(?s)^.{1,128}$"
           }
         }
       },
