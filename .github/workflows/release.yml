@@ -28,8 +28,8 @@ jobs:
           fetch-depth: 0
       - name: Fetch pinned public SDK and checker
         run: |
-          curl --fail --location --proto '=https' --tlsv1.2 --output "$RUNNER_TEMP/neomega-toolkit.tar.gz" https://wiki.wuxie233.com/downloads/neomega-toolkit-1.1.0-linux-amd64.tar.gz
-          echo "1865efc93815c031cbe8f6a2cd353683868c0837f97c43dbd42c63a2495140ed  $RUNNER_TEMP/neomega-toolkit.tar.gz" | sha256sum --check
+          curl --fail --location --proto '=https' --tlsv1.2 --output "$RUNNER_TEMP/neomega-toolkit.tar.gz" https://wiki.wuxie233.com/downloads/neomega-toolkit-1.2.0-linux-amd64.tar.gz
+          echo "6a6329ddcffafd13e7f2ac47356e278870a2686d784d96e9446ecc67893e8871  $RUNNER_TEMP/neomega-toolkit.tar.gz" | sha256sum --check
           mkdir -p "$RUNNER_TEMP/neomega-toolkit"
           tar -xzf "$RUNNER_TEMP/neomega-toolkit.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/neomega-toolkit"
           (cd "$RUNNER_TEMP/neomega-toolkit" && sha256sum --check --quiet FILES.sha256)
