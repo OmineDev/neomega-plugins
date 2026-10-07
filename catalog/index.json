@@ -2,6 +2,54 @@
   "schema_version": 1,
   "plugins": [
     {
+      "plugin_id": "community.online-time",
+      "version": "0.1.0",
+      "name": "在线时长",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.online-time-v0.1.0/community.online-time-0.1.0.zip",
+      "sha256": "abae4fd7ee583bade5d9b04af6b389daef467bea7e658bce949ca140d2dfe4ed",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "operation:framework.command.execute": "发送本人查询、排行通知及管理员启用的阈值奖励",
+          "players:list": "观察玩家身份和在线变化、读取机器人名称以固定排除机器人 UUID",
+          "event:chat.received": "接收在线时长查询与可选排行命令"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "发送本人查询、排行通知及管理员启用的阈值奖励",
+        "players:list": "观察玩家身份和在线变化、读取机器人名称以固定排除机器人 UUID",
+        "event:chat.received": "接收在线时长查询与可选排行命令"
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/online-time"
+      }
+    },
+    {
       "plugin_id": "example.go-state-darwin-amd64",
       "version": "1.0.0",
       "name": "Go 状态与事件服务 (darwin/amd64)",
