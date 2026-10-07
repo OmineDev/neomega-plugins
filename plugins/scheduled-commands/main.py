@@ -1,5 +1,9 @@
 """Native scheduled commands; durable admission, never replay a world write."""
 import asyncio
+import base64
+import copy
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timedelta, timezone
 import re
@@ -128,6 +132,57 @@ class ScheduledCommands(Plugin):
             await tx.save()
         self.states[task_id] = state
 
+    async def hydrate_receipts(self, ctx, record):
+        """Read the complete original evidence; never downgrade a broken ref."""
+        hydrated = copy.deepcopy(record)
+        for action in hydrated['actions']:
+            ref = action.get('receipt_ref')
+            if ref is None:
+                continue  # Old inline receipts remain readable.
+            pieces = [await ctx.storage.get(ref['key'] + ':' + str(i))
+                      for i in range(ref['chunks'])]
+            raw = b''.join(base64.b64decode(piece, validate=True) for piece in pieces)
+            if len(raw) != ref['bytes'] or hashlib.sha256(raw).hexdigest() != ref['sha256']:
+                raise ValueError('scheduled receipt evidence integrity mismatch')
+            action['receipt'] = json.loads(raw)
+        return hydrated
+
+    async def persist_receipts(self, ctx, key, record):
+        """Caller holds installation lock. Write all chunks before publishing refs.
+
+        Original actions and all evidence versions are retained permanently.
+        Register each version in a durable chain before writing any chunk so a
+        stopped write remains discoverable, even if the next receipt changes.
+        """
+        saved = copy.deepcopy(record)
+        for index, action in enumerate(saved['actions']):
+            receipt = action.get('receipt')
+            if receipt is None:
+                continue
+            raw = json.dumps(receipt, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
+            digest = hashlib.sha256(raw).hexdigest()
+            prefix = 'evidence:' + hashlib.sha256((key + ':' + str(index)).encode()).hexdigest()
+            node_key = prefix + ':' + digest
+            # Base64 caps each JSON string at 43692 ASCII bytes. The SDK checks
+            # the complete transaction envelope, not just the command output.
+            chunks = [base64.b64encode(raw[i:i + 32768]).decode('ascii')
+                      for i in range(0, len(raw), 32768)]
+            tx = await ctx.storage.transaction(keys=[prefix, node_key])
+            if tx.get(node_key) is None:
+                tx.set(node_key, dict(next=tx.get(prefix), chunks=len(chunks),
+                                     bytes=len(raw), sha256=digest))
+                tx.set(prefix, node_key)
+                await tx.save()
+            for i, chunk in enumerate(chunks):
+                chunk_key = node_key + ':' + str(i)
+                tx = await ctx.storage.transaction(keys=[chunk_key])
+                if tx.get(chunk_key) != chunk:
+                    tx.set(chunk_key, chunk)
+                    await tx.save()
+            action['receipt_ref'] = dict(key=node_key, chunks=len(chunks), bytes=len(raw), sha256=digest)
+            action['receipt'] = None
+        return saved
+
     async def on_start(self, ctx):
         tasks = {task['id']: task for task in ctx.config.tasks}
         async with self.lock:
@@ -154,8 +209,10 @@ class ScheduledCommands(Plugin):
                 record = await ctx.storage.get(key)
                 if record is None:
                     raise RuntimeError('missing durable action record: ' + key)
-                updated = await recover_actions(ctx, record)
+                hydrated = await self.hydrate_receipts(ctx, record)
+                updated = await recover_actions(ctx, hydrated)
                 async with self.lock:
+                    updated = await self.persist_receipts(ctx, key, updated)
                     tx = await ctx.storage.transaction(keys=[key])
                     tx.set(key, updated)
                     await tx.save()
@@ -264,6 +321,7 @@ class ScheduledCommands(Plugin):
                 if record['state'] in ('unknown', 'partial') and key not in state['unresolved']:
                     state['unresolved'].append(key)
             async with self.lock:
+                record = await self.persist_receipts(ctx, key, record)
                 tx = await ctx.storage.transaction(keys=['task:' + task_id, key])
                 tx.set(key, record)
                 tx.set('task:' + task_id, state)
