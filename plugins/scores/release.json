@@ -1,0 +1,14 @@
+{
+  "name": "虚拟分数",
+  "description": "持久虚拟计分板、稳定分页排行及显式游戏分数同步。",
+  "files": [
+    "manifest.json",
+    "main.py",
+    "support.py",
+    "config.schema.json",
+    "config.example.json",
+    "README.md",
+    "LICENSE",
+    "example.py"
+  ]
+}

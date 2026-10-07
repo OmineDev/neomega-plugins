@@ -1,0 +1,7 @@
+{
+  "interval": 2.0,
+  "stale_after": 10.0,
+  "max_subscriptions": 128,
+  "event_capacity": 256,
+  "subscription_ttl": 60
+}

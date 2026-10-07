@@ -1,0 +1,143 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.messaging",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 2,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [
+      "plugin.neomega.roles.check",
+      "plugin.neomega.cbbridge.register",
+      "plugin.neomega.cbbridge.subscribe",
+      "plugin.neomega.cbbridge.poll",
+      "plugin.neomega.cbbridge.unregister"
+    ],
+    "purposes": {
+      "operation:framework.command.execute": "向游戏发送群消息及执行已配置且经角色鉴权的固定管理命令",
+      "players:list": "核实转发玩家聊天的身份",
+      "event:chat.received": "把玩家聊天转发到已配置群",
+      "service:plugin.neomega.roles.check": "对外部管理命令检查角色能力，依赖不可用时拒绝执行",
+      "service:plugin.neomega.cbbridge.register": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+      "service:plugin.neomega.cbbridge.subscribe": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+      "service:plugin.neomega.cbbridge.poll": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份",
+      "service:plugin.neomega.cbbridge.unregister": "读取显式配置前缀的非可信命令方块文本并转发到群；不授予管理命令身份"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.roles",
+      "major": 1,
+      "min_version": "1.0.0",
+      "optional": true
+    },
+    {
+      "id": "neomega.cbbridge",
+      "major": 1,
+      "min_version": "1.0.0",
+      "optional": true
+    }
+  ],
+  "exports": [
+    {
+      "name": "send",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "route_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "route_id",
+          "text",
+          "request_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "routes",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "status",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "delivery_id": {
+            "type": "string"
+          }
+        },
+        "required": []
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "subscribe",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": []
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

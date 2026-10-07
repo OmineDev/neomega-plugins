@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "neomega-midi"
+version = "1.0.0"
+description = "Bounded MIDI parsing and Bedrock note mapping"
+requires-python = ">=3.10"
+license = {text = "AGPL-3.0-only"}
+[tool.setuptools]
+packages = ["neomega_midi"]
+package-dir = {neomega_midi = "."}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "abi": "py3-none-any",
+  "libraries": [
+    {
+      "name": "neomega_midi",
+      "version": "1.0.0",
+      "license": "AGPL-3.0-only",
+      "files": {
+        "LICENSE": "6f1e622c82a380075843bb084a7ec3b1f1d12a4a02526d75e78b0924a860aa75",
+        "README.md": "89faed58c441206b1e7c45e1b9cd43af3c0b41ff279257947fa655ad925f6b41",
+        "__init__.py": "7468aa2b87bc899ae18e28382cd53fd72e56bcea6202bfc772265748222c2e63"
+      }
+    }
+  ]
+}

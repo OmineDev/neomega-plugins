@@ -1,0 +1,81 @@
+{
+  "manifest_version": 1,
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "id": "neomega.chunks",
+  "permissions": {
+    "operations": [
+      "framework.world.subchunk.request"
+    ],
+    "services": [],
+    "purposes": {
+      "operation:framework.world.subchunk.request": "按调用方已准备的有界世界任务执行，保留原操作回执"
+    }
+  },
+  "dependencies": [],
+  "exports": [
+    {
+      "name": "request",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "read",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "cancel",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "subscribe",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "poll",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

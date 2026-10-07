@@ -1,0 +1,13 @@
+{
+  "name": "玩家档案与身份服务",
+  "description": "可信玩家身份、离线名称历史和按插件隔离的持久字段，支持修订校验与幂等更新。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "example.py"
+  ]
+}

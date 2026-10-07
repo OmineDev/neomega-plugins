@@ -6,12 +6,17 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import zipfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from library_bundle import bundled_files
 
 
 def validate(root):
     root = Path(root)
     meta = json.loads((root / 'release.json').read_text())
     names = meta['files']
+    if 'description' in meta and (not isinstance(meta['description'], str) or len(meta['description']) > 2000):
+        raise ValueError('description must be a string of at most 2000 characters')
     if not isinstance(meta.get('name'), str) or not meta['name'].strip():
         raise ValueError('release name is required')
     if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names):
@@ -35,6 +40,10 @@ def validate(root):
             raise ValueError('missing packaged file: ' + name)
     if not {'manifest.json', 'config.schema.json', 'README.md', 'LICENSE'} <= set(names):
         raise ValueError('manifest, schema, README and LICENSE must be packaged')
+    readme = (root / 'README.md').read_bytes()
+    if len(readme) > 256 * 1024:
+        raise ValueError('README exceeds 256 KiB')
+    readme.decode('utf-8')
     manifest = json.loads((root / 'manifest.json').read_text())
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', manifest['id']):
         raise ValueError('invalid plugin ID')
@@ -52,15 +61,27 @@ def validate(root):
     if not isinstance(purposes, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in purposes.items()):
         raise ValueError('permission purposes must be a string map')
     required = []
-    for field, prefix in [('operations', 'operation'), ('services', 'service'), ('players', 'players'), ('packet_send_ids', 'packet_send')]:
+    for field, prefix in [('operations', 'operation'), ('services', 'service'), ('players', 'players'), ('packet_send_ids', 'packet_send'), ('packet_observe_ids', 'packet_observe')]:
         values = permissions.get(field, [])
         if not isinstance(values, list):
             raise ValueError('permission lists required')
+        if field in {'packet_send_ids', 'packet_observe_ids'} and any(type(value) is not int or not 0 <= value <= 0xffffffff for value in values):
+            raise ValueError('packet permission IDs must be uint32')
         required.extend(f'{prefix}:{value}' for value in values)
     required.extend('event:' + sub['kind'] for sub in manifest.get('subscriptions', []))
     for permission in required:
         if not isinstance(purposes.get(permission), str) or not purposes[permission].strip():
             raise ValueError('missing permission purpose: ' + permission)
+    for lock_name in (name for name in names if PurePosixPath(name).name == 'wheels.lock.json'):
+        wheel_lock = json.loads((root / lock_name).read_text())
+        prefix = PurePosixPath(lock_name).parent
+        for relative, expected in wheel_lock['files'].items():
+            file_name = str(prefix / relative)
+            if file_name not in names or hashlib.sha256((root / file_name).read_bytes()).hexdigest() != expected:
+                raise ValueError('wheel lock differs from packaged source: ' + file_name)
+        if wheel_lock['platform'] != 'any' and (not manifest.get('target_os') or not manifest.get('target_arch')):
+            raise ValueError('native wheel requires explicit manifest target_os and target_arch')
+    bundled_files(root, meta)
     return meta, manifest
 
 
@@ -70,12 +91,17 @@ def build(root, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Preserve explicit ordering so existing released packages retain their hashes.
     with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for name in meta['files']:
+        files = {name: (Path(root) / name).read_bytes() for name in meta['files']}
+        for name, raw in bundled_files(root, meta).items():
+            if name in files:
+                raise ValueError('bundled library overwrites plugin file: ' + name)
+            files[name] = raw
+        for name, raw in files.items():
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = 3
             info.external_attr = 0o100644 << 16
-            archive.writestr(info, (Path(root) / name).read_bytes())
+            archive.writestr(info, raw)
     if destination.stat().st_size > 32 << 20:
         destination.unlink()
         raise ValueError('package exceeds 32 MiB')

@@ -1,0 +1,167 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.players",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [],
+    "players": [
+      "list"
+    ],
+    "services": [],
+    "purposes": {
+      "players:list": "从Host可信玩家列表维护身份和历史名称"
+    }
+  },
+  "dependencies": [],
+  "exports": [
+    {
+      "name": "resolve",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "xuid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "get",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "history",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "patch",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "fields": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "player_id",
+          "request_id",
+          "expected_revision",
+          "fields"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "query",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "export",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "currencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "coin"
+      ]
+    },
+    "allowed_callers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "mint_callers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "additionalProperties": false
+}

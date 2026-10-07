@@ -1,0 +1,43 @@
+{
+  "manifest_version": 1,
+  "id": "example.prerequisite-suite",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": false,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [],
+    "services": [
+      "plugin.neomega.players.query",
+      "plugin.neomega.scheduler.query"
+    ],
+    "purposes": {
+      "service:plugin.neomega.players.query": "只读检查前置服务连接与当前消费者数据",
+      "service:plugin.neomega.scheduler.query": "只读检查前置服务连接与当前消费者数据"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.players",
+      "major": 1,
+      "min_version": "1.0.0"
+    },
+    {
+      "id": "neomega.scheduler",
+      "major": 1,
+      "min_version": "1.0.0"
+    }
+  ],
+  "exports": []
+}

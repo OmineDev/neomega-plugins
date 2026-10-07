@@ -1,0 +1,18 @@
+{
+  "source_id": "neomega-display",
+  "repository": null,
+  "ref": "sha256:e3daddc03ffa161eafb99415b495677461b34e67469d9ac4c2983a07afe9d31b",
+  "path": "python/neomega_display",
+  "source_sha256": "e3daddc03ffa161eafb99415b495677461b34e67469d9ac4c2983a07afe9d31b",
+  "version": "1.1.0",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "__init__.py",
+    "client.py",
+    "docs/profile.md",
+    "py.typed",
+    "types.py"
+  ],
+  "note": "Explicit canonical-source snapshot; digest covers sorted name NUL bytes NUL."
+}

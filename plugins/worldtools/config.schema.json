@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "max_tasks": {
+      "type": "integer",
+      "default": 256
+    },
+    "max_blocks": {
+      "type": "integer",
+      "default": 262144
+    },
+    "max_steps": {
+      "type": "integer",
+      "default": 1024
+    },
+    "max_state_bytes": {
+      "type": "integer",
+      "default": 33554432
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

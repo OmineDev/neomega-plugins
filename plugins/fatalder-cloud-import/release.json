@@ -10,6 +10,10 @@
     "fatalder_plugin/controller.py",
     "fatalder_plugin/operator.py",
     "fatalder_plugin/settings.py",
-    "fatalder_plugin/build_defaults.json"
-  ]
+    "fatalder_plugin/build_defaults.json",
+    "fatalder_plugin/services.py",
+    "config.example.json",
+    "fatalder_plugin/durable.py"
+  ],
+  "description": "查看建筑导入报价，明确确认后由 Fatalder Worker 建造；支持可信插件调用与任务恢复。"
 }

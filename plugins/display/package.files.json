@@ -1,0 +1,13 @@
+[
+  "LICENSE",
+  "README.md",
+  "config.example.json",
+  "config.schema.json",
+  "display_provider/__init__.py",
+  "display_provider/channels.py",
+  "display_provider/profile.py",
+  "display_provider/provider.py",
+  "docs/profile.md",
+  "main.py",
+  "manifest.json"
+]

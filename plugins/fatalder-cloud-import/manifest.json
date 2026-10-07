@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
   "id": "fatalder.cloud-import",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "host_api": {
     "major": 1,
-    "min_minor": 2
+    "min_minor": 8
   },
   "worker_protocol": {
     "major": 1,
@@ -45,5 +45,76 @@
     }
   },
   "dependencies": [],
-  "exports": []
+  "exports": [
+    {
+      "name": "prepare",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "status",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "confirm",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pause",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "resume",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "cancel",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "recover",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
 }

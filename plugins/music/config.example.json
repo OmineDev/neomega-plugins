@@ -1,0 +1,7 @@
+{
+  "sounds_per_second": 40,
+  "max_playbacks": 16,
+  "max_targets": 16,
+  "history_limit": 128,
+  "max_lateness": 0.25
+}

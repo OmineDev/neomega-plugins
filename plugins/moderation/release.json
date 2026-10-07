@@ -1,0 +1,13 @@
+{
+  "name": "封禁管理",
+  "description": "统一永久、临时与离线封禁，绝对时间到期、上线后踢出和可查询的执行回执。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "examples.py"
+  ]
+}

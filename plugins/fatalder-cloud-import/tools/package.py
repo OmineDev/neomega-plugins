@@ -1,14 +1,13 @@
 """Build an installable plugin ZIP from an explicit source allowlist."""
 import argparse
+import json
 from pathlib import Path
 import zipfile
 
 
 def build(destination):
     root = Path(__file__).resolve().parents[1]
-    names = ['manifest.json', 'main.py', 'config.schema.json', 'README.md', 'LICENSE']
-    names += [str(p.relative_to(root)) for p in sorted((root / 'fatalder_plugin').glob('*.py'))]
-    names += ['fatalder_plugin/build_defaults.json']
+    names = json.loads((root / 'release.json').read_text())['files']
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:

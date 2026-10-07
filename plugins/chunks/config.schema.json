@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "max_requests": {
+      "type": "integer",
+      "default": 128
+    },
+    "max_subscriptions": {
+      "type": "integer",
+      "default": 128
+    },
+    "cache_seconds": {
+      "type": "number",
+      "default": 30.0
+    },
+    "observe_timeout": {
+      "type": "number",
+      "default": 15.0
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

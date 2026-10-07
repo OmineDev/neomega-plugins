@@ -11,6 +11,7 @@ import threading
 from urllib.parse import quote
 
 from .operator import _target
+from .durable import save as durable_save, recover_barrier, barrier
 from .client import WorkerError
 
 STATE = 'fatalder.controller'
@@ -38,6 +39,7 @@ class Controller:
         self.maintenance_token = None
         self.control_tasks = set()
         self.active_controls = 0
+        self.persistence_error = False
 
     async def maintenance(self, request):
         operation, token = request.get('operation'), request.get('token')
@@ -46,7 +48,7 @@ class Controller:
         # The lock check and seal contain no await: one atomic event-loop turn.
         # Do not acquire an unlocked asyncio.Lock here: queued waiters may own
         # its next turn, which would make maintenance wait behind business I/O.
-        if self.lock.locked():
+        if self.persistence_error or barrier(self.ctx).exists() or self.lock.locked():
             return {'status': 'busy', 'token': token}
         if operation == 'release':
             if self.maintenance_token not in (None, token):
@@ -68,6 +70,7 @@ class Controller:
 
 
     async def start(self):
+        await recover_barrier(self.ctx)
         self.state = await self.ctx.storage.get(STATE, {})
         if self.state and self.state.get('binding') != self.binding():
             raise ValueError('active slot configuration binding changed')
@@ -82,9 +85,18 @@ class Controller:
         self.stopped.set()
 
     async def save(self):
-        tx = await self.ctx.storage.transaction()
-        tx.set(STATE, self.state)
-        await tx.save()
+        if self.persistence_error:
+            raise RuntimeError('controller persistence unresolved; reload required')
+        try:
+            commit_id = 'fatalder_state_' + secrets.token_hex(16)
+            tx = await self.ctx.storage.transaction(commit_id=commit_id)
+            tx.set(STATE, self.state)
+            await durable_save(self.ctx, tx, commit_id)
+        except BaseException:
+            # Do not create another transaction/CAS from uncommitted memory.
+            # A restart loads the authoritative persisted slot before observation.
+            self.persistence_error = True
+            raise
 
     def path(self, suffix=''):
         return '/v2/jobs/' + quote(self.state['job_id'], safe='') + suffix
@@ -98,11 +110,11 @@ class Controller:
         tx.action(self.ctx.commands.prepare(
             'tellraw ' + _target(name) + ' ' + json.dumps({'rawtext': [{'text': message}]}, ensure_ascii=False),
             idempotency_key=key, deadline=(now() + timedelta(seconds=30)).isoformat()))
-        await tx.save()
+        await durable_save(self.ctx, tx, key)
 
     async def handle(self, event):
         async with self.lock:
-            if self.maintenance_token:
+            if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
                 return
             body = event.payload.get('payload', {})
             message, name = body.get('message', ''), body.get('player', '')
@@ -119,7 +131,7 @@ class Controller:
             token = event.payload['delivery_token']
             tx = await event.transaction(commit_id='fatalder_chat_' + hashlib.sha256(token.encode()).hexdigest())
             tx.set('fatalder.last_chat', token)
-            await tx.save()
+            await durable_save(self.ctx, tx, 'fatalder_chat_' + hashlib.sha256(token.encode()).hexdigest())
             try:
                 await self._command(name, shlex.split(message)[1:])
             except asyncio.CancelledError:
@@ -146,7 +158,7 @@ class Controller:
 
     async def command(self, name, args):
         async with self.lock:
-            if self.maintenance_token:
+            if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
                 return
             await self._command(name, args)
 
@@ -155,6 +167,10 @@ class Controller:
             await self.tell(name, '!导入 列表 | 文件名 x y z overworld/nether/the_end | 确认 token | 状态 | 暂停 | 继续 | 取消 | 恢复 | 核查 | 确认核查 token')
             return
         action = args[0]
+        if self.state.get('service') and action not in ('列表', '状态'):
+            controls = ('暂停', '继续', '取消', '恢复', '确认', '核查', '确认核查')
+            if (action in controls or self.state.get('phase') not in TERMINAL or self.state.get('lease')):
+                raise ValueError('service-owned slot; use owning installation')
         if action == '列表':
             names = sorted(p.name for p in self.files_root().iterdir() if p.is_file() and not p.is_symlink())
             await self.tell(name, '可用建筑：' + '、'.join(names[:40]))
@@ -201,10 +217,15 @@ class Controller:
                 self.spawn_control({'暂停': 'pause', '继续': 'resume', '取消': 'cancel'}[action], {}, name='fatalder-control')
             await self.tell(name, '已提交请求；最终状态以 !导入 状态 为准。')
             return
+        await self.prepare_import(name, args)
+        await self.show_quote(name)
+
+    async def prepare_import(self, owner, args, service_record=None, service_history=None):
         if len(args) != 5:
             raise ValueError('expected file x y z dimension')
         if self.state and (self.state.get('phase') not in TERMINAL or self.state.get('lease')):
             raise ValueError('import slot occupied')
+        action = args[0]
         path = self.source_path(action)
         xyz = [int(value) for value in args[1:4]]
         if any(abs(v) > 30000000 for v in xyz) or args[4] not in ('overworld', 'nether', 'the_end'):
@@ -222,16 +243,25 @@ class Controller:
         build = json.loads(Path(__file__).with_name('build_defaults.json').read_text())
         build.update(source=ref, source_name=source_name,
             start_position=dict(zip(('x', 'y', 'z'), xyz)), dimension_name=args[4])
-        self.state = dict(binding=self.binding(), phase='prepare_pending', owner=name, cursor=0, prepare=dict(version=5,
+        history = service_history if service_history is not None else dict(self.state.get('service_history', {}))
+        if service_history is None and self.state.get('service'):
+            from .services import ServiceAdapter
+            previous = self.state['service']
+            ident = hashlib.sha256((previous['owner'] + '\0' + previous['request_key']).encode()).hexdigest()
+            history[ident] = dict(fingerprint=previous['fingerprint'], result=ServiceAdapter.public(self.state))
+        if len(history) >= 256:
+            raise ValueError('retained service request limit')
+        self.state = dict(service_history=history, binding=self.binding(), phase='prepare_pending', owner=owner, cursor=0, prepare=dict(version=5,
             idempotency_key=secrets.token_hex(16), spec=dict(display_name=source_name,
                 managed_operator=True,
                 operator_cleanup_policy='revoke' if self.ctx.config.revoke_operator_on_completion else 'retain',
                 target=dict(server_id=self.ctx.config.target_server_id,
                     rental_server_code=self.ctx.config.rental_server_code, account_source='service_center'),
                 tasks=[dict(task_key='import', kind='build', build=build)])))
+        if service_record is not None:
+            self.state['service'] = service_record
         await self.save()
         await self.prepare()
-        await self.show_quote(name)
 
     async def prepare(self):
         response = await self.request('POST', '/v2/jobs/prepare', self.state['prepare'])
@@ -250,7 +280,7 @@ class Controller:
 
     async def run_control(self, action, body):
         async with self.lock:
-            if self.maintenance_token:
+            if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
                 return
             self.active_controls += 1
         try:
@@ -280,7 +310,7 @@ class Controller:
             return
         try:
             async with self.lock:
-                if self.maintenance_token:
+                if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
                     return
                 job = await self.request('GET', self.path())
                 if job['state'] == 'READY' and self.state.get('quote') and not self.state.get('start'):
@@ -459,7 +489,7 @@ class Controller:
             {k: snapshot[k] for k in ('session_id', 'attempt_id', 'phase')})
 
     async def read_events(self, job_id):
-        if self.maintenance_token:
+        if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
             return
         iterator = self.client.events(job_id, self.state.get('cursor', 0), self.stopped)
         try:
@@ -468,7 +498,7 @@ class Controller:
                 if event is None:
                     break
                 async with self.lock:
-                    if self.maintenance_token:
+                    if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
                         return
                     if self.state.get('job_id') != job_id:
                         break

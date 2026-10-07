@@ -1,0 +1,230 @@
+{
+  "manifest_version": 1,
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 9
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "id": "neomega.worldtools",
+  "permissions": {
+    "operations": [
+      "framework.world.block.read",
+      "framework.world.structure.save",
+      "framework.world.structure.load",
+      "framework.world.bdx.export",
+      "framework.world.bdx.import_artifact",
+      "framework.world.command_block",
+      "framework.nbt.sign",
+      "framework.nbt.item",
+      "framework.nbt.item.enhanced",
+      "framework.nbt.container",
+      "framework.world.structure_block",
+      "framework.world.pick_block",
+      "framework.world.place_block",
+      "framework.world.held_on_block",
+      "framework.world.item_frame",
+      "framework.world.set_block",
+      "framework.world.region.read"
+    ],
+    "services": [
+      "plugin.fatalder.cloud-import.prepare",
+      "plugin.fatalder.cloud-import.status",
+      "plugin.fatalder.cloud-import.confirm",
+      "plugin.fatalder.cloud-import.pause",
+      "plugin.fatalder.cloud-import.resume",
+      "plugin.fatalder.cloud-import.cancel",
+      "plugin.fatalder.cloud-import.recover"
+    ],
+    "purposes": {
+      "operation:framework.world.block.read": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.structure.save": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.structure.load": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.bdx.export": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.bdx.import_artifact": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.command_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.nbt.sign": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.nbt.item": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.nbt.item.enhanced": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.nbt.container": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.structure_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.pick_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.place_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.held_on_block": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.item_frame": "按调用方已准备的有界世界任务执行，保留原操作回执",
+      "operation:framework.world.set_block": "按明确维度读写快照覆盖的空气与方块状态",
+      "operation:framework.world.region.read": "按明确维度读写快照覆盖的空气与方块状态",
+      "service:plugin.fatalder.cloud-import.prepare": "可选大型导入的报价、显式确认及原任务恢复",
+      "service:plugin.fatalder.cloud-import.status": "可选大型导入的报价、显式确认及原任务恢复",
+      "service:plugin.fatalder.cloud-import.confirm": "可选大型导入的报价、显式确认及原任务恢复",
+      "service:plugin.fatalder.cloud-import.pause": "可选大型导入的报价、显式确认及原任务恢复",
+      "service:plugin.fatalder.cloud-import.resume": "可选大型导入的报价、显式确认及原任务恢复",
+      "service:plugin.fatalder.cloud-import.cancel": "可选大型导入的报价、显式确认及原任务恢复",
+      "service:plugin.fatalder.cloud-import.recover": "可选大型导入的报价、显式确认及原任务恢复"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.chunks",
+      "major": 1,
+      "min_version": "1.0.0"
+    },
+    {
+      "id": "fatalder.cloud-import",
+      "major": 1,
+      "min_version": "1.1.0",
+      "optional": true
+    }
+  ],
+  "exports": [
+    {
+      "name": "inspect",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "prepare",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "execute",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "status",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "cancel",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "resume",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "fatalder_prepare",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "fatalder_status",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "fatalder_confirm",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "fatalder_pause",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "fatalder_resume",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "fatalder_cancel",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "fatalder_recover",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "snapshot",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

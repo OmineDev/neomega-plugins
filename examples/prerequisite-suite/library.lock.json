@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "abi": "py3-none-any",
+  "libraries": [
+    {
+      "name": "neomega_clients",
+      "version": "1.0.0",
+      "license": "MIT",
+      "files": {
+        "LICENSE": "ad4d2d600a26b8eb588d31b9479b7bd55fac3051df91ea63142bad8f3c5f5b78",
+        "__init__.py": "5181370f1fc12427034f94920364cd309e0b1a842a55a368f4584b9aa00b78af",
+        "clients.py": "b9013ae2b2fa9fc027c6d881cba40a1a8a7998d912412ebbb9778d7b2c2bf943",
+        "models.py": "e2b1d0f1a0907986c7b64f7cd35f9a6993313efd5526f90793018729a5ff25b2",
+        "py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "poll_seconds": {
+      "type": "number",
+      "default": 60.0,
+      "minimum": 10
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

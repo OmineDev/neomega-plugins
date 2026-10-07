@@ -1,0 +1,6 @@
+{
+  "writer_installations": [],
+  "enforce": true,
+  "poll_seconds": 5,
+  "max_players": 256
+}

@@ -82,10 +82,13 @@ class PrepareReleaseTests(unittest.TestCase):
             shutil.copytree(ROOT / 'plugins', root / 'plugins')
             shutil.copytree(ROOT / 'catalog', root / 'catalog')
             with patch.object(prepare, 'ROOT', root):
-                with self.assertRaisesRegex(ValueError, 'already catalogued'):
-                    prepare.prepare('fatalder-cloud-import', root / 'out')
                 manifest_path = root / 'plugins/fatalder-cloud-import/manifest.json'
                 manifest = json.loads(manifest_path.read_text())
+                catalog = json.loads((root / 'catalog/index.json').read_text())
+                manifest['version'] = next(entry['version'] for entry in reversed(catalog['plugins']) if entry['plugin_id'] == manifest['id'])
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, 'already catalogued'):
+                    prepare.prepare('fatalder-cloud-import', root / 'out')
                 manifest['version'] = '1.0.5'
                 manifest_path.write_text(json.dumps(manifest))
                 prepare.prepare('fatalder-cloud-import', root / 'out')

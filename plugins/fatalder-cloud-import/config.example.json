@@ -1,0 +1,10 @@
+{
+  "worker_url": "https://worker.example.com",
+  "api_key": "secret:fatalder_api_key",
+  "target_server_id": "example",
+  "rental_server_code": "123456",
+  "admin_uuids": [
+    "00000000-0000-4000-8000-000000000001"
+  ],
+  "service_installation_ids": []
+}

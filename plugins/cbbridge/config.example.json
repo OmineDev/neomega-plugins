@@ -1,0 +1,7 @@
+{
+  "max_routes": 128,
+  "lease_seconds": 60,
+  "queue_capacity": 128,
+  "messages_per_second": 20,
+  "max_message_bytes": 2048
+}

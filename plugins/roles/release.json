@@ -1,0 +1,14 @@
+{
+  "name": "角色权限",
+  "description": "按调用插件隔离的业务角色、到期授权与作用域权限判断。",
+  "files": [
+    "manifest.json",
+    "main.py",
+    "support.py",
+    "config.schema.json",
+    "config.example.json",
+    "README.md",
+    "LICENSE",
+    "example.py"
+  ]
+}

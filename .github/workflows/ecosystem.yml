@@ -1,0 +1,32 @@
+name: Build complete prerequisite ecosystem
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'plugins/**'
+      - 'libraries/**'
+      - 'tools/**'
+      - '.github/workflows/ecosystem.yml'
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Existing packaging checks
+        run: python3 -m unittest discover -s tests
+      - name: Build every fixed local artifact
+        run: python3 tools/bundle-ecosystem.py --output dist/ecosystem
+      - name: Check reproducible artifact bytes
+        run: |
+          python3 tools/bundle-ecosystem.py --output dist/ecosystem-repeat
+          diff dist/ecosystem/SHA256SUMS dist/ecosystem-repeat/SHA256SUMS
+          (cd dist/ecosystem && sha256sum --check SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: complete-prerequisite-ecosystem
+          path: dist/ecosystem/

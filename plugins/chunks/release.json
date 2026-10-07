@@ -1,0 +1,13 @@
+{
+  "name": "共享区块服务",
+  "description": "共享主动区块请求、验证缓存、逐格读取与有期限订阅。",
+  "files": [
+    "manifest.json",
+    "main.py",
+    "config.schema.json",
+    "config.example.json",
+    "README.md",
+    "LICENSE",
+    "examples.py"
+  ]
+}

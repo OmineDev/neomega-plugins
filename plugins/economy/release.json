@@ -1,0 +1,13 @@
+{
+  "name": "经济账本",
+  "description": "多货币整数余额、原子转账、冻结释放及可追溯流水。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "consumer.py"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "observation_interval": {
+      "type": "number",
+      "default": 30.0
+    },
+    "max_players": {
+      "type": "integer",
+      "default": 16384
+    },
+    "max_names": {
+      "type": "integer",
+      "default": 64
+    },
+    "max_field_bytes": {
+      "type": "integer",
+      "default": 16384
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

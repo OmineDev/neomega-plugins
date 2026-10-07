@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "shared_namespaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "readers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "writers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "name",
+          "owner"
+        ],
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "sync_bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "objective": {
+            "type": "string"
+          },
+          "game_objective": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "namespace",
+          "objective",
+          "game_objective"
+        ],
+        "additionalProperties": false
+      },
+      "default": []
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

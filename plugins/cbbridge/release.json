@@ -1,0 +1,14 @@
+{
+  "name": "命令方块通信",
+  "description": "将命令方块系统文本分发给有租约的前缀路由，支持优先级、消费、限速与丢失诊断。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "consumer.py",
+    "setup.mcfunction"
+  ]
+}

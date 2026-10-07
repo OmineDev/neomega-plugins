@@ -1,0 +1,6 @@
+{
+  "max_tasks": 256,
+  "max_blocks": 262144,
+  "max_steps": 1024,
+  "max_state_bytes": 33554432
+}

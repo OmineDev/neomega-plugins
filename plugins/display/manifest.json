@@ -1,0 +1,411 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.display",
+  "version": "1.1.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "services": []
+  },
+  "dependencies": [],
+  "exports": [
+    {
+      "name": "describe",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "create",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "object_key": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          },
+          "anchor": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "dimension": {
+                "type": "string"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "dimension",
+              "x",
+              "y",
+              "z"
+            ]
+          },
+          "scale": {
+            "type": "number"
+          },
+          "motion": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "degrees_per_second": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ]
+          },
+          "ttl_seconds": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "request_id",
+          "object_key",
+          "profile",
+          "item",
+          "anchor",
+          "scale",
+          "motion",
+          "ttl_seconds"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "get",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "object_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": []
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "update",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "object_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          },
+          "anchor": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "dimension": {
+                "type": "string"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "dimension",
+              "x",
+              "y",
+              "z"
+            ]
+          },
+          "scale": {
+            "type": "number"
+          },
+          "motion": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "degrees_per_second": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ]
+          },
+          "ttl_seconds": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "request_id",
+          "object_id",
+          "revision",
+          "profile",
+          "item",
+          "anchor",
+          "scale",
+          "motion",
+          "ttl_seconds"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "renew",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "object_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "ttl_seconds": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "request_id",
+          "object_id",
+          "revision",
+          "ttl_seconds"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "close",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "object_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "object_id",
+          "revision"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "channel_acquire",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "player": {
+            "type": "string"
+          },
+          "channel": {
+            "enum": [
+              "actionbar",
+              "title"
+            ],
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "ttl_seconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 60
+          }
+        },
+        "required": [
+          "request_id",
+          "player",
+          "channel",
+          "text",
+          "priority",
+          "ttl_seconds"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "channel_renew",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "lease_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ttl_seconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 60
+          }
+        },
+        "required": [
+          "request_id",
+          "lease_id",
+          "revision",
+          "ttl_seconds"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "channel_release",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "lease_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "request_id",
+          "lease_id",
+          "revision"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "channel_get",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lease_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lease_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

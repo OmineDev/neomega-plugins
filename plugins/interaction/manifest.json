@@ -1,0 +1,239 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.interaction",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 5
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    },
+    {
+      "name": "leave",
+      "kind": "player.list_removed",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [
+      "plugin.neomega.display.channel_acquire",
+      "plugin.neomega.roles.check",
+      "plugin.neomega.players.resolve"
+    ],
+    "packet_observe_ids": [
+      9
+    ],
+    "purposes": {
+      "packet_observe:9": "仅观察雪球命令方块文本预览；敏感选择由真实聊天确认"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.display",
+      "major": 1,
+      "min_version": "1.1.0"
+    },
+    {
+      "id": "neomega.roles",
+      "major": 1,
+      "min_version": "1.0.0",
+      "optional": true
+    },
+    {
+      "id": "neomega.players",
+      "major": 1,
+      "min_version": "1.0.0",
+      "optional": true
+    }
+  ],
+  "exports": [
+    {
+      "name": "register",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "menu_id": {
+            "type": "string"
+          },
+          "menu": {
+            "type": "object"
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 3600
+          }
+        },
+        "required": [
+          "request_id",
+          "menu_id",
+          "menu"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "unregister",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "menu_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "menu_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "open",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "menu_id": {
+            "type": "string"
+          },
+          "player": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "uuid": {
+                "type": "string"
+              },
+              "xuid": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "request_id",
+          "menu_id",
+          "player"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "respond",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "session_id",
+          "expected_revision",
+          "value"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "cancel",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "status",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": []
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

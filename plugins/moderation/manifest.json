@@ -1,0 +1,156 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.moderation",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "services": [
+      "plugin.neomega.players.resolve",
+      "plugin.neomega.scheduler.schedule",
+      "plugin.neomega.scheduler.query",
+      "plugin.neomega.scheduler.claim",
+      "plugin.neomega.scheduler.ack"
+    ],
+    "players": [
+      "list"
+    ],
+    "purposes": {
+      "players:list": "将离线封禁对应到当前在线的稳定玩家身份",
+      "operation:framework.command.execute": "对生效的封禁玩家发送踢出命令",
+      "service:plugin.neomega.players.resolve": "解析玩家身份并管理封禁到期任务",
+      "service:plugin.neomega.scheduler.schedule": "解析玩家身份并管理封禁到期任务",
+      "service:plugin.neomega.scheduler.query": "解析玩家身份并管理封禁到期任务",
+      "service:plugin.neomega.scheduler.claim": "解析玩家身份并管理封禁到期任务",
+      "service:plugin.neomega.scheduler.ack": "解析玩家身份并管理封禁到期任务"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.players",
+      "major": 1,
+      "min_version": "1.0.0"
+    },
+    {
+      "id": "neomega.scheduler",
+      "major": 1,
+      "min_version": "1.0.0"
+    }
+  ],
+  "exports": [
+    {
+      "name": "ban",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "player_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "player_id",
+          "expected_revision"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "unban",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "player_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "player_id",
+          "expected_revision"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "check",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "player_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "list",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": []
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

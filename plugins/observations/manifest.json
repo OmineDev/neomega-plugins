@@ -1,0 +1,258 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.observations",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [
+      "framework.entities.query",
+      "framework.self.inventory.observe"
+    ],
+    "services": [],
+    "packet_observe_ids": [
+      27,
+      45,
+      10
+    ],
+    "purposes": {
+      "operation:framework.entities.query": "只读采样共享缓存；不执行世界写入",
+      "operation:framework.self.inventory.observe": "只读采样共享缓存；不执行世界写入",
+      "packet_observe:27": "读取协议可见观察；前缀与实体编号不代表玩家认证",
+      "packet_observe:45": "读取协议可见观察；前缀与实体编号不代表玩家认证",
+      "packet_observe:10": "读取协议可见观察；前缀与实体编号不代表玩家认证"
+    }
+  },
+  "dependencies": [],
+  "exports": [
+    {
+      "name": "subscribe",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "player": {
+            "type": "string"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "snapshot",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "player": {
+            "type": "string"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "refresh",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "player": {
+            "type": "string"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "status",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "player": {
+            "type": "string"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "poll",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "player": {
+            "type": "string"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "subscription_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "unsubscribe",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "player": {
+            "type": "string"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "subscription_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "read",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8192
+          }
+        },
+        "required": [
+          "kind",
+          "sequence"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

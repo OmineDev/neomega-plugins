@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "default": "group"
+          },
+          "adapter": {
+            "type": "string",
+            "default": "polaris_ws"
+          },
+          "endpoint": {
+            "type": "string",
+            "default": "ws://localhost:18766/"
+          },
+          "secret": {
+            "type": "string",
+            "default": ""
+          },
+          "webhook_secret": {
+            "type": "string",
+            "default": "secret:bridge-webhook"
+          },
+          "group_id": {
+            "type": "string",
+            "default": ""
+          },
+          "game_to_group": {
+            "type": "boolean",
+            "default": true
+          },
+          "group_to_game": {
+            "type": "boolean",
+            "default": true
+          },
+          "allowed_installations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "prefix": {
+            "type": "string",
+            "default": ""
+          },
+          "cb_prefix": {
+            "type": "string",
+            "default": ""
+          },
+          "admin_commands": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "command": {
+                  "type": "string"
+                },
+                "capability": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "command",
+                "capability"
+              ],
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "identities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "external_id": {
+                  "type": "string"
+                },
+                "player_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "external_id",
+                "player_id"
+              ],
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "roles_namespace": {
+            "type": "string",
+            "default": ""
+          },
+          "messages_per_minute": {
+            "type": "integer",
+            "default": 30
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "webhook_host": {
+      "type": "string",
+      "default": "127.0.0.1"
+    },
+    "webhook_port": {
+      "type": "integer",
+      "default": 0
+    },
+    "poll_seconds": {
+      "type": "number",
+      "default": 2.0
+    },
+    "max_records": {
+      "type": "integer",
+      "default": 10000
+    },
+    "max_text_bytes": {
+      "type": "integer",
+      "default": 3000
+    },
+    "subscription_history": {
+      "type": "integer",
+      "default": 1000
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

@@ -1,0 +1,6 @@
+{
+  "observation_interval": 30.0,
+  "max_players": 16384,
+  "max_names": 64,
+  "max_field_bytes": 16384
+}

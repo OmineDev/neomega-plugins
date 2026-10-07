@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "max_sessions": {
+      "type": "integer",
+      "default": 128,
+      "minimum": 1
+    },
+    "max_registrations": {
+      "type": "integer",
+      "default": 256,
+      "minimum": 1
+    },
+    "session_ttl": {
+      "type": "integer",
+      "default": 120,
+      "minimum": 1
+    },
+    "result_ttl": {
+      "type": "integer",
+      "default": 600,
+      "minimum": 1
+    },
+    "page_size": {
+      "type": "integer",
+      "default": 4,
+      "minimum": 1
+    },
+    "snowball_adapter": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

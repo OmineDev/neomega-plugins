@@ -1,0 +1,7 @@
+{
+  "currencies": [
+    "coin"
+  ],
+  "allowed_callers": [],
+  "mint_callers": []
+}

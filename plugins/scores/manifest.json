@@ -1,0 +1,92 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.scores",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [
+      "framework.scoreboard.set",
+      "framework.scoreboard.reset"
+    ],
+    "services": [
+      "plugin.neomega.players.get"
+    ],
+    "purposes": {
+      "service:plugin.neomega.players.get": "确认既有玩家身份，不用姓名或调用方输入伪造身份",
+      "operation:framework.scoreboard.set": "按服主绑定显式同步虚拟分数并保留原操作回执",
+      "operation:framework.scoreboard.reset": "按服主绑定显式同步虚拟分数并保留原操作回执"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.players",
+      "major": 1,
+      "min_version": "1.0.0"
+    }
+  ],
+  "exports": [
+    {
+      "name": "objective",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "mutate",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "query",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "rank",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "sync",
+      "major": 1,
+      "input_schema": {
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -11,3 +11,13 @@ OmineDev 审核维护的 neomega 业务插件。社区通过 Pull Request 贡献
 从本仓库 Releases 获取固定版本 ZIP 与 SHA256SUMS，经校验后通过现有 `runtime-admin.py install` / `update` 安装；版本不会自动升级。镜像必须提供相同版本与相同 SHA-256。公开制品不包含服务器配置、密钥或运行数据。
 
 维护与发布见 [CONTRIBUTING.md](CONTRIBUTING.md)，迁移来源及验证见 [docs/migration.md](docs/migration.md)。许可沿用来源代码 AGPL-3.0，见 [LICENSE](LICENSE)。
+
+## 完整前置生态
+
+前置服务与 Python 能力库统一通过明确权限、版本依赖与固定 ZIP 分发。库随消费者打包，不要求服主运行 pip；市场摘要与 README 由实际制品生成，安装前即可阅读。全套构建与调用方库锁约定见 [制品与目录说明](docs/catalog-release.md#前置生态完整制品)。
+
+```sh
+python3 tools/bundle-ecosystem.py --output dist/ecosystem
+```
+
+输出本地完整制品、SHA-256 清单和兼容矩阵，不自动发布远端，也不覆盖历史 Release。

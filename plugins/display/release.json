@@ -1,0 +1,20 @@
+{
+  "name": "共享展示",
+  "description": "共享 Actionbar、Title 优先级租约及世界物品展示，让菜单、任务和商店协调显示。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "config.example.json",
+    "config.schema.json",
+    "display_provider/__init__.py",
+    "display_provider/channels.py",
+    "display_provider/profile.py",
+    "display_provider/provider.py",
+    "docs/profile.md",
+    "main.py",
+    "manifest.json"
+  ],
+  "permission_purposes": {
+    "operation:framework.command.execute": "渲染共享屏幕消息并创建、更新和清理世界物品展示"
+  }
+}

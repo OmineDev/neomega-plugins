@@ -26,6 +26,14 @@
       },
       "title": "管理员 UUID 白名单"
     },
+    "service_installation_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "允许服务调用的安装 ID",
+      "default": []
+    },
     "rental_access": {
       "anyOf": [
         {

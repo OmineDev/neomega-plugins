@@ -30,10 +30,11 @@ def prepare(directory, output, source_ref=None):
     (output / 'index.json').write_text(json.dumps(index, ensure_ascii=False, indent=2) + '\n')
     purposes = output / 'permission-purposes.json'
     purposes.write_text(json.dumps(meta.get('permission_purposes', manifest.get('permissions', {}).get('purposes', {}))))
+    description_args = ['--description', meta['description']] if 'description' in meta else []
     source_args = ['--source-ref', source_ref, '--source-path', 'plugins/' + directory] if source_ref else []
     subprocess.run([sys.executable, str(ROOT / 'tools/catalog-release.py'), '--package', str(output / filename),
                     '--plugin', manifest['id'], '--version', manifest['version'], '--name', meta['name'],
-                    '--index', str(output / 'index.json'), '--permission-purposes', str(purposes)] + source_args, check=True)
+                    '--index', str(output / 'index.json'), '--permission-purposes', str(purposes)] + source_args + description_args, check=True)
     (output / 'release.env').write_text(f'tag={tag}\nfilename={filename}\nplugin_id={manifest["id"]}\nversion={manifest["version"]}\n')
     (output / 'release-notes.md').write_text(f'{meta["name"]} {manifest["version"]}\n\n'
         '固定审核制品；配置 schema、权限用途和许可证见 ZIP。\n'

@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--plugin',required=True)
     parser.add_argument('--version',required=True)
     parser.add_argument('--name')
+    parser.add_argument('--description', help='Short author description (maximum 2000 characters)')
     parser.add_argument('--index',required=True,type=Path)
     parser.add_argument('--permission-purposes',type=Path,help='Reviewed JSON map explaining requested capabilities; never grants authority')
     args=parser.parse_args()
@@ -45,6 +46,10 @@ def main():
                 info=archive.getinfo('manifest.json')
                 if info.file_size > 1 << 20: raise ValueError('manifest exceeds size limit')
                 manifest=json.loads(archive.read(info))
+                readme = archive.read('README.md') if 'README.md' in archive.namelist() else None
+                if readme is not None and len(readme) > 256 * 1024:
+                    raise ValueError('README exceeds 256 KiB')
+                readme_text = readme.decode('utf-8') if readme is not None else ''
             if manifest['id'] != args.plugin or manifest['version'] != args.version: raise ValueError('manifest identity/version differs from reviewed release')
             purposes=json.loads(args.permission_purposes.read_text()) if args.permission_purposes else {}
             if not isinstance(purposes,dict) or not all(isinstance(k,str) and isinstance(v,str) for k,v in purposes.items()): raise ValueError('permission purposes must be a string map')
@@ -52,6 +57,14 @@ def main():
                    'url':ROOT+f'{args.plugin}-v{args.version}/{expected}',
                    'sha256':hashlib.sha256(raw).hexdigest(),
                    'permissions':manifest.get('permissions',{}),'permission_purposes':purposes}
+            description = args.description
+            if description is None:
+                description = next((line.strip() for line in readme_text.splitlines() if line.strip() and not line.lstrip().startswith(('#', '```', '|', '![', '<'))), '')[:2000]
+            if len(description) > 2000:
+                raise ValueError('description exceeds 2000 characters')
+            entry['description'] = description
+            if readme is not None:
+                entry['readme'] = {'path': 'README.md', 'sha256': hashlib.sha256(readme).hexdigest(), 'size': len(readme)}
             for field in ('subscriptions','runtime','host_api','worker_protocol','dependencies','target_os','target_arch','min_host_version'):
                 if field in manifest:
                     entry[field]=manifest[field]

@@ -1,0 +1,20 @@
+{
+  "name": "音乐服务",
+  "description": "为多个插件统一播放 MIDI 音乐，支持音色、速度、玩家目标、进度和停止。",
+  "libraries": [
+    "neomega_midi"
+  ],
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "example.py"
+  ],
+  "permission_purposes": {
+    "operation:framework.command.execute": "向指定玩家播放受限速的音乐声音",
+    "players:list": "验证音乐接收者并创建精确玩家目标"
+  }
+}

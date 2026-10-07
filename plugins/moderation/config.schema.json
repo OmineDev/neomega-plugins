@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "writer_installations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "允许封禁/解封的调用安装 ID；空列表禁止写入。",
+      "default": []
+    },
+    "enforce": {
+      "type": "boolean",
+      "default": true
+    },
+    "poll_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60,
+      "default": 5
+    },
+    "max_players": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1024,
+      "default": 256
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

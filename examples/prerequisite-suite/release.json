@@ -1,0 +1,15 @@
+{
+  "name": "前置生态消费者示例",
+  "description": "通过公开服务客户端读取玩家档案和调度状态，演示前置依赖声明与隔离。",
+  "files": [
+    "manifest.json",
+    "main.py",
+    "config.schema.json",
+    "config.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "libraries": [
+    "neomega_clients"
+  ]
+}

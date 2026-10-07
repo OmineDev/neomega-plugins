@@ -1,0 +1,29 @@
+{
+  "routes": [
+    {
+      "id": "group",
+      "adapter": "polaris_ws",
+      "endpoint": "ws://localhost:18766/",
+      "secret": "",
+      "webhook_secret": "secret:bridge-webhook",
+      "group_id": "123456789",
+      "game_to_group": true,
+      "group_to_game": true,
+      "allowed_installations": [
+        "consumer-installation"
+      ],
+      "prefix": "",
+      "admin_commands": [],
+      "identities": [],
+      "roles_namespace": "",
+      "messages_per_minute": 30,
+      "cb_prefix": ""
+    }
+  ],
+  "webhook_host": "127.0.0.1",
+  "webhook_port": 0,
+  "poll_seconds": 2.0,
+  "max_records": 10000,
+  "max_text_bytes": 3000,
+  "subscription_history": 1000
+}

@@ -19,7 +19,7 @@ for plugin in sorted((ROOT / 'plugins').iterdir()):
     if manifest['id'] in seen:
         raise ValueError('duplicate plugin ID: ' + manifest['id'])
     seen.add(manifest['id'])
-    paths = [str(plugin)]
+    paths = [str(plugin), str(ROOT / 'libraries')]
     if os.environ.get('PYTHONPATH'):
         paths.append(os.environ['PYTHONPATH'])
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(paths), PYTHONDONTWRITEBYTECODE='1')

@@ -1,0 +1,8 @@
+{
+  "max_sessions": 128,
+  "max_registrations": 256,
+  "session_ttl": 120,
+  "result_ttl": 600,
+  "page_size": 4,
+  "snowball_adapter": false
+}

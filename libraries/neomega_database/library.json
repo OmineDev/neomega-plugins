@@ -1,0 +1,12 @@
+{
+  "name": "neomega_database",
+  "version": "1.0.0",
+  "license": "AGPL-3.0-only",
+  "files": [
+    "__init__.py",
+    "README.md",
+    "LICENSE",
+    "example.py"
+  ],
+  "dependencies": []
+}

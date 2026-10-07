@@ -1,0 +1,13 @@
+{
+  "name": "持久调度",
+  "description": "一次性与周期任务、错过策略、稳定触发 ID、租约领取和确认；按调用安装隔离。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "examples.py"
+  ]
+}

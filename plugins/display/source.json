@@ -1,0 +1,22 @@
+{
+  "source_id": "neomega-display",
+  "repository": null,
+  "ref": "sha256:d16344bc8fe15c318fd63ca624b8d87b60f264062c76a65051aceb068ea95839",
+  "path": "plugin",
+  "source_sha256": "d16344bc8fe15c318fd63ca624b8d87b60f264062c76a65051aceb068ea95839",
+  "version": "1.1.0",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "config.example.json",
+    "config.schema.json",
+    "display_provider/__init__.py",
+    "display_provider/channels.py",
+    "display_provider/profile.py",
+    "display_provider/provider.py",
+    "docs/profile.md",
+    "main.py",
+    "manifest.json"
+  ],
+  "note": "Explicit canonical-source snapshot; digest covers sorted name NUL bytes NUL."
+}

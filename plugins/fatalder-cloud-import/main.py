@@ -6,7 +6,10 @@ from fatalder_plugin.operator import Operator
 from fatalder_plugin.controller import Controller
 
 
-class CloudImport(Plugin):
+from fatalder_plugin.services import ServiceAdapter
+
+
+class CloudImport(ServiceAdapter, Plugin):
     config_type = Settings
 
     async def on_start(self, ctx):

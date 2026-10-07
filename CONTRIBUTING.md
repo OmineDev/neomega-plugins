@@ -35,3 +35,7 @@ Host 配置 schema 使用 SDK 支持的 JSON Schema 子集，不能直接采用�
 仓库管理员应设置默认分支 PR 审核/检查保护，并允许 Actions 创建 PR；工作流不会更改 GitHub 设置，默认分支限制本身不能证明有人审核过。如果当前设置禁止机器人建 PR，Release 可以已成功而目录 PR 未创建：从 artifact 取 `index.json` 与当前目录核对、保留并发新增条目后人工提交 PR。不要盲目重跑、删除标签或覆盖 Release。任何失败都先核对 tag、Release、制品哈希及候选 PR 的实际状态。
 
 工作流使用仓库 `GITHUB_TOKEN`，不需要新增凭据。发布地址沿用 `OmineDev/neomega-plugins`；分叉仓若自行发布，须显式调整目录 Release 根地址并让消费者选择对应来源，不能冒充官方来源。具体索引合同见 [目录发布说明](docs/catalog-release.md)。
+
+## 前置库与市场介绍
+
+新插件应在 `release.json.description` 给出简短介绍，并在包内 README 说明功能、调用接口、配置、权限和失败语义。安装前文档由索引中的 ZIP/README 哈希共同绑定，不把用户可见介绍塞入严格运行 manifest。前置库随消费者 ZIP 携带；库锁、兼容矩阵和完整本地套件构建见 [目录发布说明](docs/catalog-release.md#前置生态完整制品)。开发任务若明确禁止新增测试，复用现有检查和直接演练即可，无需新增测试文件；本地交付不依赖真人或真服验收。

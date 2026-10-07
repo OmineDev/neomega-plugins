@@ -1,0 +1,14 @@
+{
+  "name": "消息桥",
+  "description": "现有 Polaris WebSocket 群桥、OneBot HTTP 和 Telegram 双向路由、持久回执与固定管理命令。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "example.py",
+    "ws.py"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "交互菜单",
+  "description": "统一聊天命令、分页选择、确认、多步输入与雪球朝向预览；共享玩家输入会话，按调用者隔离结果。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "examples/consumer.py",
+    "adapters/snowball.mcfunction"
+  ],
+  "libraries": [
+    "neomega_common"
+  ],
+  "permission_purposes": {
+    "operation:framework.command.execute": "发送交互提示",
+    "players:list": "核对真实在线玩家身份",
+    "event:chat.received": "接收玩家聊天回复",
+    "event:player.list_removed": "退出时回收输入会话",
+    "service:plugin.neomega.display.channel_acquire": "调用展示、玩家档案与角色权限前置",
+    "service:plugin.neomega.roles.check": "调用展示、玩家档案与角色权限前置",
+    "service:plugin.neomega.players.resolve": "调用展示、玩家档案与角色权限前置",
+    "packet_observe:9": "读取雪球命令方块的Text预览，实际选择仍需玩家聊天确认"
+  }
+}

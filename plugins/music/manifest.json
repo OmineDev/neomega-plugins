@@ -1,0 +1,104 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.music",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 1
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "services": [],
+    "players": [
+      "list"
+    ]
+  },
+  "dependencies": [],
+  "exports": [
+    {
+      "name": "play",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "midi_base64": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "speed": {
+            "type": "number"
+          },
+          "volume": {
+            "type": "number"
+          },
+          "sound": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "midi_base64",
+          "targets"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "status",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "playback_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "playback_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "stop",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "playback_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "playback_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

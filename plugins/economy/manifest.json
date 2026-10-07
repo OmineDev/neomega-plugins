@@ -1,0 +1,249 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.economy",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": false,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [],
+    "services": [],
+    "purposes": {}
+  },
+  "dependencies": [
+    {
+      "id": "neomega.players",
+      "major": 1,
+      "min_version": "1.0.0"
+    }
+  ],
+  "exports": [
+    {
+      "name": "balance",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "account"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "post",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "account",
+          "request_id",
+          "amount",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "transfer",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "target_expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "account",
+          "request_id",
+          "amount",
+          "target",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "hold",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer"
+          },
+          "hold_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "account",
+          "request_id",
+          "amount",
+          "hold_id",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "release",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "hold_id": {
+            "type": "string"
+          },
+          "capture": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "account",
+          "request_id",
+          "hold_id",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "receipt",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "ledger",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

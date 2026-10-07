@@ -1,0 +1,6 @@
+{
+  "max_objects": 8,
+  "max_owner_objects": 4,
+  "max_ttl_seconds": 60,
+  "tick_seconds": 0.25
+}

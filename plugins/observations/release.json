@@ -1,0 +1,13 @@
+{
+  "name": "共享观察",
+  "description": "统一位置与自身背包采样，提供死亡、重生和 TPS 估计的有界观察流。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json",
+    "consumer.py"
+  ]
+}

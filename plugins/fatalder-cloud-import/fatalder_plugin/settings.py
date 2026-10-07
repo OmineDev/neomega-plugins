@@ -17,6 +17,7 @@ class Settings:
     target_server_id: str = field(metadata={'title': 'Worker 目标配置 ID'})
     rental_server_code: str = field(metadata={'title': '租赁服号'})
     admin_uuids: list[str] = field(metadata={'title': '管理员 UUID 白名单'})
+    service_installation_ids: list[str] = field(default_factory=list, metadata={'title': '允许服务调用的安装 ID'})
     rental_access: RentalAccess | None = field(default=None, metadata={'title': '有密码的租赁服访问配置'})
     files_directory: str = field(default='imports', metadata={'title': '数据目录内的建筑目录'})
     revoke_operator_on_completion: bool = field(default=False, metadata={

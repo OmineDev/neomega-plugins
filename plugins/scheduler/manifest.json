@@ -1,0 +1,179 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.scheduler",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": false,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [],
+    "services": [],
+    "players": [],
+    "purposes": {}
+  },
+  "dependencies": [],
+  "exports": [
+    {
+      "name": "schedule",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "due_at": {
+            "type": "string"
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "missed": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "schedule_id",
+          "due_at"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "cancel",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "schedule_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "query",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schedule_id": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": []
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "claim",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "ack",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "trigger_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "schedule_id",
+          "token",
+          "trigger_id",
+          "outcome"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}

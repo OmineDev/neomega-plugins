@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "max_objects": {
+      "type": "integer",
+      "default": 8,
+      "minimum": 1,
+      "maximum": 8
+    },
+    "max_owner_objects": {
+      "type": "integer",
+      "default": 4,
+      "minimum": 1,
+      "maximum": 4
+    },
+    "max_ttl_seconds": {
+      "type": "integer",
+      "default": 60,
+      "minimum": 1,
+      "maximum": 60
+    },
+    "tick_seconds": {
+      "type": "number",
+      "default": 0.25,
+      "minimum": 0.1,
+      "maximum": 5
+    }
+  }
+}

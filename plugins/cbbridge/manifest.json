@@ -1,0 +1,183 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.cbbridge",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 8
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [],
+    "services": [],
+    "packet_observe_ids": [
+      9
+    ],
+    "purposes": {
+      "packet_observe:9": "读取协议可见观察；前缀与实体编号不代表玩家认证"
+    }
+  },
+  "dependencies": [],
+  "exports": [
+    {
+      "name": "register",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "consume": {
+            "type": "boolean"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "prefix"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "unregister",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "consume": {
+            "type": "boolean"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "route_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "subscribe",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "consume": {
+            "type": "boolean"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "route_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "poll",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "consume": {
+            "type": "boolean"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "route_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "status",
+      "major": 1,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ]
+}
