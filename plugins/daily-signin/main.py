@@ -1,5 +1,7 @@
 """Native natural-day sign-in. Game effects are immutable, receipt-led claims."""
 import asyncio
+import base64
+import copy
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 import hashlib
@@ -172,6 +174,10 @@ def describe(record, *, include_ids=False):
         for i, a in enumerate(rewards))
 
 
+class AdmissionRejected(Exception):
+    """This event was durably rejected without consuming a sign-in."""
+
+
 class DailySignin(Plugin):
     config_type = Settings
 
@@ -228,6 +234,8 @@ class DailySignin(Plugin):
                 previous = tx.get(event_key)
                 if previous is not None:
                     await event.ack()
+                    if previous.get('rejected'):
+                        raise AdmissionRejected()
                     saved = await ctx.storage.get(previous['business_key'])
                     if saved is None:
                         saved = dict(previous, actions=[], state='succeeded', archived=True)
@@ -285,6 +293,21 @@ class DailySignin(Plugin):
                 except IPCRejected as exc:
                     if exc.code == 'revision_conflict' and attempt < 3:
                         continue
+                    if exc.code == 'quota_exceeded':
+                        # Explicit atomic rejection: no account or action landed.
+                        # Persist the rejection with ACK so midnight redelivery
+                        # cannot turn this old request into a later admission.
+                        rejection_id = 'rejected_' + event_key.removeprefix('event:')
+                        rejected = await ctx.storage.transaction(event=event.payload,
+                            commit_id=rejection_id, keys=[event_key])
+                        rejected.set(event_key, dict(rejected=True, reason=exc.code))
+                        try:
+                            await rejected.save()
+                        except CommitUncertain:
+                            self.unresolved_commit = rejection_id
+                            raise
+                        ctx.log.warning('sign-in admission rejected: quota_exceeded; account unchanged')
+                        raise AdmissionRejected() from exc
                     raise
                 except CommitUncertain:
                     # No new admission in this process after uncertain storage IO.
@@ -293,16 +316,100 @@ class DailySignin(Plugin):
                 return key, record
             raise RuntimeError('sign-in CAS contention')
 
+    @staticmethod
+    def evidence_prefix(key):
+        return 'evidence:' + hashlib.sha256(key.encode()).hexdigest()
+
+    async def hydrate(self, ctx, record):
+        hydrated = copy.deepcopy(record)
+        for action in hydrated['actions']:
+            ref = action.get('receipt_ref')
+            if ref is None:
+                continue  # Legacy inline receipts remain readable.
+            pieces = [await ctx.storage.get(ref['key'] + ':' + str(i))
+                      for i in range(ref['chunks'])]
+            raw = b''.join(base64.b64decode(piece, validate=True) for piece in pieces)
+            if len(raw) != ref['bytes'] or hashlib.sha256(raw).hexdigest() != ref['sha256']:
+                raise ValueError('sign-in receipt evidence integrity mismatch')
+            action['receipt'] = json.loads(raw)
+        return hydrated
+
+    async def persist_receipts(self, ctx, key, record):
+        """Caller holds lock; register before writes, reference only after all writes."""
+        saved = copy.deepcopy(record)
+        prefix = self.evidence_prefix(key)
+        for action in saved['actions']:
+            receipt = action.get('receipt')
+            if receipt is None:
+                continue
+            raw = json.dumps(receipt, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
+            digest = hashlib.sha256(raw).hexdigest()
+            node_key = prefix + ':' + digest
+            chunks = [base64.b64encode(raw[i:i + 32768]).decode('ascii')
+                      for i in range(0, len(raw), 32768)]
+            tx = await ctx.storage.transaction(keys=[prefix, node_key])
+            if tx.get(node_key) is None:
+                tx.set(node_key, dict(next=tx.get(prefix), chunks=len(chunks), cursor=0))
+                tx.set(prefix, node_key)
+                await tx.save()
+            for i, chunk in enumerate(chunks):
+                chunk_key = node_key + ':' + str(i)
+                tx = await ctx.storage.transaction(keys=[chunk_key])
+                if tx.get(chunk_key) != chunk:
+                    tx.set(chunk_key, chunk)
+                    await tx.save()
+            action['receipt_ref'] = dict(key=node_key, chunks=len(chunks), bytes=len(raw), sha256=digest)
+            action['receipt'] = None
+        return saved
+
     async def reconcile(self, ctx, key, original):
-        # Never hold the business lock while looking up world operations.
-        updated = await recover_actions(ctx, original) if original['actions'] else original
-        if updated != original:
+        # Lookups are read-only. A stale reader must not recreate deleted evidence.
+        async with self.lock:
+            current = await ctx.storage.get(key)
+            if current != original:
+                return current or dict(original, archived=True, actions=[])
+            hydrated = await self.hydrate(ctx, original)
+        updated = await recover_actions(ctx, hydrated) if hydrated['actions'] else hydrated
+        if updated != hydrated or any(a.get('receipt') is not None and not a.get('receipt_ref')
+                                      for a in original['actions']):
             async with self.lock:
+                if await ctx.storage.get(key) != original:
+                    return await ctx.storage.get(key) or original
+                saved = await self.persist_receipts(ctx, key, updated)
                 tx = await ctx.storage.transaction(keys=[key])
                 if tx.get(key) == original:
-                    tx.set(key, updated)
+                    tx.set(key, saved)
                     await tx.save()
-        return updated
+                    return saved
+        return original
+
+    async def clean_evidence(self, ctx, key, page_key, record):
+        # Keep the page entry until GC finishes. Its archived marker and the
+        # per-node cursor survive every interruption, including missing chunks.
+        async with self.lock:
+            tx = await ctx.storage.transaction(keys=[key])
+            if tx.get(key) != record:
+                return
+            if not record.get('archived'):
+                record = dict(record, archived=True, actions=[])
+                tx.set(key, record)
+                await tx.save()
+            prefix = self.evidence_prefix(key)
+            while (node_key := await ctx.storage.get(prefix)) is not None:
+                node = await ctx.storage.get(node_key)
+                for i in range(node['cursor'], node['chunks']):
+                    chunk_key = node_key + ':' + str(i)
+                    tx = await ctx.storage.transaction(keys=[node_key, chunk_key])
+                    node = dict(node, cursor=i + 1)
+                    tx.delete(chunk_key).set(node_key, node)
+                    await tx.save()
+                tx = await ctx.storage.transaction(keys=[prefix, node_key])
+                tx.delete(node_key).set(prefix, node['next'])
+                await tx.save()
+            tx = await ctx.storage.transaction(keys=[key, page_key, prefix])
+            tx.delete(key).delete(prefix)
+            tx.set(page_key, [v for v in tx.get(page_key, []) if v != key])
+            await tx.save()
 
     async def reconcile_page(self, ctx):
         head = await ctx.storage.get('index:head', 0)
@@ -319,18 +426,18 @@ class DailySignin(Plugin):
             record = await self.reconcile(ctx, key, original)
             # unknown/partial are retained indefinitely; never interpreted as failed.
             if record['day'] < cutoff and record['state'] in ('succeeded', 'failed'):
-                async with self.lock:
-                    tx = await ctx.storage.transaction(keys=[key, page_key])
-                    if tx.get(key) == record:
-                        tx.delete(key)
-                        tx.set(page_key, [v for v in tx.get(page_key, []) if v != key])
-                        await tx.save()
+                await self.clean_evidence(ctx, key, page_key, record)
 
     async def reply(self, ctx, event, name, message):
         key = 'reply_' + hashlib.sha256(event.payload['delivery_token'].encode()).hexdigest()
         command = 'tellraw ' + exact_target(name) + ' ' + json.dumps({'rawtext': [{'text': message}]}, ensure_ascii=False)
         # ACK is already final. Notification failure never causes a second claim.
-        await ctx.commands.execute(command, idempotency_key=key, deadline=(now() + timedelta(seconds=10)).isoformat())
+        try:
+            await ctx.commands.execute(command, idempotency_key=key, deadline=(now() + timedelta(seconds=10)).isoformat())
+        except IPCRejected as exc:
+            if exc.code != 'quota_exceeded':
+                raise
+            ctx.log.warning('sign-in notification rejected: quota_exceeded; claim and receipts unchanged')
 
     async def on_event(self, ctx, event):
         body = event.payload.get('payload', {})
@@ -354,6 +461,9 @@ class DailySignin(Plugin):
         if argument == ['领取'] and ctx.config.enabled:
             try:
                 key, record = await self.accept(ctx, event, player)
+            except AdmissionRejected:
+                await self.reply(ctx, event, player.name, '签到暂未受理，今日资格未消耗；稍后重新发送签到命令。')
+                return
             except ValueError as error:
                 await event.ack()
                 await self.reply(ctx, event, player.name, str(error))
