@@ -22,7 +22,9 @@ def prepare(directory, output, source_ref=None):
     index = json.loads((ROOT / 'catalog/index.json').read_text())
     if any(e['plugin_id'] == manifest['id'] and e['version'] == manifest['version'] for e in index['plugins']):
         raise ValueError('version already catalogued; increment the version')
-    output.mkdir(parents=True, exist_ok=True)
+    if output.exists():
+        raise ValueError('output must not exist; use a fresh release candidate directory')
+    output.mkdir(parents=True)
     filename = f"{manifest['id']}-{manifest['version']}.zip"
     tag = f"{manifest['id']}-v{manifest['version']}"
     digest = packager.build(root, output / filename)

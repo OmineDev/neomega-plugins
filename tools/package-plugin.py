@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate community metadata and build only explicit, reviewed source files."""
 import argparse
+from email.parser import Parser
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -9,6 +10,7 @@ import zipfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from library_bundle import bundled_files
+from wheel_targets import validate_lock, validate_runtime_target
 
 
 def validate(root):
@@ -72,6 +74,7 @@ def validate(root):
     for permission in required:
         if not isinstance(purposes.get(permission), str) or not purposes[permission].strip():
             raise ValueError('missing permission purpose: ' + permission)
+    runtime_target = json.loads((root / 'runtime-target.json').read_text()) if 'runtime-target.json' in names else None
     for lock_name in (name for name in names if PurePosixPath(name).name == 'wheels.lock.json'):
         wheel_lock = json.loads((root / lock_name).read_text())
         prefix = PurePosixPath(lock_name).parent
@@ -79,8 +82,21 @@ def validate(root):
             file_name = str(prefix / relative)
             if file_name not in names or hashlib.sha256((root / file_name).read_bytes()).hexdigest() != expected:
                 raise ValueError('wheel lock differs from packaged source: ' + file_name)
-        if wheel_lock['platform'] != 'any' and (not manifest.get('target_os') or not manifest.get('target_arch')):
-            raise ValueError('native wheel requires explicit manifest target_os and target_arch')
+        # Check the metadata actually included in the ZIP, not just the lock claim.
+        for wheel in wheel_lock['wheels']:
+            distribution, version = wheel['wheel'].split('-')[:2]
+            metadata_name = distribution + '-' + version + '.dist-info/WHEEL'
+            if metadata_name not in wheel_lock['files']:
+                raise ValueError('wheel WHEEL metadata missing from locked files: ' + metadata_name)
+            metadata = Parser().parsestr((root / prefix / metadata_name).read_text())
+            wheel['tags'] = metadata.get_all('Tag', [])
+            package_metadata_name = distribution + '-' + version + '.dist-info/METADATA'
+            if package_metadata_name not in wheel_lock['files']:
+                raise ValueError('wheel METADATA missing from locked files')
+            package_metadata = Parser().parsestr((root / prefix / package_metadata_name).read_text())
+            wheel['requires_python'] = package_metadata.get('Requires-Python')
+        validate_lock(wheel_lock, manifest)
+        validate_runtime_target(wheel_lock, runtime_target)
     bundled_files(root, meta)
     return meta, manifest
 
@@ -90,7 +106,7 @@ def build(root, destination):
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Preserve explicit ordering so existing released packages retain their hashes.
-    with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(destination, 'x', zipfile.ZIP_DEFLATED) as archive:
         files = {name: (Path(root) / name).read_bytes() for name in meta['files']}
         for name, raw in bundled_files(root, meta).items():
             if name in files:

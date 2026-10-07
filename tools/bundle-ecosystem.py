@@ -27,7 +27,9 @@ def main():
     parser.add_argument('--checker', type=Path, help='Optional local native checker; record receipts without suppressing artifacts')
     parser.add_argument('--plugin', action='append', help='Directory selector; default includes every plugin')
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=True)
+    if args.output.exists():
+        raise ValueError('output must not exist; existing release artifacts are immutable')
+    args.output.mkdir(parents=True)
     entries, matrix, library_entries, components = [], [], [], []
     revision = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True)
     status = subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True)
@@ -94,7 +96,9 @@ def main():
         if (source / 'library.lock.json').is_file():
             entry['library_lock_sha256'] = hashlib.sha256((source / 'library.lock.json').read_bytes()).hexdigest()
         entries.append(entry)
-        matrix.append({key: entry[key] for key in ('plugin_id','version','runtime','host_api','worker_protocol','dependencies','target_os','target_arch','min_host_version') if key in entry} | {'libraries': meta.get('libraries', []), 'exports': [{'name': service['name'], 'major': service['major']} for service in manifest.get('exports', [])], 'artifact': filename, 'sha256': digest, 'size': entry['size']})
+        wheel_targets = [json.loads((source / name).read_text()) for name in meta['files'] if Path(name).name == 'wheels.lock.json']
+        runtime_target = json.loads((source / 'runtime-target.json').read_text()) if 'runtime-target.json' in meta['files'] else None
+        matrix.append({key: entry[key] for key in ('plugin_id','version','runtime','host_api','worker_protocol','dependencies','target_os','target_arch','min_host_version') if key in entry} | {'runtime_target': runtime_target, 'runtime_compatibility': 'not_probed', 'wheel_targets': [{key: lock[key] for key in ('platform', 'python_version', 'abi')} for lock in wheel_targets], 'libraries': meta.get('libraries', []), 'exports': [{'name': service['name'], 'major': service['major']} for service in manifest.get('exports', [])], 'artifact': filename, 'sha256': digest, 'size': entry['size']})
         if args.checker:
             receipt = subprocess.run([str(args.checker.resolve()), '--sha256', digest, str((args.output / filename).resolve())], capture_output=True, text=True)
             matrix[-1]['native_check'] = {'exit_code': receipt.returncode, 'receipt': json.loads(receipt.stdout) if receipt.stdout.strip() else None, 'stderr': receipt.stderr.strip()}

@@ -63,7 +63,7 @@ python3 tools/vendor-wheels.py --requirements requirements.lock \
   --platform any --python-version 311 --abi none
 ```
 
-工具使用 `pip download --require-hashes --only-binary=:all:`，所有间接依赖也须明确列入锁文件；拒绝缺许可证、模块覆盖、路径穿越、符号链接和需要 `.data` 重定位的包，不改全局或运行 Host 的 Python 环境。原生 wheel 必须显式指定 pip 目标平台/Python/ABI，并在插件 manifest 限定相应 OS/架构与运行环境；不同目标构建不同版本制品，不能把原生二进制混入通用库。将 staging 中所需文件按插件白名单纳入 ZIP，保留 wheel 锁和许可证。此工具不支持源码发行包编译，不猜测系统库兼容性。
+工具使用 `pip download --require-hashes --only-binary=:all:`，所有间接依赖也须明确列入锁文件；拒绝缺许可证、模块覆盖、路径穿越、符号链接和需要 `.data` 重定位的包，不改全局或运行 Host 的 Python 环境。原生 wheel 必须显式指定 pip 目标平台/Python/ABI；工具交叉核对实际文件名、包内 WHEEL Tag 与锁，支持匹配目标的 CPython stable ABI (`abi3`)，并要求 manifest OS/架构限定在该平台内。纯 Python `py3-none-any` 可用于对应 Python 3 目标，不能把原生 ABI 标作 `any`。manifest 当前没有 Python ABI 字段，Python 版本与 ABI 记录在包根 `runtime-target.json`、wheel 锁和兼容矩阵，并由 Host 启动前读取实际解释器核对；不同目标构建不同版本制品，不能把原生二进制混入通用库。将 staging 中所需文件按插件白名单纳入 ZIP，保留 wheel 锁和许可证。此工具不支持源码发行包编译，不猜测系统库兼容性。
 
 ### Host 服务接口 schema 的闭集
 
@@ -84,3 +84,13 @@ Host 二进制由框架正常构建后用 `--host-binary <binary> --host-target 
 SDK ZIP 使用时先解压，再把解压根目录加入 `PYTHONPATH`。当前协议模型读取相邻 `schema.json`，不支持把未解压的 SDK ZIP 直接加入 Python 导入路径；纯能力库 ZIP 的导入方式不代表 SDK 有相同装载合同。
 
 已提供真实构建过的 MySQL 可选依赖锁：`docs/examples/mysql/requirements.lock`（PyMySQL 1.2.3）及 `licenses.json`（MIT）。MySQL 消费者使用上述命令替换这两个参数，把生成的 `pymysql/`、对应 `.dist-info/`、`wheels.lock.json` 复制到消费者插件根目录，并逐文件加入该插件 `release.json.files`。保留锁中全部文件及许可证；打包工具逐字节核对展开文件 SHA，避免锁与 ZIP 不一致。默认 SQLite 消费者不携带这个可选驱动，所有路线均不在运行时执行 pip。
+
+### Wheel 目标校验
+
+`wheels.lock.json` 绑定 CPython 的 Python major/minor、ABI 和 pip 平台标签。打包时不仅核对展开文件 SHA，还从锁定的 `.dist-info/WHEEL` 读取实际 Tag，与 wheel 文件名标签交叉核对。原生平台映射到 manifest 的 `target_os` / `target_arch`，不得把 Windows wheel 标成 Linux 或让单架构 wheel 宣告支持其他架构；`any` 必须使用 `none` ABI。严格 manifest 当前没有 Python/ABI 字段；含原生、Python minor 专用标签或 `Requires-Python` 限制的制品必须携带包根 `runtime-target.json` 并加入 `release.json.files`，例如 `{"schema_version":1,"implementation":"cpython","python_version":"3.11","abi":"cp311","platform":"manylinux_2_17_x86_64"}`。打包器核对 lock 与运行目标，Host 启动前核实实际解释器版本、ABI、OS/架构和平台要求，不匹配则拒绝。目标 ABI 声明实际 CPython ABI；lock 的 abi3 允许对应稳定 ABI 解释器。兼容矩阵记录目标但实际运行匹配保持 `not_probed`，不会把未知 worker 宣称兼容。
+
+支持 CPython 精确 ABI 与向前兼容的 `abi3`（如 cp38-abi3 可用于 cp311）；自由线程 ABI 只接受显式对应版本，不套用 abi3。manylinux/musllinux 的最低版本与 macOS 部署版本按同族向前兼容比较，未知平台明确拒绝。纯 Python `py3-none-any` 不被错误要求绑定某个 OS。
+
+完整套件构建要求全新输出目录；已存在的目录直接拒绝，禁止覆盖旧版 ZIP、SDK 或摘要。源码冻结后分别构建两个新目录，比较 SHA256SUMS 确认可复现。
+
+`vendor-wheels.py` 同时生成 `runtime-target.json`；将它放在插件包根并加入白名单，不留在 vendor 子目录。打包器从锁定的 METADATA 读取 `Requires-Python`，校验声明目标覆盖完整 minor；当前无法由 minor 目标保证的 patch 精确限制明确拒绝。真正无额外 Python 限制的 `py3-none-any` 可省略运行目标；不把 `py312-none-any` 或 `Requires-Python: >=3.12` 当成通用 Python 3。
