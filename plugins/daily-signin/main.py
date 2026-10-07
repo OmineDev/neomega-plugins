@@ -8,12 +8,25 @@ import hashlib
 import json
 import re
 from string import Formatter
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from neomega_runtime import Plugin
 from neomega_runtime.managed import IPCRejected
+from neomega_runtime.operations import Operations
+from neomega_runtime.game import Commands
+from neomega_runtime.player_actions import PlayerActions
+from neomega_runtime.scoreboard import Scoreboard
 from neomega_runtime.storage import CommitUncertain
 from community_support import ObservedRoster, exact_target, config_fingerprint, recover_actions
+
+
+def encoded_size(value):
+    """Upper bound for SDK JSON and Host Go json.Marshal HTML escaping."""
+    raw = json.dumps(value, ensure_ascii=False, allow_nan=False)
+    for character in '<>&\u2028\u2029':
+        raw = raw.replace(character, '\\u%04x' % ord(character))
+    return len(raw.encode())
 
 
 @dataclass(frozen=True)
@@ -24,7 +37,7 @@ class Reward:
     data: int = field(default=0, metadata={'minimum': 0, 'maximum': 2147483647})
     objective: str = ''
     amount: int = field(default=1, metadata={'minimum': 1, 'maximum': 2147483647})
-    command: str = ''
+    command: str = field(default='', metadata={'description': '单行模板最多4096 UTF-8字节，最大合法玩家名展开后须满足Host的32 KiB单条上限；整组奖励按最大合法玩家名展开后的双份SDK/Host意图JSON合计最多192 KiB，另留64 KiB给账本、事件及公告。'})
 
     def __post_init__(self):
         if self.kind not in ('item', 'scoreboard', 'command'):
@@ -39,6 +52,8 @@ class Reward:
             for _, name, spec, conversion in Formatter().parse(self.command):
                 if name is not None and (name != 'player' or spec or conversion):
                     raise ValueError('only plain {player} is supported')
+            if len(self.command.format(player=exact_target('x' * 256)).encode()) > 32 << 10:
+                raise ValueError('命令按最大合法玩家名展开后超过Host的32 KiB单条上限。')
 
 
 @dataclass(frozen=True)
@@ -113,6 +128,32 @@ class Settings:
             maximum += max(totals.values(), default=0)
         if maximum + int(self.announcement.enabled) > 16:
             raise ValueError('a sign-in may contain at most 16 actions including announcement')
+        # Public SDK preparation is local-only. Include both stored intent and
+        # submitted action, selector expansion, JSON escaping and SDK metadata.
+        operations = Operations(None, 's' * 256)
+        budget_ctx = SimpleNamespace(commands=Commands(operations),
+            player_actions=PlayerActions(operations), scoreboard=Scoreboard(operations))
+
+        def size(reward, role):
+            # Go HTML escaping makes '<' the worst byte among legal names.
+            # The scoreboard holder contract has a smaller 128-byte limit.
+            player = SimpleNamespace(name='<' * (128 if reward.kind == 'scoreboard' else 256))
+            intent = prepare_reward(budget_ctx, player, reward,
+                'signin_' + '0' * 64 + '_15', '2000-01-01T00:00:00.000000+00:00').payload()
+            submitted = dict(intent)
+            submitted.pop('session')
+            stored = dict(role=role, intent=intent, operation_id=None, receipt=None, state='pending')
+            return encoded_size(dict(stored=stored, submitted=submitted))
+
+        budget = sum(size(r, 'base') for r in self.rewards.base) if self.rewards.enabled else 0
+        for kind, group in (('consecutive', self.consecutive), ('cumulative', self.cumulative)):
+            totals = {}
+            for rule in group.rules if group.enabled and self.rewards.enabled else []:
+                totals[rule.count] = totals.get(rule.count, 0) + sum(
+                    size(reward, kind + ':' + rule.rule_id) for reward in rule.rewards)
+            budget += max(totals.values(), default=0)
+        if budget > 192 << 10:
+            raise ValueError('奖励组合展开后的双份SDK/Host意图JSON超过192 KiB预算；请缩短模板或减少重复占位符。')
 
 
 def now():
@@ -288,6 +329,16 @@ class DailySignin(Plugin):
                     tx.set('index:head', head + 1)
                 for intent in intents:
                     tx.action(intent)
+                # Prepare freezes and measures the complete real SDK payload,
+                # including actual event, account/history, page and intent copies.
+                try:
+                    prepared = tx.prepare()
+                except ValueError as exc:
+                    if str(exc) != 'storage commit exceeds 256 KiB':
+                        raise
+                    raise ValueError('本次签到未受理、资格未消耗：完整事务超过256 KiB；请管理员缩减奖励配置。') from exc
+                if encoded_size(prepared.payload()) > 256 << 10:
+                    raise ValueError('本次签到未受理、资格未消耗：Host编码后的完整事务超过256 KiB；请管理员缩减奖励配置。')
                 try:
                     await tx.save()
                 except IPCRejected as exc:

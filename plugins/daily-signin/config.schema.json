@@ -64,6 +64,7 @@
               },
               "command": {
                 "type": "string",
+                "description": "单行模板最多4096 UTF-8字节，最大合法玩家名展开后须满足Host的32 KiB单条上限；整组奖励按最大合法玩家名展开后的双份SDK/Host意图JSON合计最多192 KiB，另留64 KiB给账本、事件及公告。",
                 "default": ""
               }
             },
@@ -136,6 +137,7 @@
                     },
                     "command": {
                       "type": "string",
+                      "description": "单行模板最多4096 UTF-8字节，最大合法玩家名展开后须满足Host的32 KiB单条上限；整组奖励按最大合法玩家名展开后的双份SDK/Host意图JSON合计最多192 KiB，另留64 KiB给账本、事件及公告。",
                       "default": ""
                     }
                   },
@@ -217,6 +219,7 @@
                     },
                     "command": {
                       "type": "string",
+                      "description": "单行模板最多4096 UTF-8字节，最大合法玩家名展开后须满足Host的32 KiB单条上限；整组奖励按最大合法玩家名展开后的双份SDK/Host意图JSON合计最多192 KiB，另留64 KiB给账本、事件及公告。",
                       "default": ""
                     }
                   },
