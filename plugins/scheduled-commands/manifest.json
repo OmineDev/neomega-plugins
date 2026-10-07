@@ -1,0 +1,31 @@
+{
+  "manifest_version": 1,
+  "id": "community.scheduled-commands",
+  "version": "0.1.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 10
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "services": [],
+    "players": [],
+    "purposes": {
+      "operation:framework.command.execute": "按服主配置的时间表逐条执行游戏命令"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

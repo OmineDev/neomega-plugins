@@ -1,0 +1,12 @@
+{
+  "name": "定时命令",
+  "files": [
+    "manifest.json",
+    "main.py",
+    "community_support.py",
+    "config.schema.json",
+    "config.example.json",
+    "README.md",
+    "LICENSE"
+  ]
+}
