@@ -1,0 +1,54 @@
+# 在线时长 0.1.0
+
+原生 Python 插件 `community.online-time`，安装后保持停止，由服主配置、授权和启动。需要公开 SDK 1.1.0 对应的 Host API 1.10、Worker Wire 1.0；插件包不含 SDK，无第三方 Python 依赖。配置更改后重启生效。
+
+## 玩家命令
+
+- `!在线`：本人累计时长、今日时长、本周时长与奖励待核对数量。
+- `!在线 排行 总`、`!在线 排行 今日`、`!在线 排行 本周`：服主开启排行后可用。默认前缀可由 `aliases` 改写；别名不可重复或含空白。
+
+计入挂机时间。统计从插件可靠观测开始，不补历史、不统计停机和观察失效区间。机器人启动名字必须可读，并须在观察中唯一解析到 UUID 后开始计量；随后固定排除该 UUID。玩家以观察 UUID 记账，可靠非空 XUID 与名字一致才能查询/领取，不将聊天名字当账户键。
+
+## 配置
+
+基础默认 `enabled=true`、`calendar.enabled=true`、`calendar.timezone="Asia/Shanghai"`。周从当地周一零点开始。日账保留最近 90 个当地日期，总时长永久保留。已产生日账后不可直接修改时区，需另行迁移。`calendar.enabled=false` 隐藏并停止新增日周统计，保留总时长；不能同时配置每日奖励。
+
+`leaderboard.enabled=false` 默认关闭；开启后 `leaderboard.top` 默认 10，范围 1..50。只显示本安装已观测并保存的账，不代表完整服务器历史。排行逐页读取，仅保证各账户最后确认保存的数值，不承诺所有账户来自同一瞬间。
+
+`rewards.enabled=false` 默认关闭，`rewards.rules=[]`。启用需至少一条规则，最多 16 条；每条最多 16 个奖励，整份奖励配置最多 64 KiB。每条 `id` 为 1..32 位字母/数字/下划线/短横线，不能复用已删除 ID，不能改变既有 ID 对应的阈值、周期或奖励。改规则请用新 ID，新规则不补发已经超过的阈值。
+
+```json
+{
+  "enabled": true,
+  "aliases": ["!在线"],
+  "calendar": {"enabled": true, "timezone": "Asia/Shanghai"},
+  "leaderboard": {"enabled": false, "top": 10},
+  "rewards": {
+    "enabled": false,
+    "rules": [{
+      "id": "first_hour", "period": "total", "seconds": 3600,
+      "rewards": [{"kind": "item", "item": "minecraft:apple", "count": 1}]
+    }]
+  }
+}
+```
+
+`period="total"` 为永久累计一次；`period="day"` 为每个当地日期一次。阈值单位秒。奖励支持 `item`（`item/count`）、`scoreboard`（`objective/amount`）及管理员 `command`。命令只替换 `{player}` 为 SDK 严格编码的准确目标，不接受其他插值，不执行脚本。计分板 objective 必须事先由服主管理。示例奖励默认不启用。
+
+规则首次启用以当前已保存时长建立基线，只有之后从阈值下方跨越时获得资格。已离线、XUID 不可靠时保存待领取资格；下次可靠在线观察或本人查询可领取，资格保留原日期和奖励快照。关闭插件/奖励不删除历史，未提交资格不发放；已经提交的动作仍只读核对。再次启用不补发停用期间已跨越的阈值。
+
+## 持久化与故障边界
+
+单调时钟负责总增量，连续健康观测之间按当地午夜切分日账。墙钟与单调时钟差异超过 2 秒时整段弃计并记录 `clock_discontinuity`，重新建立锚点；业务日期倒退时冻结受影响账户的整个区间，不补旧日期。重复名单不重复起算；移除结算到最后一次成功观察。重启仅恢复已确认保存的绝对累计量，任何未确认间隔均不补。
+
+通常每 30 秒、离开、本人查询及正常停止保存 checkpoint。调度阻塞和存储故障会扩大未落盘窗口，因此不承诺崩溃最多只丢 30 秒。每账户日账、动作索引和账户目录分页读取；目录页最多 100 个 ID。CAS 明确冲突可重读，未知提交只按原 commit 查询，查不到即故障停止，绝不重复添加时间。
+
+奖励先持久化固定计划（业务键、commit ID、原始 intents、10 秒 deadline），再由同一固定 commit 提交。计划落盘后、动作提交前崩溃也会保留待核对状态，不自动重试。每条动作独立保留 operation ID 与原回执；失败不补发，部分执行/unknown 不换 ID 重发。关闭奖励后仍核对原回执。原 SDK 准确名字目标不等于执行时 UUID 原子绑定；若服务器允许短窗口内不同账户复用同名，须停用奖励，待 Host 提供受身份约束执行能力。
+
+权限：`framework.command.execute` 用于查询通知及可选奖励；玩家观察用于计时和身份核对，机器人状态用于 UUID 排除；订阅 `chat.received`。不开通跨插件服务，也不需要签到插件。
+
+## 来源、许可与验收
+
+AGPL-3.0，见 LICENSE。功能调查参考 ToolDelta 市场 [玩家记录](https://github.com/ToolDelta-Basic/PluginMarket/blob/ca5d2870cbaf47c29778c52b984cdd8d9e2dcb8f/%E7%8E%A9%E5%AE%B6%E8%AE%B0%E5%BD%95/__init__.py)，作者 SuperScript，版本 0.0.3，固定市场提交 `ca5d2870cbaf47c29778c52b984cdd8d9e2dcb8f`。该插件仅记录首次/最近加入，不提供累计时长；本插件为独立原生实现，未复制其源码，不宣称 ToolDelta 运行兼容。
+
+发行白名单由 `release.json/files` 管理，使用仓库 `tools/package-plugin.py` 打包；共享支持模块由仓库统一同步，不随包引入私有 SDK。离线源码与临时行为核验不等于游戏验收：上架前仍须目标 Host 验证可靠聊天 XUID、UUID 重连稳定性、机器人 UUID 排除、跨日/断流、真实奖励资产和五插件同装命令路径。
