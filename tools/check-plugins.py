@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('packager', ROOT / 'tools/package-plugin.py')
 packager = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(packager)
+subprocess.run([sys.executable, str(ROOT / 'tools/sync-community-support.py')], check=True)
 seen = set()
 for plugin in sorted((ROOT / 'plugins').iterdir()):
     if not plugin.is_dir():

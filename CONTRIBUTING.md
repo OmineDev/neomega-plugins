@@ -18,6 +18,12 @@ python3 tools/package-plugin.py plugins/<目录> --output /tmp/review.zip
 
 通用打包器只校验社区提交约定，不替代 Host 完整 manifest/schema 校验。社区制品上限为 32 MiB；Polaris 托管安装当前上限为 5 MiB，超过该大小的包只能在支持对应大小的独立 Host/CLI 中安装。ZIP 的文件顺序取自白名单，时间和权限固定；同一源和打包运行时可复现。既有 Fatalder 白名单保持旧打包器字节不变。Host 离线检查仍可使用 `tools/check-host.py`；离线安装不证明实服业务运行成功。
 
+## 社区服务插件的共用源码
+
+在线时间、签到、玩家互传、定时命令和个人传送点各自独立安装；它们包内的 `community_support.py` 是 `tools/community_support.py` 的相同字节副本，不是插件间运行依赖。只修改 canonical 文件，再运行 `python3 tools/sync-community-support.py --write` 更新副本。`tools/check-plugins.py` 会检查副本一致性；发行白名单仍须明确包含该文件，不得把工具包 SDK 一同打包。
+
+支持层只负责身份观察、目标编码和原操作回执读取，不写业务账本、不确认事件、不提交世界动作。各插件负责自己的事务、配置和生命周期；修复共用源码时必须检查全部使用者，已发行制品仍遵守增版本和不可替换规则。
+
 ## 审核后发布
 
 1. 维护者在默认分支运行 **Publish reviewed plugin**，输入已经审核合入的插件目录名。工作流绑定启动时的提交 SHA，运行社区检查和测试，从实际 ZIP 提取运行时、API、依赖和订阅元数据，以启动 SHA 记录源码来源，生成 ZIP、`SHA256SUMS` 与候选索引，并保存 Actions artifact。
