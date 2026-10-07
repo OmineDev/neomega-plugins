@@ -2,6 +2,51 @@
   "schema_version": 1,
   "plugins": [
     {
+      "plugin_id": "community.player-tpa",
+      "version": "0.1.0",
+      "name": "玩家互传",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/community.player-tpa-v0.1.0/community.player-tpa-0.1.0.zip",
+      "sha256": "451f5c7cdc0e26554944cd7db197e8f2b101650cb4b3ba5fae79b48e82d4bc97",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": []
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "执行同意后的玩家互传及私聊通知",
+        "operation:framework.entities.query": "校验准确玩家位置、维度、距离与倒计时移动",
+        "players:list": "以当前观察名单核对聊天XUID、UUID及实体身份",
+        "event:chat.received": "接收互传请求、处理同意拒绝和玩家偏好"
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 10
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "7c984c3ad1da067c3d975bff7c66c6fae487b079",
+        "path": "plugins/player-tpa"
+      }
+    },
+    {
       "plugin_id": "example.go-state-darwin-amd64",
       "version": "1.0.0",
       "name": "Go 状态与事件服务 (darwin/amd64)",
