@@ -18,6 +18,8 @@ python3 tools/package-plugin.py plugins/<目录> --output /tmp/review.zip
 
 通用打包器只校验社区提交约定，不替代 Host 完整 manifest/schema 校验。社区制品上限为 32 MiB；Polaris 托管安装当前上限为 5 MiB，超过该大小的包只能在支持对应大小的独立 Host/CLI 中安装。ZIP 的文件顺序取自白名单，时间和权限固定；同一源和打包运行时可复现。既有 Fatalder 白名单保持旧打包器字节不变。Host 离线检查仍可使用 `tools/check-host.py`；离线安装不证明实服业务运行成功。
 
+Host 配置 schema 使用 SDK 支持的 JSON Schema 子集，不能直接采用通用校验器支持的全部关键字。优先从完整类型声明的配置 dataclass 生成 schema，并用目标 SDK 的 `check_config_schema` 和 `load_config` 核对静态 schema、默认值与示例；例如列表必须声明元素类型。不能由静态 schema 表达的业务约束保留在配置加载校验中。ZIP checker 通过仍须在目标 Host 核验配置描述和校验入口；它不证明配置可以加载或游戏逻辑已经运行。
+
 ## 社区服务插件的共用源码
 
 在线时间、签到、玩家互传、定时命令和个人传送点各自独立安装；它们包内的 `community_support.py` 是 `tools/community_support.py` 的相同字节副本，不是插件间运行依赖。只修改 canonical 文件，再运行 `python3 tools/sync-community-support.py --write` 更新副本。`tools/check-plugins.py` 会检查副本一致性；发行白名单仍须明确包含该文件，不得把工具包 SDK 一同打包。

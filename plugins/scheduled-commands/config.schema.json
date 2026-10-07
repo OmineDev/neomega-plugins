@@ -8,36 +8,28 @@
     },
     "tasks": {
       "type": "array",
-      "default": [],
-      "maxItems": 100,
       "items": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9_-]{0,47}$"
-          },
-          "enabled": {
-            "type": "boolean",
-            "default": false
+            "description": "小写字母开头的 1..48 位字母/数字/_/-，必须唯一。"
           },
           "commands": {
             "type": "array",
-            "minItems": 1,
-            "maxItems": 16,
             "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4096
-            }
+              "type": "string"
+            },
+            "description": "1..16 条单行命令，每条最多 4096 UTF-8 bytes。"
           },
           "schedule": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "object",
                 "properties": {
                   "kind": {
-                    "const": "interval"
+                    "type": "string",
+                    "description": "必须为 interval；由插件业务校验。"
                   },
                   "seconds": {
                     "type": "integer",
@@ -55,17 +47,15 @@
                 "type": "object",
                 "properties": {
                   "kind": {
-                    "const": "daily"
+                    "type": "string",
+                    "description": "必须为 daily；由插件业务校验。"
                   },
                   "times": {
                     "type": "array",
-                    "minItems": 1,
-                    "maxItems": 48,
-                    "uniqueItems": true,
                     "items": {
-                      "type": "string",
-                      "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
-                    }
+                      "type": "string"
+                    },
+                    "description": "1..48 个不重复 HH:MM；由插件业务校验。"
                   },
                   "timezone": {
                     "type": "string",
@@ -74,12 +64,15 @@
                 },
                 "required": [
                   "kind",
-                  "times",
-                  "timezone"
+                  "times"
                 ],
                 "additionalProperties": false
               }
             ]
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": false
           },
           "run_on_start": {
             "type": "boolean",
@@ -87,8 +80,8 @@
           },
           "resume_token": {
             "type": "string",
-            "default": "",
-            "maxLength": 80
+            "description": "最多 80 字符；恢复须使用新的非空值。",
+            "default": ""
           }
         },
         "required": [
@@ -97,7 +90,9 @@
           "schedule"
         ],
         "additionalProperties": false
-      }
+      },
+      "description": "最多 100 项；业务限制在加载配置时校验。",
+      "default": []
     }
   },
   "required": [],

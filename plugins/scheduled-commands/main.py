@@ -1,6 +1,6 @@
 """Native scheduled commands; durable admission, never replay a world write."""
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timedelta, timezone
 import re
 import uuid
@@ -57,13 +57,37 @@ def validate_task(task):
 
 
 @dataclass
+class IntervalSchedule:
+    kind: str = field(metadata={'description': '必须为 interval；由插件业务校验。'})
+    seconds: int = field(metadata={'minimum': 10, 'maximum': 31536000})
+
+
+@dataclass
+class DailySchedule:
+    kind: str = field(metadata={'description': '必须为 daily；由插件业务校验。'})
+    times: list[str] = field(metadata={'description': '1..48 个不重复 HH:MM；由插件业务校验。'})
+    timezone: str = 'Asia/Shanghai'
+
+
+@dataclass
+class Task:
+    id: str = field(metadata={'description': '小写字母开头的 1..48 位字母/数字/_/-，必须唯一。'})
+    commands: list[str] = field(metadata={'description': '1..16 条单行命令，每条最多 4096 UTF-8 bytes。'})
+    schedule: IntervalSchedule | DailySchedule
+    enabled: bool = False
+    run_on_start: bool = False
+    resume_token: str = field(default='', metadata={'description': '最多 80 字符；恢复须使用新的非空值。'})
+
+
+@dataclass
 class Settings:
     enabled: bool = True
-    tasks: list = field(default_factory=list)
+    tasks: list[Task] = field(default_factory=list, metadata={'description': '最多 100 项；业务限制在加载配置时校验。'})
 
     def __post_init__(self):
         if type(self.enabled) is not bool or not isinstance(self.tasks, list) or len(self.tasks) > 100:
             raise ValueError('enabled must be boolean; tasks must have at most 100 entries')
+        self.tasks = [asdict(task) if is_dataclass(task) else task for task in self.tasks]
         for task in self.tasks:
             validate_task(task)
         if len({t['id'] for t in self.tasks}) != len(self.tasks):
