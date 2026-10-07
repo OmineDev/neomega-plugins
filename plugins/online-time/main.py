@@ -43,6 +43,8 @@ class Reward:
     command: str = field(default='', metadata={'maxLength': 2048})
 
     def __post_init__(self):
+        if len(self.command) > 2048:
+            raise ValueError('reward command exceeds 2048 characters')
         if self.kind not in ('item', 'scoreboard', 'command'):
             raise ValueError('unknown reward kind')
         if self.kind == 'item' and not re.fullmatch(r'[a-z0-9_]+(?::[a-z0-9_./-]+)?', self.item):
@@ -65,8 +67,8 @@ class Rule:
     def __post_init__(self):
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,32}', self.id) or self.period not in ('total', 'day'):
             raise ValueError('invalid rule ID or period')
-        if not self.rewards:
-            raise ValueError('each rule needs rewards')
+        if not 1 <= len(self.rewards) <= 16:
+            raise ValueError('each rule needs 1..16 rewards')
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,8 @@ class Rewards:
     rules: list[Rule] = field(default_factory=list, metadata={'maxItems': 16})
 
     def __post_init__(self):
+        if len(self.rules) > 16:
+            raise ValueError('rewards allow at most 16 rules')
         if self.enabled and not self.rules:
             raise ValueError('enabled rewards require rules')
         if len({r.id for r in self.rules}) != len(self.rules):
@@ -92,6 +96,8 @@ class Settings:
     rewards: Rewards = field(default_factory=Rewards)
 
     def __post_init__(self):
+        if not 1 <= len(self.aliases) <= 10:
+            raise ValueError('aliases require 1..10 entries')
         if len(set(self.aliases)) != len(self.aliases) or any(
                 not a or len(a) > 32 or any(c.isspace() or ord(c) < 32 for c in a) for a in self.aliases):
             raise ValueError('aliases must be distinct single words')
