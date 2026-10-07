@@ -26,21 +26,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/checkout@v4
-        with:
-          repository: OmineDev/neomega-agent
-          ref: 675d7e0e52bfa854a7ab79b19c61db59d1921210
-          path: .ci-sdk
-          persist-credentials: false
+      - name: Fetch pinned public SDK and checker
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 --output "$RUNNER_TEMP/neomega-toolkit.tar.gz" https://wiki.wuxie233.com/downloads/neomega-toolkit-1.1.0-linux-amd64.tar.gz
+          echo "1865efc93815c031cbe8f6a2cd353683868c0837f97c43dbd42c63a2495140ed  $RUNNER_TEMP/neomega-toolkit.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/neomega-toolkit"
+          tar -xzf "$RUNNER_TEMP/neomega-toolkit.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/neomega-toolkit"
+          (cd "$RUNNER_TEMP/neomega-toolkit" && sha256sum --check --quiet FILES.sha256)
+          echo "NEOMEGA_TOOLKIT=$RUNNER_TEMP/neomega-toolkit" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Check and prepare reviewed source
         run: |
           python3 -m unittest discover -s tests
-          PYTHONPATH="$GITHUB_WORKSPACE/.ci-sdk/sdk/python" python3 tools/check-plugins.py
-          python3 tools/prepare-release.py "$PLUGIN_DIRECTORY"
+          PYTHONPATH="$NEOMEGA_TOOLKIT/sdk/python" python3 tools/check-plugins.py
+          python3 tools/prepare-release.py "$PLUGIN_DIRECTORY" --source-ref "$GITHUB_SHA"
           cat dist/release/release.env >> "$GITHUB_ENV"
+          artifact=$(find dist/release -maxdepth 1 -name '*.zip' -type f)
+          "$NEOMEGA_TOOLKIT/neomega-plugin-check" "$artifact"
       - name: Keep reviewable candidate even if publication fails
         uses: actions/upload-artifact@v4
         with:
@@ -61,8 +65,9 @@ jobs:
           cmp "dist/release/$filename" "dist/readback/$filename"
       - name: Propose catalog inclusion for separate review
         run: |
-          git switch -c "catalog/$tag"
-          cp dist/release/index.json catalog/index.json
+          git fetch origin "$DEFAULT_BRANCH"
+          git switch -c "catalog/$tag" "origin/$DEFAULT_BRANCH"
+          python3 tools/catalog-release.py --merge-index dist/release/index.json --plugin "$plugin_id" --version "$version" --index catalog/index.json
           git add catalog/index.json
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "feat(catalog): add $tag"
           git push origin "HEAD:refs/heads/catalog/$tag"

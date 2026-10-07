@@ -14,7 +14,7 @@ packager = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(packager)
 
 
-def prepare(directory, output):
+def prepare(directory, output, source_ref=None):
     if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]*', directory):
         raise ValueError('plugin directory must be a single directory name')
     root = ROOT / 'plugins' / directory
@@ -30,10 +30,11 @@ def prepare(directory, output):
     (output / 'index.json').write_text(json.dumps(index, ensure_ascii=False, indent=2) + '\n')
     purposes = output / 'permission-purposes.json'
     purposes.write_text(json.dumps(meta.get('permission_purposes', manifest.get('permissions', {}).get('purposes', {}))))
+    source_args = ['--source-ref', source_ref, '--source-path', 'plugins/' + directory] if source_ref else []
     subprocess.run([sys.executable, str(ROOT / 'tools/catalog-release.py'), '--package', str(output / filename),
                     '--plugin', manifest['id'], '--version', manifest['version'], '--name', meta['name'],
-                    '--index', str(output / 'index.json'), '--permission-purposes', str(purposes)], check=True)
-    (output / 'release.env').write_text(f'tag={tag}\nfilename={filename}\n')
+                    '--index', str(output / 'index.json'), '--permission-purposes', str(purposes)] + source_args, check=True)
+    (output / 'release.env').write_text(f'tag={tag}\nfilename={filename}\nplugin_id={manifest["id"]}\nversion={manifest["version"]}\n')
     (output / 'release-notes.md').write_text(f'{meta["name"]} {manifest["version"]}\n\n'
         '固定审核制品；配置 schema、权限用途和许可证见 ZIP。\n'
         '自动打包和静态检查不代表实服验收；安装和运行仍需服主授权。\n')
@@ -43,8 +44,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('plugin_directory')
     parser.add_argument('--output', type=Path, default=Path('dist/release'))
+    parser.add_argument('--source-ref', help='Reviewed full source commit SHA; required by publication workflow')
     args = parser.parse_args()
     try:
-        prepare(args.plugin_directory, args.output)
+        prepare(args.plugin_directory, args.output, args.source_ref)
     except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'prepare-release: {error}\n')
