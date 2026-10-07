@@ -82,6 +82,10 @@ class Chunks(Plugin):
         # A new Worker must revalidate observation freshness and world epoch.
         for row in self.rows.values():
             row['cached_at'] = 0
+            row['observation'] = 'waiting'
+            row.setdefault('action_state', row.get('receipt', {}).get('state',
+                           row['state'] if row['state'] in ('queued', 'failed', 'cancelled') else 'unknown'))
+            self.update_state(row)
         ctx.every(1.0, lambda: self.tick(ctx), name='chunks-pump')
 
     async def on_stop(self, ctx):
@@ -150,10 +154,44 @@ class Chunks(Plugin):
             self.persisted.pop(old['request_id'],None)
         row = {'request_id': key, 'dimension': d, 'pos': pos, 'epoch': epoch,
                'state': 'queued', 'owners': [owner], 'created_at': time.time(), 'cached_at': 0,
-               'commit_id': uuid.uuid4().hex, 'operation_ids': []}
+               'commit_id': uuid.uuid4().hex, 'operation_ids': [],
+               'action_state': 'queued', 'observation': 'waiting'}
         self.rows[key] = row
         await self.save(ctx)
         return self.public(row)
+
+    @staticmethod
+    def update_state(row):
+        action = row['action_state']
+        if action in ('queued', 'unknown', 'failed', 'cancelled'):
+            row['state'] = action
+        elif action == 'succeeded' and row['observation'] == 'observed':
+            row['state'] = 'observed'
+        elif action == 'succeeded' and row['observation'] == 'unobserved':
+            row['state'] = 'unobserved'
+        else:
+            row['state'] = 'waiting'
+
+    async def baseline(self, ctx, row, key):
+        # Snapshot metadata has no event timestamp. Capture a pre-action revision
+        # fence; only a later revision proves an observation after this instant.
+        started = time.time()
+        try:
+            desc = await snapshot(ctx.peer, key)
+        except IPCRejected as exc:
+            if exc.code != 'cache_miss':
+                raise
+            revision = 0
+        else:
+            # consume releases the temporary Host grant even though only metadata
+            # is needed for the fence; dropping a descriptor leaks grant quota.
+            await self.client.consume(desc, lambda part: None)
+            if desc['metadata']['key'] != key:
+                raise ValueError('snapshot key mismatch')
+            revision = desc['metadata']['revision']
+        row['baseline_revision'] = revision
+        row['observation_not_before'] = started
+        await self.save(ctx)
 
     @staticmethod
     def public(row):
@@ -178,7 +216,7 @@ class Chunks(Plugin):
             if row['epoch'] != await self.world_epoch(ctx):
                 result['state'] = 'epoch_expired'
                 return result
-            if row['state'] == 'observed':
+            if row.get('observation') == 'observed':
                 raw = (self.path / row['request_id']).read_bytes()
                 if 'cell' in args:
                     cell = args['cell']
@@ -204,7 +242,8 @@ class Chunks(Plugin):
             row = self.owned(args, call)
             row['owners'].remove(call.installation_id)
             if not row['owners'] and row['state'] == 'queued':
-                row['state'] = 'cancelled'
+                row['action_state'] = 'cancelled'
+                self.update_state(row)
             # Shared in-flight reads are never cancelled for another consumer.
             await self.save(ctx)
             return {'request_id': row['request_id'], 'state': 'detached'}
@@ -251,11 +290,16 @@ class Chunks(Plugin):
                 if row['epoch'] != await self.world_epoch(ctx):
                     row['state'] = 'epoch_expired'
                     continue
+                key = dict(epoch=row['epoch'], dimension=row['dimension'], **dict(zip(('x','y','z'), row['pos'])))
+                if row['state'] != 'queued' and 'baseline_revision' not in row:
+                    await self.baseline(ctx, row, key)
                 if row['state'] == 'queued':
                     if any(r['state']=='unknown' and not r['operation_ids'] for r in self.rows.values()):
                         continue
+                    await self.baseline(ctx, row, key)
                     # Commit admission record and action atomically. On lost reply query commit ID.
-                    row['state'] = 'unknown'
+                    row['action_state'] = 'unknown'
+                    self.update_state(row)
                     await self.save(ctx)
                     tx = await ctx.storage.transaction(commit_id=row['commit_id'],keys=[])
                     tx.set('chunk_action_'+row['commit_id'],{'request_id':row['request_id'],'state':'admitted'})
@@ -267,19 +311,22 @@ class Chunks(Plugin):
                         await self.save(ctx)
                         continue
                     row['operation_ids'] = receipt['operation_ids']
-                    row['state'] = 'waiting'
+                    row['action_state'] = 'pending'
+                    self.update_state(row)
                 if not row['operation_ids']:
                     receipt = await ctx.storage.receipt(row['commit_id'])
                     if receipt is None:
                         continue
                     row['operation_ids'] = receipt['operation_ids']
-                    row['state'] = 'waiting'
+                    row['action_state'] = 'pending'
+                    self.update_state(row)
+                receipts = []
                 for opid in row['operation_ids']:
                     receipt = await ctx.operations.get(opid)
                     row['receipt'] = receipt
-                    if receipt['state'] in ('failed', 'cancelled', 'unknown'):
-                        row['state'] = receipt['state']
-                key = dict(epoch=row['epoch'], dimension=row['dimension'], **dict(zip(('x','y','z'), row['pos'])))
+                    receipts.append(receipt['state'])
+                row['action_state'] = next((state for state in ('unknown', 'running', 'pending', 'failed', 'cancelled') if state in receipts), 'succeeded')
+                self.update_state(row)
                 try:
                     desc = await snapshot(ctx.peer, key)
                     data = bytearray()
@@ -290,21 +337,30 @@ class Chunks(Plugin):
                     ref = await self.client.consume(desc, collect)
                     if len(data) > 1 << 20:
                         raise ValueError('snapshot exceeds 1 MiB')
+                    metadata = desc['metadata']
+                    if metadata['key'] != key:
+                        raise ValueError('snapshot key mismatch')
+                    if metadata['revision'] <= row['baseline_revision']:
+                        row['observation'] = 'unobserved' if now-row['created_at'] >= ctx.config.observe_timeout else 'waiting'
+                        self.update_state(row)
+                        break
                     parse_subchunk(data)
                     if desc['metadata']['key'] != key:
                         raise ValueError('snapshot key mismatch')
                 except IPCRejected as exc:
                     if exc.code not in ('cache_miss', 'world_epoch_expired', 'unsupported'):
                         raise
-                    row['observation'] = exc.code
-                    if now-row['created_at'] >= ctx.config.observe_timeout and row['state'] != 'unknown':
-                        row['state'] = 'unobserved'
+                    row['observation_error'] = exc.code
+                    row['observation'] = 'unobserved' if now-row['created_at'] >= ctx.config.observe_timeout else 'waiting'
+                    self.update_state(row)
                 else:
                     target = self.path / row['request_id']
                     temp = target.with_suffix('.part')
                     temp.write_bytes(data)
                     temp.replace(target)
-                    row.update(state='observed', cached_at=time.time(), digest=ref['digest'], metadata=desc['metadata'])
+                    row.update(observation='observed', cached_at=row['observation_not_before'],
+                               digest=ref['digest'], metadata=metadata)
+                    self.update_state(row)
                 # One active network request per tick bounds work and leaves time for consumers.
                 break
             for sub in self.subscribers.values():

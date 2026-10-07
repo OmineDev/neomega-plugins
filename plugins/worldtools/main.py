@@ -50,11 +50,19 @@ class WorldTools(SnapshotTasks, FatalderTasks, Plugin):
                 for task in self.tasks.values():
                     if task.get('remote_calls'):
                         await self.reconcile_fatalder(ctx,task)
-                    if task.get('remote_calls') and any(r['method'] != 'status' and r['state'] in ('unknown','pending') for r in task['remote_calls']):
+                        await self.save(ctx)
+                    if task.get('remote_calls') and any(self.unresolved_remote(r) for r in task['remote_calls']):
                         return {'status':'busy','token':token}
-                    if task['state'] in ('running', 'unknown', 'cancelling'):
+                    if task['kind'] == 'fatalder':
+                        # A replied service call is not a finished remote world job.
+                        remote = task.get('remote') or {}
+                        if (task['state'] not in ('remote_succeeded', 'remote_failed', 'remote_cancelled')
+                                or remote.get('lease_pending') or remote.get('recovery_required')):
+                            return {'status': 'busy', 'token': token}
+                    elif task['state'] in ('running', 'unknown', 'cancelling'):
                         await self.reconcile(ctx, task)
-                        if task['cursor'] < len(task['steps']) and task['steps'][task['cursor']]['state'] in ('unknown', 'submitted'):
+                        await self.save(ctx)
+                        if task['state'] in ('running', 'unknown', 'cancelling'):
                             return {'status': 'busy', 'token': token}
                 await self.save(ctx)
                 self.sealed = token
@@ -73,6 +81,16 @@ class WorldTools(SnapshotTasks, FatalderTasks, Plugin):
         self.root.mkdir(parents=True,exist_ok=True)
         self.tasks = {p.name.split('.')[0]:json.loads(p.read_text()) for p in self.root.glob('*.task.json')}
         self.persisted = {k:digest(v) for k,v in self.tasks.items()}
+        for task in self.tasks.values():
+            version = task.get('schema_version', 1)
+            if type(version) is not int or version not in (1, 2):
+                raise ValueError('unsupported world task schema_version')
+            if version == 1:
+                # Only metadata changes: retained commit IDs and unknown actions stay intact.
+                task.update(schema_version=2, revision=0)
+            elif type(task.get('revision')) is not int or task['revision'] < 1:
+                raise ValueError('invalid world task revision')
+        await self.save(ctx)
         ctx.every(0.5, lambda: self.tick(ctx), name='world-task-pump')
 
     async def save(self, ctx):
@@ -81,14 +99,26 @@ class WorldTools(SnapshotTasks, FatalderTasks, Plugin):
         for key,task in self.tasks.items():
             checksum = digest(task)
             if getattr(self,'persisted',{}).get(key) != checksum:
-                atomic_json(self.root / (key+'.task.json'),task)
-                self.persisted[key] = checksum
+                old_revision = task.get('revision', 0)
+                task.update(schema_version=2, revision=old_revision + 1)
+                try:
+                    atomic_json(self.root / (key+'.task.json'),task)
+                except Exception:
+                    task['revision'] = old_revision
+                    raise
+                self.persisted[key] = digest(task)
 
     def owned(self, args, call):
         task = self.tasks.get(args['task_id'])
         if task is None or task['owner'] != call.installation_id:
             raise ServiceRejected('task_not_found')
         return task
+
+    @staticmethod
+    def check_revision(task, args):
+        expected = args.get('expected_revision')
+        if type(expected) is not int or expected != task['revision']:
+            raise ServiceRejected('revision_conflict')
 
     @staticmethod
     def public(task, offset=0, limit=2):
@@ -203,7 +233,9 @@ class WorldTools(SnapshotTasks, FatalderTasks, Plugin):
                 for i in range(0, len(items), 9):
                     fields = {'pos': list(pos), 'slots': dict(items[i:i+9]),
                               'anvil_pos': list(position(spec['anvil_pos'])), 'workspace_pos': list(position(spec['workspace_pos']))}
-                    if 'block' in spec:
+                    if dimension is not None:
+                        fields['dimension'] = dimension
+                    if i == 0 and 'block' in spec:
                         fields['block'] = spec['block']
                     self.append(steps, 'container', fields)
                 regions.append(Region(pos, (1,1,1)).as_dict())
@@ -263,6 +295,7 @@ class WorldTools(SnapshotTasks, FatalderTasks, Plugin):
         async with self.lock:
             self.writable()
             task = self.owned(args, call)
+            self.check_revision(task, args)
             if task['state'] == 'prepared':
                 if task['epoch'] != await self.epoch(ctx):
                     raise ServiceRejected('world_epoch_expired')
@@ -283,7 +316,9 @@ class WorldTools(SnapshotTasks, FatalderTasks, Plugin):
     @service('cancel', with_context=True)
     async def cancel(self, ctx, args, call):
         async with self.lock:
+            self.writable()
             task = self.owned(args, call)
+            self.check_revision(task, args)
             task['cancel_requested'] = True
             if task['state'] == 'prepared':
                 task['state'] = 'cancelled'
@@ -298,6 +333,7 @@ class WorldTools(SnapshotTasks, FatalderTasks, Plugin):
         async with self.lock:
             self.writable()
             task = self.owned(args, call)
+            self.check_revision(task, args)
             await self.reconcile(ctx, task)
             # Unknown and failed actions are never replaced or resubmitted.
             if task['state'] == 'cancelled' and task['cursor'] < len(task['steps']) and task['steps'][task['cursor']]['state'] == 'prepared':

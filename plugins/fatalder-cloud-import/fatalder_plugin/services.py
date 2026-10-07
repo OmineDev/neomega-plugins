@@ -20,7 +20,7 @@ class ServiceAdapter:
     @staticmethod
     def public(state):
         record = state.get('service', {})
-        return dict(request_key=record.get('request_key'), job_id=state.get('job_id'),
+        return dict(controls=json.loads(json.dumps(state.get('controls', {}))), request_key=record.get('request_key'), job_id=state.get('job_id'),
                     phase=state.get('phase'), quote=state.get('quote'),
                     accepted_start_key=(state.get('start') or {}).get('idempotency_key'),
                     confirm_token=state.get('confirm_token'), confirmation_key=record.get('confirmation_key'),
@@ -63,7 +63,7 @@ class ServiceAdapter:
                     raise ServiceRejected('request_key_conflict')
                 return self.public(state)
             if state and (state.get('phase') not in TERMINAL or state.get('lease')
-                          or state.get('recovery_required') or self.controller.active_controls
+                          or state.get('recovery_required') or self.controller.unresolved_controls() or self.controller.active_controls
                           or any(not task.done() for task in self.controller.control_tasks)):
                 raise ServiceRejected('import_slot_occupied')
             if record:
@@ -87,8 +87,15 @@ class ServiceAdapter:
             identity = hashlib.sha256((call.installation_id + '\0' + key).encode()).hexdigest()
             history = self.controller.state.get('service_history', {})
             if identity in history:
-                return history[identity]['result']
-            return self.public(self.owned(args, call))
+                result = history[identity]['result']
+            else:
+                result = self.public(self.owned(args, call))
+            if 'control_id' in args:
+                control_id = args['control_id']
+                if not isinstance(control_id, str) or control_id not in result.get('controls', {}):
+                    raise ServiceRejected('control_not_found')
+                return dict(result, control=result['controls'][control_id])
+            return result
 
     @service('confirm', with_context=True)
     async def service_confirm(self, ctx, args, call):
@@ -112,7 +119,45 @@ class ServiceAdapter:
     async def control(self, ctx, args, call, action):
         async with self.controller.lock:
             self.authorize(ctx, call)
+            key = args.get('request_key')
+            if isinstance(key, str):
+                identity = hashlib.sha256((call.installation_id + '\0' + key).encode()).hexdigest()
+                historical = self.controller.state.get('service_history', {}).get(identity)
+                if historical is not None:
+                    result = historical['result']
+                    if args.get('job_id') != result.get('job_id'):
+                        raise ServiceRejected('task_not_found')
+                    control_id = args.get('control_id')
+                    if not isinstance(control_id, str):
+                        raise ServiceRejected('invalid_control_id')
+                    record = result.get('controls', {}).get(control_id)
+                    if record is None:
+                        raise ServiceRejected('control_not_found')
+                    if record['action'] != action:
+                        raise ServiceRejected('control_id_conflict')
+                    return dict(result, control=dict(record))
             state = self.owned(args, call)
+            if action in ('pause', 'resume', 'cancel'):
+                control_id = args.get('control_id')
+                if not isinstance(control_id, str) or not 1 <= len(control_id) <= 128:
+                    raise ServiceRejected('invalid_control_id')
+                previous = state.get('controls', {}).get(control_id)
+                if previous is not None:
+                    if previous['action'] != action:
+                        raise ServiceRejected('control_id_conflict')
+                    return dict(self.public(state), control=dict(previous))
+                if not args.get('job_id') or state.get('phase') in TERMINAL:
+                    raise ServiceRejected('task_not_active')
+                if self.controller.active_controls or any(not t.done() for t in self.controller.control_tasks):
+                    raise ServiceRejected('control_in_progress')
+                try:
+                    record = await self.controller.admit_control(action, control_id)
+                except ValueError as exc:
+                    raise ServiceRejected(str(exc)) from None
+                self.controller.spawn_control(action, {'control_id': control_id}, name='fatalder-service-control')
+                return dict(self.public(state), control=dict(record))
+            if self.controller.unresolved_controls():
+                raise ServiceRejected('control_unresolved')
             if action == 'recover':
                 expected = state['service']['confirmation_key'] if state.get('start') else ''
                 if args.get('confirmation_key') != expected:

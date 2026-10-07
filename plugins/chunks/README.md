@@ -8,7 +8,7 @@
 
 | 方法 | 输入 | 返回 |
 |---|---|---|
-| request | dimension、pos=[x,y,z]、可选 max_age | request_id、state、epoch、原 operation_ids |
+| request | dimension、pos=[x,y,z]、可选 max_age | request_id、state、action_state、observation、epoch、原 operation_ids |
 | read | request_id；可选 cell=[0..15,0..15,0..15] 及 nbt_offset，或 offset/length | 元数据和单格 layers/NBT，或不超过 16 KiB 的 base64 分段 |
 | cancel | request_id | 从合并请求分离本调用方；不取消其他调用方 |
 | subscribe | dimension、pos、可选 ttl=60/max_age | subscription_id、request_id、cursor |
@@ -18,7 +18,9 @@
 
 ## 状态与恢复
 
-`queued → waiting → observed`。`observed` 仅在收到实际快照、验证传输摘要并解析成功后成立。发包成功不会伪装为已观察。超时没有观察为 `unobserved`；换世界为 `epoch_expired`；动作状态为 `unknown` 时只查询原 commit/operation，不发送替代请求。
+`state` 是兼容聚合状态；`action_state` 独立表示原提交动作，`observation` 独立表示快照观察。`queued → waiting → observed`。`observed` 仅在收到实际快照、验证传输摘要并解析成功后成立。发包成功不会伪装为已观察。超时没有观察为 `unobserved`；换世界为 `epoch_expired`；动作状态为 `unknown` 时只查询原 commit/operation，不发送替代请求。有快照也不能清除 unknown；`read` 仍可返回观察数据，但调用者必须单独检查 action_state。
+
+提交前保存 Host 快照 `baseline_revision`，仅严格更大的 revision 才能算新的观察。Host 目前不提供事件时间；`observation_not_before` 和 `cached_at` 使用提交前读取 baseline 的起始时间，作为新观察的保守时间下界，不声称是游戏 tick 时间。反复下载相同 revision 不延长缓存寿命。重启或旧记录缺少 baseline 时重新建立观察基线并继续查询原动作，不重发 unknown。
 
 `read` 的 NBT 保持源 encoding 与字节；不把未观测格子当空气。空 NBT 只有在 `nbt_complete=true` 时才能判定没有 NBT。订阅采用有界最新状态流，`gap=true` 后以返回最新状态重新同步。
 

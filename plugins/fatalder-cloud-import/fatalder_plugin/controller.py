@@ -61,7 +61,7 @@ class Controller:
         if (self.maintenance_token or self.active_controls or any(not task.done() for task in self.control_tasks) or
                 (self.state and self.state.get('phase') not in TERMINAL) or
                 self.state.get('lease') or self.state.get('review') or
-                self.state.get('recovery_required') or
+                self.state.get('recovery_required') or self.unresolved_controls() or
                 any(value.get('state') not in ('succeeded', 'failed', 'skipped')
                     for value in outcomes.values())):
             return {'status': 'busy', 'token': token}
@@ -74,6 +74,13 @@ class Controller:
         self.state = await self.ctx.storage.get(STATE, {})
         if self.state and self.state.get('binding') != self.binding():
             raise ValueError('active slot configuration binding changed')
+        changed = False
+        for record in self.state.get('controls', {}).values():
+            if record['action_state'] == 'accepted':
+                record['action_state'] = 'unknown'
+                changed = True
+        if changed:
+            await self.save()
         self.ctx.every(self.ctx.config.poll_seconds, self.tick, name='fatalder-monitor', immediate=True)
 
     def binding(self):
@@ -184,6 +191,12 @@ class Controller:
                             ('；需要显式恢复' if self.state.get('recovery_required') else '') +
                             ('；存在待核查权限租约' if self.state.get('lease') else '') +
                             '；' + self.result_summary(self.state.get('task_outcomes', {})))
+            controls = self.state.get('controls', {})
+            if controls:
+                latest = next(reversed(controls.values()))
+                await self.tell(name, '最近控制：' + latest['control_id'] + ' ' + latest['action'] +
+                                '；回执=' + latest['action_state'] +
+                                '；观察到目标状态=' + str(latest['desired_state_observed']))
             if self.state.get('phase') == 'quoted':
                 await self.show_quote(name)
             return
@@ -205,6 +218,8 @@ class Controller:
                 await self.save()
                 self.spawn_control('start', self.state['start'], name='fatalder-start')
             elif action == '恢复':
+                if self.unresolved_controls():
+                    raise ValueError('control_unresolved')
                 job = await self.request('GET', self.path())
                 if job['state'] == 'READY' and self.state.get('start'):
                     self.spawn_control('start', self.state['start'], name='fatalder-start-reconcile')
@@ -214,7 +229,10 @@ class Controller:
                     raise ValueError('recovery not required')
                 self.spawn_control('recover', dict(version=5, job_id=self.state['job_id']), name='fatalder-recover')
             else:
-                self.spawn_control({'暂停': 'pause', '继续': 'resume', '取消': 'cancel'}[action], {}, name='fatalder-control')
+                operation = {'暂停': 'pause', '继续': 'resume', '取消': 'cancel'}[action]
+                control_id = secrets.token_hex(16)
+                await self.admit_control(operation, control_id)
+                self.spawn_control(operation, {'control_id': control_id}, name='fatalder-control')
             await self.tell(name, '已提交请求；最终状态以 !导入 状态 为准。')
             return
         await self.prepare_import(name, args)
@@ -223,7 +241,7 @@ class Controller:
     async def prepare_import(self, owner, args, service_record=None, service_history=None):
         if len(args) != 5:
             raise ValueError('expected file x y z dimension')
-        if self.state and (self.state.get('phase') not in TERMINAL or self.state.get('lease')):
+        if self.state and (self.state.get('phase') not in TERMINAL or self.state.get('lease') or self.unresolved_controls()):
             raise ValueError('import slot occupied')
         action = args[0]
         path = self.source_path(action)
@@ -273,6 +291,35 @@ class Controller:
         q = self.state['quote']
         await self.tell(name, f"报价：{q['amount']} {q['currency']}，计费量 {q['units']}，有效至 {q['expires_at']}。确认执行：!导入 确认 {self.state['confirm_token']}")
 
+    def unresolved_controls(self):
+        return any(r['action_state'] in ('accepted', 'unknown')
+                   for r in self.state.get('controls', {}).values())
+
+    async def admit_control(self, action, control_id):
+        """Caller holds the lock. Persist intent before any network dispatch."""
+        if not isinstance(control_id, str) or not 1 <= len(control_id) <= 128:
+            raise ValueError('invalid_control_id')
+        records = self.state.setdefault('controls', {})
+        if control_id in records:
+            if records[control_id]['action'] != action:
+                raise ValueError('control_id_conflict')
+            return records[control_id]
+        if self.unresolved_controls():
+            raise ValueError('control_unresolved')
+        if len(records) >= 256:
+            raise ValueError('retained_control_limit')
+        record = dict(control_id=control_id, action=action, action_state='accepted',
+                      observed_state=self.state.get('phase'), desired_state_observed=False)
+        records[control_id] = record
+        await self.save()
+        return record
+
+    def observe_controls(self):
+        desired = {'pause': 'paused', 'resume': 'running', 'cancel': 'cancelled'}
+        for record in self.state.get('controls', {}).values():
+            record['observed_state'] = self.state.get('phase')
+            record['desired_state_observed'] = self.state.get('phase') == desired[record['action']]
+
     def spawn_control(self, action, body, *, name):
         task = self.ctx.spawn(self.run_control(action, body), name=name)
         self.control_tasks.add(task)
@@ -282,16 +329,34 @@ class Controller:
         async with self.lock:
             if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
                 return
+            record = None
+            if action in ('pause', 'resume', 'cancel'):
+                control_id = body.get('control_id') or secrets.token_hex(16)
+                record = await self.admit_control(action, control_id)
+                if record['action_state'] != 'accepted':
+                    return
+                # Persist uncertain dispatch before I/O; restart never replays it.
+                record['action_state'] = 'unknown'
+                await self.save()
+            elif self.unresolved_controls():
+                return
             self.active_controls += 1
         try:
             # Remote start/recovery may await operator ACKs from tick/reader.
             # Keep observation live while the admitted request runs.
-            await self._run_control(action, body)
+            acknowledged = await self._run_control(action, body)
+            if record is not None and acknowledged:
+                async with self.lock:
+                    record['action_state'] = 'rejected' if isinstance(acknowledged, dict) else 'completed'
+                    record['evidence'] = 'pre_dispatch_rejection' if isinstance(acknowledged, dict) else 'original_http_response'
+                    if isinstance(acknowledged, dict):
+                        record['error_code'] = acknowledged['error_code']
+                    await self.save()
         finally:
             self.active_controls -= 1
 
     async def _run_control(self, action, body):
-        # Never retry mutations on transport failure. GET determines the outcome.
+        # Phase GET is observational, never evidence settling a lost control reply.
         path = self.path('/' + action)
         try:
             # Worker runtime controls require no request body, not JSON {}.
@@ -300,8 +365,19 @@ class Controller:
             if action in ('start', 'recover') and access is not None:
                 outgoing['rental_server_passcode'] = self.ctx.secrets.get(access.passcode)
             await self.request('POST', path, outgoing)
+            return True
         except asyncio.CancelledError:
             raise
+        except WorkerError as exc:
+            # Worker ServeHTTP rejects 401 before dispatch to the engine. These
+            # local client errors likewise occur before connection.request.
+            # In contrast, invalid_state/409 can arise AFTER Controller.Pause
+            # or Resume, so it must remain unknown even with an HTTP response.
+            if (exc.status == 401 or
+                    (exc.status is None and exc.code in
+                     ('secret_unavailable', 'invalid_api_path', 'invalid_request'))):
+                return {'error_code': exc.code}
+            self.ctx.log.warning('Fatalder control outcome requires observation')
         except Exception:
             self.ctx.log.warning('Fatalder control outcome requires observation')
 
@@ -317,6 +393,7 @@ class Controller:
                     self.state['phase'] = 'quoted'
                 else:
                     self.state['phase'] = job['state'].lower()
+                self.observe_controls()
                 self.state['recovery_required'] = job.get('recovery_required', False)
                 self.state['task_outcomes'] = job.get('task_outcomes', {})
                 self.state['worker_cleanup_policy'] = job.get('spec', {}).get('operator_cleanup_policy') or 'revoke'

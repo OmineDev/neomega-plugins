@@ -94,8 +94,19 @@ prepare/status 返回 `request_key, job_id, phase, quote, confirm_token, confirm
 
 同一 owner/request_key 的同参数调用读回，参数不同拒绝；保存最多 256 个历史服务任务防止旧 key 被当成新任务，达到容量拒绝新任务而不删除账本。Controller 状态提交前将 commit_id 写入数据目录 `fatalder-state-pending.json` 并 fsync；提交结果未知时封闭后续状态写入，重启只核对原 Host receipt 后读取持久状态，不重发或换 CAS。权限动作继续使用原有 reservation 与确定性回执协议。
 
-P06 世界工具可将本插件作为显式可选后端：服主配置同一 Worker/服号、数据源并将 P06 的实际安装 ID 加入 allowlist，P06 声明七个方法权限。没有配置、没有授权或没有 Worker 时，报告后端未配置，不假装完成导入。版本为独立新制品 1.1.0，不覆盖 1.0.4；维护、配置、原任务和原权限租约的安全语义不变。
+P06 世界工具可将本插件作为显式可选后端：服主配置同一 Worker/服号、数据源并将 P06 的实际安装 ID 加入 allowlist，P06 声明七个方法权限。没有配置、没有授权或没有 Worker 时，报告后端未配置，不假装完成导入。当前版本为独立新制品 1.2.0，不覆盖 1.0.4；维护、配置、原任务和原权限租约的安全语义不变。
 
 本次实现使用现有 64 项离线测试、配置 schema 检查和 Host ZIP checker 验证；未联系真实 Worker、未扣费、未进行游戏世界写入。真服或人工观察不是本地交付门槛，运行状态仍仅按实际回执记录。
 
 `accepted_start_key` 仅在原确认已持久保存为 start 请求后返回，未确认时为 null；它证明对应确认请求已接纳，不代表付费任务或游戏导入完成。消费者可通过只读 status 按原 request_key、job_id 和确认 key 核对丢失回执。
+
+
+### 持久控制回执（1.2.0）
+
+服务 `pause` / `resume` / `cancel` 必须提交原任务 `request_key`、`job_id` 和调用方保存的 `control_id`（1–128 字符）。发送前保存控制意图；重复 ID 只读取原回执，不再次发送 HTTP。相同 ID 用于另一动作返回 `control_id_conflict`。`status` 可携带 `control_id` 查询原控制，不带时返回 `controls` 表。
+
+控制回执包含 `control_id`、`action`、`action_state`、`observed_state` 和 `desired_state_observed`。`accepted` 表示本地意图已保存；`unknown` 表示可能发送但结果未确认；`completed` 仅表示收到本次原始 HTTP 成功回执，不表示建筑任务完成。重启时未决 `accepted` 转为 `unknown`，不会重发。远端无按 control_id 查询能力，任务 phase 即使达到期望状态也只能更新 `desired_state_observed`，绝不会消除原控制的不确定性。
+
+存在 accepted/unknown 时拒绝新控制 ID、恢复请求和槽位替换，维护接口保持 busy；禁止靠新 ID 绕过未知结果。每任务最多保留 256 条控制回执，达到上限明确拒绝，不清理未知记录。历史任务归档保留 controls。旧版本未保存的控制不能补造回执，查询不存在 ID 返回 `control_not_found`；调用方须保持未知。聊天控制同样先保存意图，再发送；未知期间不能重复暂停、继续或取消。
+
+控制回执还可能为 `rejected`：原 HTTP 401 鉴权失败，或客户端在请求发送前确认的密钥不可用、路径非法、JSON 序列化失败。此状态携带 `error_code`，同 ID 仍只返回拒绝记录；修正原因后允许调用方显式使用新 ID，绝不自动重试。其他 HTTP 错误（包括 `invalid_state` / 409，可能在执行控制后发生状态竞争）仍为 unknown，不依据错误状态码笼统解除围栏。
