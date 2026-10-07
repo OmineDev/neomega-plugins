@@ -102,7 +102,15 @@ class PlayerTPA(Plugin):
     async def reply(self, ctx, event, identity, message):
         # Notifications are informational and never retried on an ambiguous receipt.
         async with self.lock:
-            self.roster.require_current(identity)
+            try:
+                self.roster.require_current(identity)
+            except IdentityUnavailable:
+                # An event passed here has not been ACKed; post-commit notices
+                # pass None and must never acknowledge the original event again.
+                if event is not None:
+                    await event.ack()
+                ctx.log.warning('TPA reply skipped because recipient identity changed')
+                return
             key = uuid.uuid4().hex
             plan = ctx.notifications.prepare(identity.name, message,
                                              idempotency_key=key, deadline=deadline())
@@ -355,7 +363,8 @@ class PlayerTPA(Plugin):
             return
         payload = event.payload['payload']
         message = payload.get('message', '')
-        prefix = message.split(maxsplit=1)[0] if message else ''
+        tokens = message.split(maxsplit=1)
+        prefix = tokens[0] if tokens else ''
         if prefix not in ['!' + alias for alias in ctx.config.aliases]:
             async with self.lock:
                 await event.ack()
@@ -369,7 +378,7 @@ class PlayerTPA(Plugin):
             return
         try:
             args = shlex.split(message)[1:]
-            if not ctx.config.enabled:
+            if not ctx.config.enabled and not (len(args) == 2 and args[0] == 'status'):
                 await self.reply(ctx, event, actor, '互传功能已关闭。')
             elif not args:
                 await self.reply(ctx, event, actor, '互传：to|here 名字；list；accept|deny|cancel ID；receive on|off；block|unblock 名字；blocks；status ID。名字含空格请加引号。')
