@@ -99,7 +99,7 @@ class PlayerTPA(Plugin):
                     del self.requests[key]
             self.cooldowns = {key: until for key, until in self.cooldowns.items() if until > now}
 
-    async def reply(self, ctx, event, identity, message):
+    async def reply(self, ctx, event, identity, message, *, page=1, command=None):
         # Notifications are informational and never retried on an ambiguous receipt.
         async with self.lock:
             try:
@@ -114,10 +114,34 @@ class PlayerTPA(Plugin):
             key = uuid.uuid4().hex
             plan = ctx.notifications.prepare(identity.name, message,
                                              idempotency_key=key, deadline=deadline())
-            tx = await ctx.storage.transaction(event=event.payload if event else None, commit_id=key, keys=[])
-            for part in plan.parts:
-                tx.action(part.intent)
-            await tx.save()
+            parts = plan.parts
+            if command:
+                pages = (len(parts) + 3) // 4
+                if not 1 <= page <= pages:
+                    raise ValueError('页码超出范围。')
+                parts = parts[(page - 1) * 4:page * 4]
+                hint = f'第{page}/{pages}页。'
+                if page < pages:
+                    hint += f' 下一页：!{ctx.config.aliases[0]} {command} {page + 1}'
+                footer = ctx.notifications.prepare(identity.name, hint,
+                    idempotency_key=key + '_page', deadline=deadline())
+                parts += footer.parts
+            if len(parts) > 16:
+                raise ValueError('通知过长，请使用分页查询。')
+            try:
+                tx = await ctx.storage.transaction(event=event.payload if event else None, commit_id=key, keys=[])
+                for part in parts:
+                    tx.action(part.intent)
+                await tx.save()
+            except IPCRejected as exc:
+                # Explicit rejection rolled back the event/action transaction.
+                if event is not None:
+                    await event.ack()
+                ctx.log.warning('TPA notification rejected: %s', exc)
+            except CommitUncertain:
+                # The original transaction may already have ACKed the event.
+                # Never submit another notification or ACK for this attempt.
+                ctx.log.warning('TPA notification commit uncertain: %s', key)
 
     def target(self, name):
         exact_target(name)
@@ -161,6 +185,8 @@ class PlayerTPA(Plugin):
         for request_id in tuple(self.unresolved):
             key = 'action:' + request_id
             async with self.lock:
+                if request_id not in self.unresolved:
+                    continue
                 record = await ctx.storage.get(key)
                 record = record or self.uncertain.get(request_id)
             if not record:
@@ -272,7 +298,9 @@ class PlayerTPA(Plugin):
                     current = await self.positions(ctx, request)
                     if any(a[0] != b[0] or math.dist(a[1], b[1]) > .5 for a, b in zip(initial, current)):
                         raise ValueError('玩家移动，互传已取消。')
-                await self.positions(ctx, request)
+                current = await self.positions(ctx, request)
+                if any(a[0] != b[0] or math.dist(a[1], b[1]) > .5 for a, b in zip(initial, current)):
+                    raise ValueError('玩家移动，互传已取消。')
             async with self.lock:
                 if not ctx.config.enabled or request.state != 'warming' or request.expires <= time.monotonic():
                     raise ValueError('请求已取消或过期。')
@@ -318,6 +346,9 @@ class PlayerTPA(Plugin):
                     await tx.save()
                 except CommitUncertain:
                     self.uncertain[request_id] = record
+                except IPCRejected as exc:
+                    self.unresolved.discard(request_id)
+                    raise ValueError('传送提交被拒绝，本次请求已取消。') from exc
                 except Exception:
                     self.unresolved.discard(request_id)
                     raise
@@ -396,15 +427,17 @@ class PlayerTPA(Plugin):
                     request.state = 'denied' if args[0] == 'deny' else 'cancelled'
                     del self.requests[args[1]]
                 await self.reply(ctx, None, actor, '请求已' + ('拒绝。' if args[0] == 'deny' else '取消。'))
-            elif args[0] == 'list' and len(args) == 1:
+            elif args[0] == 'list' and len(args) in (1, 2):
                 async with self.lock:
                     rows = [r.id + ' ' + r.direction + ' ' + r.sender.name + ' → ' + r.receiver.name
                             for r in self.requests.values() if actor.uuid in (r.sender.uuid, r.receiver.uuid) and r.expires > time.monotonic()]
-                await self.reply(ctx, event, actor, '\n'.join(rows) or '没有待处理请求。')
-            elif args[0] == 'blocks' and len(args) == 1:
+                await self.reply(ctx, event, actor, '\n'.join(rows) or '没有待处理请求。',
+                                 page=int(args[1]) if len(args) == 2 else 1, command='list')
+            elif args[0] == 'blocks' and len(args) in (1, 2):
                 account = await ctx.storage.get('account:' + actor.uuid, {})
                 rows = [u + ' ' + name for u, name in account.get('blocked', {}).items()]
-                await self.reply(ctx, event, actor, '\n'.join(rows) or '没有屏蔽玩家。')
+                await self.reply(ctx, event, actor, '\n'.join(rows) or '没有屏蔽玩家。',
+                                 page=int(args[1]) if len(args) == 2 else 1, command='blocks')
             elif args[0] == 'status' and len(args) == 2:
                 record = await ctx.storage.get('action:' + args[1])
                 record = record or self.uncertain.get(args[1])
