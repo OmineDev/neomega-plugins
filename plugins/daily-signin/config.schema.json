@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "utc_offset_hours": {
+      "type": "integer",
+      "title": "时区",
+      "description": "与 UTC 相差的小时数，北京时间填 8",
+      "minimum": -12,
+      "maximum": 14,
+      "default": 8
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "每日奖励命令",
+      "description": "{player} 会替换为签到的玩家；留空则只记录签到",
+      "default": [
+        "give {player} bread 3"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "title": "签到成功提示",
+      "default": "签到成功，获得 3 个面包。"
+    },
+    "milestones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer",
+            "title": "连续签到天数",
+            "minimum": 2
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "额外奖励命令",
+            "description": "{player} 会替换为签到的玩家",
+            "default": []
+          },
+          "message": {
+            "type": "string",
+            "title": "额外奖励提示",
+            "default": ""
+          }
+        },
+        "required": [
+          "days"
+        ],
+        "additionalProperties": false
+      },
+      "title": "连续签到奖励",
+      "default": [
+        {
+          "days": 7,
+          "commands": [
+            "give {player} diamond 1"
+          ],
+          "message": "连续签到 7 天，额外获得 1 颗钻石！"
+        }
+      ]
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
