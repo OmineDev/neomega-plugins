@@ -290,6 +290,57 @@
       "kind": "app"
     },
     {
+      "plugin_id": "neomega.players",
+      "version": "2.0.0",
+      "name": "玩家档案",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.players-v2.0.0/neomega.players-2.0.0.zip",
+      "sha256": "0c3c43057c63bacdd97291c4c774f10b1ea04134dc3b9cf408bbd5f85d7a0acd",
+      "permissions": {
+        "operations": [],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:player.list_added": "玩家进服时记录名字和身份",
+          "players:list": "确认进服玩家的完整身份"
+        }
+      },
+      "permission_purposes": {
+        "event:player.list_added": "玩家进服时记录名字和身份",
+        "players:list": "确认进服玩家的完整身份"
+      },
+      "description": "记录玩家的名字、曾用名和账号对应关系，让其他插件能按名字找到不在线的玩家。",
+      "kind": "provider",
+      "readme": {
+        "path": "README.md",
+        "sha256": "e76ec2b4c7d91c073db37358c222dd6f0a54c679fb6f93689a87603961cef515",
+        "size": 1283
+      },
+      "subscriptions": [
+        {
+          "name": "joins",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "0dc771eca701a202d5421de43c855a03baa08da8",
+        "path": "plugins/players"
+      }
+    },
+    {
       "plugin_id": "neomega.timed-commands",
       "version": "1.0.0",
       "name": "定时命令",
