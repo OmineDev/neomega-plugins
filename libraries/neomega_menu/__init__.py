@@ -82,4 +82,9 @@ async def choose(ctx, player, title: str, options: list[str], *, timeout: float 
 async def confirm(ctx, player, question: str, *, timeout: float = 30) -> bool:
     """Yes/no question; anything other than a yes word counts as no."""
     text = await ask(ctx, player, question + '\n输入 1 确认，输入 0 取消。', timeout=timeout)
-    return text is not None and text.lower() in YES_WORDS
+    if text is None:
+        return False
+    if text.lower() not in YES_WORDS:
+        await say(ctx, player, '已取消。')
+        return False
+    return True
