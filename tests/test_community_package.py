@@ -84,7 +84,8 @@ class PrepareReleaseTests(unittest.TestCase):
                 prepare.prepare('fatalder-cloud-import', root / 'out')
                 original = json.loads((root / 'catalog/index.json').read_text())
                 candidate = json.loads((root / 'out/index.json').read_text())
-                self.assertEqual(candidate['plugins'][:-1], original['plugins'])
-                self.assertEqual(candidate['plugins'][-1]['version'], '1.2.1')
-                self.assertEqual(candidate['plugins'][-1]['permissions'], manifest['permissions'])
+                added = [entry for entry in candidate['plugins'] if entry not in original['plugins']]
+                self.assertEqual([entry for entry in candidate['plugins'] if entry in original['plugins']], original['plugins'])
+                self.assertEqual([(entry['plugin_id'], entry['version']) for entry in added], [('fatalder.cloud-import', '1.2.1')])
+                self.assertEqual(added[0]['permissions'], manifest['permissions'])
                 self.assertTrue((root / 'out/SHA256SUMS').read_text().endswith('  fatalder.cloud-import-1.2.1.zip\n'))
