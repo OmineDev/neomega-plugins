@@ -284,6 +284,48 @@
       }
     },
     {
+      "plugin_id": "neomega.timed-commands",
+      "version": "1.0.0",
+      "name": "定时命令",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.timed-commands-v1.0.0/neomega.timed-commands-1.0.0.zip",
+      "sha256": "619b3e4c70179eca75e6efff9a55616e1f0b9cc12ffe1437894c0cfcbfce0379",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [],
+        "services": [],
+        "purposes": {
+          "operation:framework.command.execute": "按时执行服主配置的命令并向全服广播"
+        }
+      },
+      "permission_purposes": {
+        "operation:framework.command.execute": "按时执行服主配置的命令并向全服广播"
+      },
+      "description": "按固定间隔或每天的固定时刻自动执行命令、发送全服公告。开箱即用，无需其他插件。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "a572a31b9feb538802e3a37e1de07ab6b7ee865dbddc8900ba34cc190e462abb",
+        "size": 2093
+      },
+      "subscriptions": [],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "2c4e9ae7c50f4fb1c57fa6feb56299984830b79a",
+        "path": "plugins/timed-commands"
+      }
+    },
+    {
       "plugin_id": "neomega.tpa",
       "version": "1.0.0",
       "name": "玩家互传",
