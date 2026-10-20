@@ -1,0 +1,12 @@
+{
+  "name": "个人传送点",
+  "description": "玩家用 !设家 记下当前位置，随时用 !回家 传送回去，每人可设多个家。开箱即用，无需其他插件。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}
