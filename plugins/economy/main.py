@@ -1,36 +1,47 @@
-"""Installation-owned atomic, integer economy. No world-side money mutation."""
+"""经济：整数余额、单一货币。其他插件通过服务发奖和扣款，玩家可以查余额、转账、看流水。
+
+每个账户一个键，只保留最近 20 条收支：它既是玩家能查的流水，也是去重窗口。
+调用方用同一个 request_id 重试时直接返回当前余额，不会重复记账。
+服务处理器和聊天命令都会提交存储，共用一把锁串行化；每次处理只提交一次。
+"""
 import asyncio
-import hashlib
-import json
-import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from neomega_runtime.storage import CommitUncertain
-from neomega_runtime.managed import IPCRejected
-from neomega_runtime import Plugin
-from neomega_runtime.services import service, ServiceRejected
+from datetime import datetime, timedelta, timezone
+
+from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
+                             PlayerNotFound, ServiceRejected, service)
+from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
+
+RECENT = 20
+UNAVAILABLE = '暂时查不到玩家，请稍后再试'
 
 
 @dataclass(frozen=True)
 class Settings:
-    currencies: list[str] = field(default_factory=lambda: ['coin'])
-    allowed_callers: list[str] = field(default_factory=list)
-    mint_callers: list[str] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not self.currencies or any(not isinstance(x, str) or not x or len(x) > 64 for x in self.currencies):
-            raise ValueError('currencies require nonempty names up to 64 characters')
+    currency_name: str = field(default='金币', metadata={'title': '货币名称'})
+    starting_balance: int = field(default=0, metadata={
+        'title': '初始余额', 'description': '玩家账户第一次有收支时的金额', 'minimum': 0})
+    allow_transfer: bool = field(default=True, metadata={
+        'title': '允许玩家转账', 'description': '关闭后玩家不能用 !转账，其他插件的发奖和扣款不受影响'})
 
 
-def key(*parts):
-    return 'economy:' + hashlib.sha256(json.dumps(parts, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()).hexdigest()
+def deadline() -> str:
+    return (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat()
 
 
-def text(args, name):
-    value = args.get(name)
-    if not isinstance(value, str) or not value or len(value.encode()) > 256:
-        raise ServiceRejected('invalid_' + name)
-    return value
+def player_id(player) -> str:
+    return player['uuid'] or 'xuid-' + player['xuid']
+
+
+def seen(record, request_id) -> bool:
+    return any(entry['id'] == request_id for entry in record['recent'])
+
+
+def post(record, entry_id, delta, reason):
+    record['balance'] += delta
+    entry = {'id': entry_id, 'delta': delta, 'reason': reason,
+             'at': datetime.now(timezone.utc).isoformat()}
+    record['recent'] = [*record['recent'], entry][-RECENT:]
 
 
 class Economy(Plugin):
@@ -38,227 +49,156 @@ class Economy(Plugin):
 
     def __init__(self):
         self.lock = asyncio.Lock()
-        self.sealed = None
-        self.pending = None
-        self.pending_path = None
 
-    async def on_start(self, ctx):
-        self.pending_path = ctx.data_dir / 'economy-pending.json'
-        if self.pending_path.exists():
-            self.pending = json.loads(self.pending_path.read_text())['commit_id']
-        async with self.lock:
-            if not await self.reconcile(ctx):
-                return  # Retain read access; writes and maintenance seal stay busy.
-            tx = await ctx.storage.transaction(keys=['economy:schema_version'])
-            version = tx.get('economy:schema_version')
-            if version is None:
-                tx.set('economy:schema_version', 1)
-                await self.save(ctx, tx)
-            elif type(version) is not int or version != 1:
-                raise RuntimeError('unsupported economy schema_version; migration required')
+    async def on_start(self, ctx: PluginContext):
+        # 全角感叹号是中文输入法的默认输出，两个前缀都接受。
+        self.routers = (ctx.chat, ChatRouter(prefix='！'))
+        for router in self.routers:
+            router.command('余额', aliases=('ye', 'balance'), description='查看余额')(
+                lambda command: self.show_balance(ctx, command))
+            router.command('转账', aliases=('zz', 'pay'), description='转给其他玩家',
+                           usage='<玩家> <数量>', min_args=2, max_args=2)(
+                lambda command: self.transfer_command(ctx, command))
+            router.command('流水', aliases=('ls',), description='查看最近 10 条收支')(
+                lambda command: self.history(ctx, command))
 
-    def clear_pending(self):
-        if self.pending_path is not None:
-            self.pending_path.unlink(missing_ok=True)
-        self.pending = None
-
-    async def reconcile(self, ctx):
-        if self.pending is None:
-            return True
-        if await ctx.storage.receipt(self.pending) is None:
-            return False
-        self.clear_pending()
-        return True
-
-    async def save(self, ctx, tx):
-        # Write the uncertain barrier before crossing the IPC boundary. The
-        # marker survives a worker crash; absence of receipt is never failure.
-        tx.prepare()
-        self.pending = tx.commit_id
-        if self.pending_path is not None:
-            temporary = self.pending_path.with_suffix('.tmp')
-            with temporary.open('w') as stream:
-                json.dump({'commit_id': self.pending}, stream)
-                stream.flush()
-                os.fsync(stream.fileno())
-            temporary.replace(self.pending_path)
-            fd = os.open(self.pending_path.parent, os.O_DIRECTORY)
+    async def on_event(self, ctx: PluginContext, event: Event):
+        if event.kind == 'chat.received':
             try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        try:
-            await tx.save()
-        except IPCRejected:
-            self.clear_pending()
-            raise
-        except (CommitUncertain, asyncio.CancelledError):
-            raise
-        self.clear_pending()
-
-    @staticmethod
-    def compare_revision(args, field, row, required=True):
-        if field not in args and not required:
-            return
-        expected = args.get(field)
-        if type(expected) is not int or expected < 0:
-            raise ServiceRejected('invalid_' + field)
-        if expected != row['revision']:
-            raise ServiceRejected('revision_conflict')
-
-    async def on_maintenance(self, ctx, request):
+                for router in self.routers:
+                    if await router.dispatch(event):
+                        return
+            except (ValueError, PlayerNotFound, AmbiguousPlayer):
+                # 引号不配对、参数个数不对，或玩家已经下线：不回复，只确认事件。
+                pass
         async with self.lock:
-            token = request['token']
-            if not await self.reconcile(ctx) or self.sealed not in (None, token):
-                return {'status': 'busy', 'token': token}
-            sealing = request['operation'] == 'seal'
-            self.sealed = token if sealing else None
-            return {'status': 'sealed' if sealing else 'released', 'token': token}
+            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
 
-    def authorize(self, ctx, caller, mint=False):
-        if caller is None:
-            raise ServiceRejected('trusted_caller_required')
-        if caller.installation_id not in ctx.config.allowed_callers:
-            raise ServiceRejected('caller_denied')
-        if mint and caller.installation_id not in ctx.config.mint_callers:
-            raise ServiceRejected('mint_denied')
-        if self.sealed is not None:
-            raise ServiceRejected('maintenance_sealed')
-        return caller.installation_id
+    def account(self, ctx, tx, pid):
+        return tx.get('a:' + pid, {'balance': ctx.config.starting_balance, 'recent': []})
 
-    def currency(self, ctx, args):
-        currency = text(args, 'currency')
-        if currency not in ctx.config.currencies:
-            raise ServiceRejected('unknown_currency')
-        return currency
+    def move(self, tx, ids, records, amount, entry_id, reasons):
+        for pid, record, delta, reason in zip(ids, records, (-amount, amount), reasons):
+            post(record, entry_id, delta, reason)
+            tx.set('a:' + pid, record)
 
-    @service('balance', with_context=True)
-    async def balance(self, ctx, args, caller):
+    # ---- 服务 ----
+
+    @service('balance', major=1)
+    async def balance(self, ctx, args):
+        tx = await ctx.storage.transaction(keys=['a:' + args['player_id']])
+        return {'balance': self.account(ctx, tx, args['player_id'])['balance']}
+
+    @service('grant', major=1)
+    async def grant(self, ctx, args):
+        return await self.change(ctx, args, args['amount'])
+
+    @service('pay', major=1)
+    async def pay(self, ctx, args):
+        return await self.change(ctx, args, -args['amount'])
+
+    async def change(self, ctx, args, delta):
+        key = 'a:' + args['player_id']
         async with self.lock:
-            self.authorize(ctx, caller)
-            currency, account = self.currency(ctx, args), text(args, 'account')
-            row = await ctx.storage.get(key('account', currency, account), {'balance': 0, 'held': 0, 'revision': 0})
-            return dict(row, available=row['balance'] - row['held'], account=account, currency=currency)
-
-    async def mutate(self, ctx, args, caller, operation):
-        async with self.lock:
-            owner = self.authorize(ctx, caller, operation == 'post')
-            if not await self.reconcile(ctx):
-                raise ServiceRejected('commit_unresolved')
-            currency, account = self.currency(ctx, args), text(args, 'account')
-            request_id = text(args, 'request_id')
-            request_key = key('request', owner, request_id)
-            fingerprint = key(operation, args)
-            account_key = key('account', currency, account)
-            keys = [request_key, account_key, 'economy:sequence', 'economy:schema_version']
-            target_key = None
-            if operation == 'transfer':
-                target = text(args, 'target')
-                if target == account:
-                    raise ServiceRejected('same_account')
-                target_key = key('account', currency, target)
-                keys.append(target_key)
-            hold_key = key('hold', owner, currency, account, text(args, 'hold_id')) if operation in ('hold', 'release') else None
-            if hold_key:
-                keys.append(hold_key)
-            tx = await ctx.storage.transaction(keys=keys)
-            if tx.get('economy:schema_version') != 1:
-                raise ServiceRejected('schema_migration_required')
-            previous = tx.get(request_key)
-            if previous:
-                if previous['fingerprint'] != fingerprint:
-                    raise ServiceRejected('idempotency_conflict')
-                return previous['result']
-            row = tx.get(account_key, {'balance': 0, 'held': 0, 'revision': 0})
-            self.compare_revision(args, 'expected_revision', row)
-            before = dict(row)
-            amount = args.get('amount')
-            if operation != 'release' and (type(amount) is not int or amount == 0 or abs(amount) > 2**53 - 1):
-                raise ServiceRejected('invalid_amount')
-            if operation in ('transfer', 'hold') and amount < 0:
-                raise ServiceRejected('invalid_amount')
-            target_row = None
-            if operation == 'post':
-                row['balance'] += amount
-            elif operation == 'transfer':
-                row['balance'] -= amount
-                target_row = tx.get(target_key, {'balance': 0, 'held': 0, 'revision': 0})
-                self.compare_revision(args, 'target_expected_revision', target_row, required=False)
-                target_row['balance'] += amount
-                target_row['revision'] += 1
-                tx.set(target_key, target_row)
-            elif operation == 'hold':
-                if tx.get(hold_key) is not None:
-                    raise ServiceRejected('hold_exists')
-                row['held'] += amount
-                tx.set(hold_key, {'amount': amount, 'state': 'held'})
-            else:
-                hold = tx.get(hold_key)
-                if not hold or hold['state'] != 'held':
-                    raise ServiceRejected('hold_not_active')
-                amount = hold['amount']
-                row['held'] -= amount
-                capture = args.get('capture', False)
-                if type(capture) is not bool:
-                    raise ServiceRejected('invalid_capture')
-                if capture:
-                    row['balance'] -= amount
-                tx.set(hold_key, dict(hold, state='captured' if capture else 'released'))
-            if row['balance'] < row['held'] or row['held'] < 0:
+            tx = await ctx.storage.transaction(keys=[key])
+            record = self.account(ctx, tx, args['player_id'])
+            if seen(record, args['request_id']):
+                return {'balance': record['balance'], 'duplicate': True}
+            if record['balance'] + delta < 0:
                 raise ServiceRejected('insufficient_funds')
-            if row['balance'] > 2**53 - 1 or (target_row and target_row['balance'] > 2**53 - 1):
-                raise ServiceRejected('balance_limit')
-            row['revision'] += 1
-            sequence = tx.get('economy:sequence', 0) + 1
-            result = {'sequence': sequence, 'account': account, 'currency': currency, **row, 'available': row['balance'] - row['held']}
-            entry = {'sequence': sequence, 'caller': owner, 'request_id': request_id, 'operation': operation,
-                     'currency': currency, 'account': account, 'amount': amount, 'before': before, 'after': row,
-                     'arguments': args, 'time': datetime.now(timezone.utc).isoformat()}
-            if target_row is not None:
-                entry['target_after'] = target_row
-            tx.set(account_key, row).set('economy:sequence', sequence).set(key('entry', sequence), entry)
-            tx.set(request_key, {'fingerprint': fingerprint, 'result': result})
-            await self.save(ctx, tx)
-            return result
+            post(record, args['request_id'], delta, args['reason'])
+            tx.set(key, record)
+            await tx.save()
+        return {'balance': record['balance'], 'duplicate': False}
 
-    @service('post', with_context=True)
-    async def post(self, ctx, args, caller):
-        return await self.mutate(ctx, args, caller, 'post')
-
-    @service('transfer', with_context=True)
-    async def transfer(self, ctx, args, caller):
-        return await self.mutate(ctx, args, caller, 'transfer')
-
-    @service('hold', with_context=True)
-    async def hold(self, ctx, args, caller):
-        return await self.mutate(ctx, args, caller, 'hold')
-
-    @service('release', with_context=True)
-    async def release(self, ctx, args, caller):
-        return await self.mutate(ctx, args, caller, 'release')
-
-    @service('receipt', with_context=True)
-    async def receipt(self, ctx, args, caller):
+    @service('transfer', major=1)
+    async def transfer(self, ctx, args):
+        ids = (args['from_id'], args['to_id'])
+        if ids[0] == ids[1]:
+            raise ServiceRejected('invalid_argument')
         async with self.lock:
-            owner = self.authorize(ctx, caller)
-            row = await ctx.storage.get(key('request', owner, text(args, 'request_id')))
-            return {'status': 'committed' if row else 'unknown', 'result': row['result'] if row else None}
+            tx = await ctx.storage.transaction(keys=['a:' + pid for pid in ids])
+            records = [self.account(ctx, tx, pid) for pid in ids]
+            if any(seen(record, args['request_id']) for record in records):
+                return {'balance': records[0]['balance'], 'duplicate': True}
+            if records[0]['balance'] < args['amount']:
+                raise ServiceRejected('insufficient_funds')
+            self.move(tx, ids, records, args['amount'], args['request_id'], (args['reason'],) * 2)
+            await tx.save()
+        return {'balance': records[0]['balance'], 'duplicate': False}
 
-    @service('ledger', with_context=True)
-    async def ledger(self, ctx, args, caller):
+    # ---- 玩家命令 ----
+
+    async def show_balance(self, ctx, command):
+        pid = player_id(command.player)
         async with self.lock:
-            owner = self.authorize(ctx, caller)
-            after, limit = args.get('after', 0), args.get('limit', 20)
-            if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 20:
-                raise ServiceRejected('invalid_pagination')
-            last = await ctx.storage.get('economy:sequence', 0)
-            end = min(after + limit, last)
-            if end <= after:
-                return {'entries': [], 'cursor': after, 'has_more': False}
-            keys = [key('entry', i) for i in range(after + 1, end + 1)]
-            tx = await ctx.storage.transaction(keys=keys)
-            entries = [tx.get(k) for k in keys]
-            return {'entries': [e for e in entries if e['caller'] == owner], 'cursor': end, 'has_more': end < last}
+            tx = await ctx.storage.transaction(event=command.event.payload, keys=['a:' + pid])
+            balance = self.account(ctx, tx, pid)['balance']
+            self.tell(ctx, tx, command.player['name'], f'你有 {balance} {ctx.config.currency_name}')
+            await tx.save()
+
+    async def history(self, ctx, command):
+        pid = player_id(command.player)
+        async with self.lock:
+            tx = await ctx.storage.transaction(event=command.event.payload, keys=['a:' + pid])
+            recent = self.account(ctx, tx, pid)['recent'][-10:][::-1]
+            lines = [f'{entry["delta"]:+d} {entry["reason"]}' for entry in recent]
+            text = '最近的收支：\n' + '\n'.join(lines) if lines else '还没有收支记录。'
+            self.tell(ctx, tx, command.player['name'], text)
+            await tx.save()
+
+    async def transfer_command(self, ctx, command):
+        name, amount = command.args
+        if not ctx.config.allow_transfer:
+            return await self.answer(ctx, command, '服务器已关闭转账')
+        if not amount.isdecimal() or int(amount) < 1:
+            return await self.answer(ctx, command, '用法：!转账 <玩家> <数量>，数量是正整数')
+        amount = int(amount)
+        try:
+            target_id, target_name = await self.find(ctx, name)
+        except ServiceRejected as error:
+            return await self.answer(ctx, command, f'找不到玩家 {name}' if error.code == 'not_found' else UNAVAILABLE)
+        except (ServiceFailed, ServiceWaitTimeout, ServiceUncertain):
+            return await self.answer(ctx, command, UNAVAILABLE)
+        payer, coin = command.player, ctx.config.currency_name
+        ids = (player_id(payer), target_id)
+        if ids[0] == ids[1]:
+            return await self.answer(ctx, command, '不能转账给自己')
+
+        async with self.lock:
+            tx = await ctx.storage.transaction(event=command.event.payload, keys=['a:' + pid for pid in ids])
+            records = [self.account(ctx, tx, pid) for pid in ids]
+            if records[0]['balance'] < amount:
+                self.tell(ctx, tx, payer['name'], f'{coin}不足，你只有 {records[0]["balance"]} {coin}')
+            else:
+                self.move(tx, ids, records, amount, tx.commit_id,
+                          (f'转给 {target_name}', f'收到 {payer["name"]} 的转账'))
+                self.tell(ctx, tx, payer['name'],
+                          f'已转给 {target_name} {amount} {coin}，剩余 {records[0]["balance"]} {coin}')
+                # 收款方不在线时，这条私聊会被丢弃。
+                self.tell(ctx, tx, target_name,
+                          f'{payer["name"]} 转给你 {amount} {coin}，现有 {records[1]["balance"]} {coin}', 'payee')
+            await tx.save()
+
+    async def find(self, ctx, name):
+        """先在在线玩家里精确匹配名字，再请玩家档案按名字查离线玩家。"""
+        for player in await ctx.players():
+            if player['name'] == name:
+                return player_id(player), player['name']
+        found = await ctx.services.call('plugin.neomega.players.resolve', {'name': name}, timeout=5)
+        return found['id'], found['name']
+
+    async def answer(self, ctx, command, text):
+        async with self.lock:
+            tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+            self.tell(ctx, tx, command.player['name'], text)
+            await tx.save()
+
+    def tell(self, ctx, tx, name, text, tag='reply'):
+        plan = ctx.notifications.prepare(name, text, idempotency_key=f'{tx.commit_id}_{tag}',
+                                         deadline=deadline())
+        for part in plan.parts:
+            tx.action(part.intent)
 
 
 if __name__ == '__main__':

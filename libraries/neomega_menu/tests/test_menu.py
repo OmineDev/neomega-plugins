@@ -69,6 +69,7 @@ class MenuTests(unittest.IsolatedAsyncioTestCase):
         flow = asyncio.create_task(menu.confirm(self.ctx, PLAYER, '确定购买？'))
         await self.reply('不要')
         self.assertFalse(await flow)
+        self.assertEqual('已取消。', self.host.sent[-1])
 
     async def test_timeout_closes_menu(self):
         self.assertIsNone(await menu.ask(self.ctx, PLAYER, '名字？', timeout=0.01))

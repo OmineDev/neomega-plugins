@@ -4,12 +4,17 @@
 要么全部生效，要么全部不生效。提交结果不明时异常上抛、插件重启：已生效的
 提交连同事件确认一起落盘，不会再投递；未生效的事件会重新投递并照常处理。
 所以不需要额外的回执或去重记录。
+
+金币奖励交给可选的经济插件，在提交前调用。request_id 由玩家和日期决定，
+事件重新投递时经济插件按它去重，不会重复发放。没装经济插件时不发金币。
 """
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
-                             PlayerNotFound, player_target)
+                             PlayerNotFound, ServiceRejected, player_target)
+from neomega_runtime.managed import IPCRejected
+from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
 
 
 @dataclass(frozen=True)
@@ -18,6 +23,7 @@ class Milestone:
     commands: list[str] = field(default_factory=list, metadata={
         'title': '额外奖励命令', 'description': '{player} 会替换为签到的玩家'})
     message: str = field(default='', metadata={'title': '额外奖励提示'})
+    coins: int = field(default=0, metadata={'title': '额外金币', 'minimum': 0})
 
 
 @dataclass(frozen=True)
@@ -27,6 +33,8 @@ class Settings:
     commands: list[str] = field(default_factory=lambda: ['give {player} bread 3'], metadata={
         'title': '每日奖励命令', 'description': '{player} 会替换为签到的玩家；留空则只记录签到'})
     message: str = field(default='签到成功，获得 3 个面包。', metadata={'title': '签到成功提示'})
+    coins: int = field(default=10, metadata={
+        'title': '每日金币', 'description': '需要安装经济插件，没装时不发；填 0 不发金币', 'minimum': 0})
     milestones: list[Milestone] = field(default_factory=lambda: [
         Milestone(7, ['give {player} diamond 1'], '连续签到 7 天，额外获得 1 颗钻石！'),
     ], metadata={'title': '连续签到奖励'})
@@ -88,12 +96,15 @@ class DailySignin(Plugin):
         record = {'day': today.isoformat(), 'streak': streak, 'total': record['total'] + 1}
         tx.set(key, record)
 
-        commands, lines = list(ctx.config.commands), [ctx.config.message]
+        commands, lines, coins = list(ctx.config.commands), [ctx.config.message], ctx.config.coins
         for milestone in ctx.config.milestones:
             if milestone.days == streak:
                 commands += milestone.commands
+                coins += milestone.coins
                 if milestone.message:
                     lines.append(milestone.message)
+        if coins:
+            lines += await self.grant(ctx, player, coins, today)
         lines.append(f'已连续签到 {streak} 天，累计 {record["total"]} 天。')
 
         target = player_target(player['name'])
@@ -117,6 +128,19 @@ class DailySignin(Plugin):
             text = f'{signed}，当前连续 {streak} 天，累计 {record["total"]} 天。'
         self.reply(ctx, tx, player, text)
         await tx.save()
+
+    async def grant(self, ctx, player, coins, today) -> list[str]:
+        arguments = {'player_id': player_key(player).removeprefix('player:'), 'amount': coins,
+                     'reason': '签到奖励', 'request_id': 'signin-' + today.isoformat()}
+        try:
+            result = await ctx.services.call('plugin.neomega.economy.grant', arguments, timeout=5)
+        except IPCRejected:
+            return []  # 没有安装或没有启动经济插件。
+        except (ServiceWaitTimeout, ServiceUncertain):
+            return ['金币奖励结果暂时不确定，可以用 !流水 查看。']
+        except (ServiceRejected, ServiceFailed):
+            return ['金币奖励暂时没有发出。']
+        return [f'获得 {coins} 金币，现有 {result["balance"]} 金币。']
 
     def reply(self, ctx, tx, player, text):
         plan = ctx.notifications.prepare(player['name'], text,

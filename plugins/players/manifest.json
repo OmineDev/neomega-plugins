@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
   "id": "neomega.players",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "host_api": {
     "major": 1,
-    "min_minor": 8
+    "min_minor": 4
   },
   "worker_protocol": {
     "major": 1,
@@ -14,8 +14,14 @@
   "entrypoint": "main.py",
   "mode": "service",
   "session_required": true,
-  "state_version": 1,
-  "subscriptions": [],
+  "state_version": 2,
+  "subscriptions": [
+    {
+      "name": "joins",
+      "kind": "player.list_added",
+      "delivery": "durable"
+    }
+  ],
   "permissions": {
     "operations": [],
     "players": [
@@ -23,7 +29,8 @@
     ],
     "services": [],
     "purposes": {
-      "players:list": "从Host可信玩家列表维护身份和历史名称"
+      "event:player.list_added": "玩家进服时记录名字和身份",
+      "players:list": "确认进服玩家的完整身份"
     }
   },
   "dependencies": [],
@@ -34,7 +41,26 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "player_id": {
+          "name": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "xuid": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "uuid": {
@@ -43,211 +69,25 @@
           "xuid": {
             "type": "string"
           },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "get",
-      "major": 1,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "player_id": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_seen": {
             "type": "string"
           }
         },
         "required": [
-          "player_id"
+          "id",
+          "name",
+          "uuid",
+          "xuid",
+          "names",
+          "last_seen"
         ],
         "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "history",
-      "major": 1,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "player_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "player_id"
-        ],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "patch",
-      "major": 1,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "player_id": {
-            "type": "string"
-          },
-          "request_id": {
-            "type": "string"
-          },
-          "expected_revision": {
-            "type": "integer"
-          },
-          "fields": {
-            "type": "object"
-          },
-          "schema_version": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "player_id",
-          "request_id",
-          "expected_revision",
-          "fields"
-        ],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "query",
-      "major": 1,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "cursor": {
-            "type": "string"
-          },
-          "limit": {
-            "type": "integer"
-          }
-        },
-        "required": [],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "export",
-      "major": 1,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "cursor": {
-            "type": "string"
-          },
-          "limit": {
-            "type": "integer"
-          }
-        },
-        "required": [],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "get_schema",
-      "major": 1,
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "register_schema",
-      "major": 1,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "request_id": {
-            "type": "string"
-          },
-          "expected_revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "schema_version": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "schema": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "request_id",
-          "expected_revision",
-          "schema_version",
-          "schema"
-        ],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "import",
-      "major": 1,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "request_id": {
-            "type": "string"
-          },
-          "expected_revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "schema_version": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "namespace": {
-            "type": "string"
-          },
-          "item": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "request_id",
-          "expected_revision",
-          "schema_version",
-          "namespace",
-          "item"
-        ],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object"
       }
     }
   ]

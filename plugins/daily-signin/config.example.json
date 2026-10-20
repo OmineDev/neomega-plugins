@@ -4,13 +4,15 @@
     "give {player} bread 3"
   ],
   "message": "签到成功，获得 3 个面包。",
+  "coins": 10,
   "milestones": [
     {
       "days": 7,
       "commands": [
         "give {player} diamond 1"
       ],
-      "message": "连续签到 7 天，额外获得 1 颗钻石！"
+      "message": "连续签到 7 天，额外获得 1 颗钻石！",
+      "coins": 0
     }
   ]
 }

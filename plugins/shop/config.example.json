@@ -1,0 +1,19 @@
+{
+  "title": "积分商店",
+  "items": [
+    {
+      "name": "面包 ×16",
+      "price": 10,
+      "commands": [
+        "give {player} bread 16"
+      ]
+    },
+    {
+      "name": "钻石",
+      "price": 100,
+      "commands": [
+        "give {player} diamond 1"
+      ]
+    }
+  ]
+}

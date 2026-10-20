@@ -8,7 +8,9 @@ import unittest
 from unittest.mock import AsyncMock
 
 from neomega_runtime import Event, PluginContext
+from neomega_runtime.managed import IPCRejected
 from neomega_runtime.operations import Operations
+from neomega_runtime.services import ServiceWaitTimeout
 from main import DailySignin, Milestone, Settings
 
 PLAYER = {'name': '玩家', 'uuid': 'u1', 'xuid': '42'}
@@ -54,6 +56,7 @@ class SigninTests(unittest.IsolatedAsyncioTestCase):
         self.ctx.config = Settings()
         self.ctx._operations = Operations(self.host, 's1')
         self.ctx.resolve_player = AsyncMock(return_value=dict(PLAYER))
+        self.ctx.services.call = AsyncMock(side_effect=IPCRejected('permission_denied', 'r1', False))
         self.plugin = DailySignin()
         await self.plugin.on_start(self.ctx)
         self.day = date(2026, 10, 21)
@@ -105,6 +108,31 @@ class SigninTests(unittest.IsolatedAsyncioTestCase):
             await self.say(message)
             self.assertEqual(self.host.commits[-1]['actions'], [])
             self.assertEqual(self.host.commits[-1]['mutations'], [])
+
+    async def test_no_economy_means_no_coin_line(self):
+        await self.say('!签到')
+        self.assertNotIn('金币', self.host.reply())
+        self.assertEqual(self.host.values['player:u1']['streak'], 1)
+
+    async def test_grants_daily_and_milestone_coins_once_per_day(self):
+        self.ctx.services.call = AsyncMock(return_value={'balance': 25, 'duplicate': False})
+        self.ctx.config = Settings(milestones=[Milestone(2, coins=5)])
+        self.day = date(2026, 10, 20)
+        await self.say('!签到')
+        self.day = date(2026, 10, 21)
+        await self.say('!签到')
+        await self.say('!签到')
+        self.assertEqual(self.ctx.services.call.await_count, 2)
+        name, arguments = self.ctx.services.call.await_args.args
+        self.assertEqual(name, 'plugin.neomega.economy.grant')
+        self.assertEqual(arguments, {'player_id': 'u1', 'amount': 15, 'reason': '签到奖励',
+                                     'request_id': 'signin-2026-10-21'})
+
+    async def test_unsettled_grant_still_records_signin(self):
+        self.ctx.services.call = AsyncMock(side_effect=ServiceWaitTimeout('c1'))
+        await self.say('!签到')
+        self.assertIn('金币奖励结果暂时不确定', self.host.reply())
+        self.assertEqual(self.host.values['player:u1']['total'], 1)
 
     async def test_empty_reward_list_only_records(self):
         self.ctx.config = Settings(commands=[], milestones=[])

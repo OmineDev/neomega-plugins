@@ -43,4 +43,4 @@ Host 配置 schema 使用 SDK 支持的 JSON Schema 子集，不能直接采用�
 
 ## 前置库与市场介绍
 
-新插件应在 `release.json.description` 给出简短介绍，并在包内 README 说明功能、调用接口、配置、权限和失败语义。安装前文档由索引中的 ZIP/README 哈希共同绑定，不把用户可见介绍塞入严格运行 manifest。前置库随消费者 ZIP 携带；库锁、兼容矩阵和完整本地套件构建见 [目录发布说明](docs/catalog-release.md#前置生态完整制品)。
+`release.json.kind` 写 `app`（玩家直接使用的插件，默认）或 `provider`（为其他插件提供服务的前置）；市场默认只列出应用，前置随依赖它的应用自动安装。新插件应在 `release.json.description` 给出简短介绍，并在包内 README 说明功能、调用接口、配置、权限和失败语义。安装前文档由索引中的 ZIP/README 哈希共同绑定，不把用户可见介绍塞入严格运行 manifest。前置库随消费者 ZIP 携带；库锁、兼容矩阵和完整本地套件构建见 [目录发布说明](docs/catalog-release.md#前置生态完整制品)。
