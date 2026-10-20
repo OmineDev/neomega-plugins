@@ -1,29 +1,26 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "currencies": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "default": [
-        "coin"
-      ]
+    "currency_name": {
+      "type": "string",
+      "title": "货币名称",
+      "default": "金币"
     },
-    "allowed_callers": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "default": []
+    "starting_balance": {
+      "type": "integer",
+      "title": "初始余额",
+      "description": "玩家账户第一次有收支时的金额",
+      "minimum": 0,
+      "default": 0
     },
-    "mint_callers": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "default": []
+    "allow_transfer": {
+      "type": "boolean",
+      "title": "允许玩家转账",
+      "description": "关闭后玩家不能用 !转账，其他插件的发奖和扣款不受影响",
+      "default": true
     }
   },
+  "required": [],
   "additionalProperties": false
 }

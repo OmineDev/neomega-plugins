@@ -1,7 +1,5 @@
 {
-  "currencies": [
-    "coin"
-  ],
-  "allowed_callers": [],
-  "mint_callers": []
+  "currency_name": "金币",
+  "starting_balance": 0,
+  "allow_transfer": true
 }
