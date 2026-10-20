@@ -177,6 +177,71 @@
       "kind": "app"
     },
     {
+      "plugin_id": "neomega.economy",
+      "version": "2.0.0",
+      "name": "经济",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.economy-v2.0.0/neomega.economy-2.0.0.zip",
+      "sha256": "25e23ed7e38f54077988f0eb327425d8c4d987191c588b9021f425b371a74e41",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.players.resolve"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !余额、!转账、!流水 命令",
+          "operation:framework.command.execute": "回复玩家并通知转账双方",
+          "players:list": "确认发命令的玩家身份，并在在线玩家里查找转账对象",
+          "service:plugin.neomega.players.resolve": "按名字查找不在线的转账对象"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !余额、!转账、!流水 命令",
+        "operation:framework.command.execute": "回复玩家并通知转账双方",
+        "players:list": "确认发命令的玩家身份，并在在线玩家里查找转账对象",
+        "service:plugin.neomega.players.resolve": "按名字查找不在线的转账对象"
+      },
+      "description": "整数余额的单一货币，供其他插件发奖和扣款；玩家可以查余额、互相转账、查看最近收支。安装时会一并装上玩家档案插件。",
+      "kind": "provider",
+      "readme": {
+        "path": "README.md",
+        "sha256": "eed97aab66ff2247f0a982268137bf2b69dd5708a494aa8dbac04302de25c5e4",
+        "size": 1640
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.players",
+          "major": 2,
+          "min_version": "2.0.0"
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "d0176880f8582cba721f2948750de7b91b926ab2",
+        "path": "plugins/economy"
+      }
+    },
+    {
       "plugin_id": "neomega.homes",
       "version": "1.0.0",
       "name": "个人传送点",
