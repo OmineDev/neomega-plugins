@@ -26,6 +26,13 @@
       "title": "签到成功提示",
       "default": "签到成功，获得 3 个面包。"
     },
+    "coins": {
+      "type": "integer",
+      "title": "每日金币",
+      "description": "需要安装经济插件，没装时不发；填 0 不发金币",
+      "minimum": 0,
+      "default": 10
+    },
     "milestones": {
       "type": "array",
       "items": {
@@ -49,6 +56,12 @@
             "type": "string",
             "title": "额外奖励提示",
             "default": ""
+          },
+          "coins": {
+            "type": "integer",
+            "title": "额外金币",
+            "minimum": 0,
+            "default": 0
           }
         },
         "required": [
@@ -63,7 +76,8 @@
           "commands": [
             "give {player} diamond 1"
           ],
-          "message": "连续签到 7 天，额外获得 1 颗钻石！"
+          "message": "连续签到 7 天，额外获得 1 颗钻石！",
+          "coins": 0
         }
       ]
     }
