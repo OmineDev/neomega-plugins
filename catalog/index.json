@@ -171,6 +171,60 @@
         "ref": "05c3235791f0c017fffbbf64e506bdea6d69606e",
         "path": "plugins/daily-signin"
       }
+    },
+    {
+      "plugin_id": "neomega.online-time",
+      "version": "1.0.0",
+      "name": "在线时长",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.online-time-v1.0.0/neomega.online-time-1.0.0.zip",
+      "sha256": "9fa1979e64328793962f5eba5776b755769aea0fc730a0e12b9f1e2c25c5fc1c",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !在线时长 和 !在线排行 命令",
+          "operation:framework.command.execute": "发放在线奖励并回复玩家",
+          "players:list": "每分钟统计在线玩家，并确认发命令的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !在线时长 和 !在线排行 命令",
+        "operation:framework.command.execute": "发放在线奖励并回复玩家",
+        "players:list": "每分钟统计在线玩家，并确认发命令的玩家身份"
+      },
+      "description": "统计玩家每日和累计在线时长，当天在线满指定时间自动发奖励，并提供在线排行。开箱即用，无需其他插件。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "ca598e43e02abe665220e2b042eb6f7695595371a8d922adc0c16290ed28f969",
+        "size": 1484
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "87ed54781fcd63b3b4ade47bb7e2ec9f6338f13e",
+        "path": "plugins/online-time"
+      }
     }
   ]
 }
