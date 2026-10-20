@@ -406,6 +406,74 @@
       }
     },
     {
+      "plugin_id": "neomega.shop",
+      "version": "1.0.0",
+      "name": "积分商店",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.shop-v1.0.0/neomega.shop-1.0.0.zip",
+      "sha256": "8200424e35487591d897348ab02bf6e2bdb9e399e5910ec6ef4c0961eb2923bd",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.pay",
+          "plugin.neomega.economy.balance"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !商店 命令和菜单回复",
+          "operation:framework.command.execute": "发放购买的商品并回复玩家",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.pay": "购买商品时扣除金币",
+          "service:plugin.neomega.economy.balance": "金币不足时告诉玩家当前余额"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !商店 命令和菜单回复",
+        "operation:framework.command.execute": "发放购买的商品并回复玩家",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.pay": "购买商品时扣除金币",
+        "service:plugin.neomega.economy.balance": "金币不足时告诉玩家当前余额"
+      },
+      "description": "玩家发送 !商店，在聊天菜单里用金币购买服主设置的商品。安装时会一并装上经济和玩家档案插件。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "07320daff1090a01853934ea228d8f663a33fabf6fac4fab8e16267b616f28a3",
+        "size": 1897
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0"
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "c50e8e82ad62a756ea14a964985f8a032439aaa2",
+        "path": "plugins/shop"
+      }
+    },
+    {
       "plugin_id": "neomega.timed-commands",
       "version": "1.0.0",
       "name": "定时命令",
