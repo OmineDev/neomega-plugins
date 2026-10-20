@@ -282,6 +282,60 @@
         "ref": "87ed54781fcd63b3b4ade47bb7e2ec9f6338f13e",
         "path": "plugins/online-time"
       }
+    },
+    {
+      "plugin_id": "neomega.tpa",
+      "version": "1.0.0",
+      "name": "玩家互传",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.tpa-v1.0.0/neomega.tpa-1.0.0.zip",
+      "sha256": "89d8b4e068a1e39edc40d50e09bfc5edace3b0d314873bb017cfcf8c6a7fb0da",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !tpa、!tpahere、!同意、!拒绝 命令",
+          "operation:framework.command.execute": "执行传送并给双方发送提示",
+          "players:list": "按名字查找在线玩家，确认发命令的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !tpa、!tpahere、!同意、!拒绝 命令",
+        "operation:framework.command.execute": "执行传送并给双方发送提示",
+        "players:list": "按名字查找在线玩家，确认发命令的玩家身份"
+      },
+      "description": "玩家用 !tpa 请求传送到朋友身边，或用 !tpahere 把朋友拉过来，对方同意后立即传送。开箱即用，无需其他插件。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "838255cc43246198dda58527fc8e2838c157b5c16e30966464f47f0405f53894",
+        "size": 1520
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "35ac62fc89ae0b2e0d4b86826e6dd775956c8dd1",
+        "path": "plugins/tpa"
+      }
     }
   ]
 }
