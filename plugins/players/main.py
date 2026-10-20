@@ -1,383 +1,106 @@
-"""Host-observed identities with consumer-owned, revisioned profile fields."""
-import asyncio
-import hashlib
-import json
-import os
-import time
-from dataclasses import dataclass, field
+"""玩家档案：记录名字、uuid、xuid 的对应关系，让其他插件按名字找到不在线的玩家。
 
-from neomega_runtime import Plugin, service
-from neomega_runtime.services import ServiceRejected
-from neomega_runtime.storage import CommitUncertain
-from neomega_runtime.managed import IPCRejected
-from field_schema import check_schema, validate
+玩家进服时只做一次存储提交：档案、名字索引、xuid 索引和事件确认一起写入。
+提交结果不明时异常上抛、插件重启，未确认的进服事件会重新投递并照常处理。
 
+存储键：
+- p:<玩家 ID>：当前名字、uuid、xuid、最近 5 个曾用名、首次和最近进服时间
+- n:<名字.casefold()>：玩家 ID；曾用名也保留索引，挤出最近 5 个后删除
+- x:<xuid>：玩家 ID，只为有 uuid 的玩家写入
+"""
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
-def digest(value):
-    return hashlib.sha256(value.encode()).hexdigest()
+from neomega_runtime import (AmbiguousPlayer, Event, Plugin, PluginContext, PlayerNotFound,
+                             ServiceRejected, service)
 
-
-def text(value, maximum=256):
-    if not isinstance(value, str) or not value or len(value.encode()) > maximum:
-        raise ServiceRejected('invalid_argument')
-    return value
-
-
-def index_key(kind, value):
-    return 'identity:' + kind + ':' + digest(value)
+MAX_NAMES = 5
 
 
 @dataclass(frozen=True)
 class Settings:
-    observation_interval: float = field(default=30.0, metadata={'title': '玩家观察间隔（秒）', 'description': '定期刷新可信身份及历史名称。', 'minimum': 5, 'maximum': 3600})
-    max_players: int = field(default=16384, metadata={'title': '玩家档案上限', 'description': '达到上限后保留已有档案并停止新增。', 'minimum': 1, 'maximum': 100000})
-    max_names: int = field(default=64, metadata={'title': '历史名称保留条数', 'description': '每个玩家保留的最近历史名称数量。', 'minimum': 1, 'maximum': 128})
-    max_field_bytes: int = field(default=16384, metadata={'title': '单份扩展字段大小上限', 'description': '每个调用插件与玩家的字段大小，单位为字节。', 'minimum': 128, 'maximum': 32768})
+    pass
 
-    def __post_init__(self):
-        if not 5 <= self.observation_interval <= 3600 or not 1 <= self.max_players <= 100000:
-            raise ValueError('invalid observation interval or player capacity')
-        if not 1 <= self.max_names <= 128 or not 128 <= self.max_field_bytes <= 32768:
-            raise ValueError('invalid profile bounds')
+
+def player_id(player) -> str:
+    return player['uuid'] or 'xuid-' + player['xuid']
+
+
+def name_key(name: str) -> str:
+    return 'n:' + name.casefold()
 
 
 class Players(Plugin):
     config_type = Settings
 
-    def __init__(self):
-        self.lock = asyncio.Lock()
-        self.sealed = None
-        self.uncertain = None
-        self.pending_path = None
+    def now(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
 
-    def owner(self, call):
-        if call is None or not call.installation_id:
-            raise ServiceRejected('permission_denied')
-        return call.installation_id
-
-    def clear_pending(self):
-        self.uncertain = None
-        if self.pending_path is not None:
-            self.pending_path.unlink(missing_ok=True)
-            fd = os.open(self.pending_path.parent, os.O_DIRECTORY)
+    async def on_event(self, ctx: PluginContext, event: Event):
+        if event.kind == 'player.list_added':
+            joined = event.payload['payload']
             try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-
-    async def reconcile(self, ctx):
-        if self.uncertain is None:
-            return True
-        if await ctx.storage.receipt(self.uncertain) is None:
-            return False
-        self.clear_pending()
-        return True
-
-    async def writable(self, ctx):
-        if self.sealed:
-            raise ServiceRejected('busy')
-        if not await self.reconcile(ctx):
-            raise ServiceRejected('unknown')
-
-    async def save(self, tx):
-        tx.prepare()
-        self.uncertain = tx.commit_id
-        if self.pending_path is not None:
-            temporary = self.pending_path.with_suffix('.tmp')
-            with temporary.open('w') as stream:
-                json.dump({'commit_id': self.uncertain}, stream)
-                stream.flush()
-                os.fsync(stream.fileno())
-            temporary.replace(self.pending_path)
-            fd = os.open(self.pending_path.parent, os.O_DIRECTORY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        try:
-            result = await tx.save()
-        except IPCRejected:
-            self.clear_pending()
-            raise
-        except CommitUncertain:
-            raise ServiceRejected('unknown') from None
-        # Cancellation deliberately preserves the durable original commit ID.
-        self.clear_pending()
-        return result
-
-    async def on_start(self, ctx):
-        self.pending_path = ctx.data_dir / 'players-pending.json'
-        if self.pending_path.exists():
-            self.uncertain = json.loads(self.pending_path.read_text())['commit_id']
-        version = await ctx.storage.get('schema_version')
-        if version is not None and (type(version) is not int or version != 1):
-            raise ValueError('unsupported players state schema')
-        if await self.reconcile(ctx):
-            if version is None:
-                tx = await ctx.storage.transaction(keys=['schema_version'])
-                tx.set('schema_version', 1)
-                await self.save(tx)
-            await self.observe(ctx)
-        ctx.every(ctx.config.observation_interval, lambda: self.observe(ctx), name='players-observe')
-
-    async def observe(self, ctx):
-        roster = await ctx.players()
-        async with self.lock:
-            if self.sealed or not await self.reconcile(ctx):
+                player = await ctx.resolve_player(name=joined['name'], xuid=joined.get('xuid') or None)
+            except (PlayerNotFound, AmbiguousPlayer):
+                pass  # 玩家已经离开：只确认事件。
+            else:
+                await self.record(ctx, event, player)
                 return
-            await self.writable(ctx)
-            for identity in roster:
-                uuid, xuid, name = (identity.get(k, '') for k in ('uuid', 'xuid', 'name'))
-                if not uuid and not xuid:
-                    continue
-                candidates = set()
-                for kind, value in (('uuid', uuid), ('xuid', xuid)):
-                    if value:
-                        candidates.update(await ctx.storage.get(index_key(kind, value), []))
-                if len(candidates) > 1:
-                    ctx.log.warning('identity conflict; refusing implicit profile merge')
-                    continue
-                pid = next(iter(candidates)) if candidates else ('uuid:' + uuid if uuid else 'xuid:' + xuid)
-                key = 'player:' + digest(pid)
-                record = await ctx.storage.get(key)
-                if record and any(record.get(k) and identity.get(k) and record[k] != identity[k] for k in ('uuid', 'xuid')):
-                    ctx.log.warning('identity conflict; preserving existing stable identity')
-                    continue
-                keys = [key, 'count', 'bucket:' + digest(pid)[:2]]
-                indexes = {index_key(k, v) for k, v in (('uuid', uuid), ('xuid', xuid), ('name', name)) if v}
-                keys.extend(indexes)
-                tx = await ctx.storage.transaction(keys=keys)
-                record = tx.get(key)
-                now = time.time()
-                if record is None:
-                    count = tx.get('count', 0)
-                    if count >= ctx.config.max_players:
-                        ctx.log.warning('player profile capacity reached')
-                        continue
-                    record = dict(player_id=pid, uuid=uuid, xuid=xuid, name=name, names=[], first_seen=now, revision=0)
-                    bucket = tx.get(keys[2], [])
-                    bucket.append(pid)
-                    tx.set(keys[2], bucket).set('count', count + 1)
-                if name and (not record['names'] or record['names'][-1]['name'] != name):
-                    record['names'].append({'name': name, 'observed_at': now})
-                    record['names'] = record['names'][-ctx.config.max_names:]
-                record.update(uuid=uuid or record.get('uuid', ''), xuid=xuid or record.get('xuid', ''), name=name,
-                              last_seen=now, source='host.players', generation=ctx.operations.session,
-                              revision=record['revision'] + 1)
-                tx.set(key, record)
-                for idx in indexes:
-                    values = tx.get(idx, [])
-                    if pid not in values:
-                        values.append(pid)
-                    if len(values) > 256:
-                        raise ServiceRejected('busy')
-                    tx.set(idx, values)
-                await self.save(tx)
+        await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
 
-    async def record(self, ctx, pid):
-        pid = text(pid)
-        value = await ctx.storage.get('player:' + digest(pid))
-        if value is None:
+    async def record(self, ctx, event, player):
+        pid, name, xuid = player_id(player), player['name'], player['xuid']
+        # 先读一次档案，才知道这次要读写哪些曾用名的索引；只有本插件写这些键，事件串行处理。
+        known = await ctx.storage.get('p:' + pid) or {'names': []}
+        keys = {'p:' + pid, name_key(name)} | {name_key(old) for old in known['names'] + [known.get('name', name)]}
+        if player['uuid'] and xuid:
+            keys.add('x:' + xuid)
+        tx = await ctx.storage.transaction(event=event.payload, keys=sorted(keys))
+
+        now = self.now()
+        record = tx.get('p:' + pid)
+        if record is None:
+            record = {'name': name, 'uuid': player['uuid'], 'xuid': xuid, 'names': [],
+                      'first_seen': now, 'last_seen': now}
+        elif record['name'] == name and record['xuid'] == xuid:
+            record['last_seen'] = now
+        else:
+            if record['name'] != name:
+                names = [old for old in record['names'] if old not in (name, record['name'])]
+                names.append(record['name'])
+                kept = {old.casefold() for old in names[-MAX_NAMES:]} | {name.casefold()}
+                for old in names[:-MAX_NAMES]:
+                    if old.casefold() not in kept and tx.get(name_key(old)) == pid:
+                        tx.delete(name_key(old))
+                record['names'] = names[-MAX_NAMES:]
+            record.update(name=name, xuid=xuid, last_seen=now)
+        tx.set('p:' + pid, record)
+
+        # 当前名字总是指向这位玩家：别人用过同一个名字时覆盖。
+        if tx.get(name_key(name)) != pid:
+            tx.set(name_key(name), pid)
+        if player['uuid'] and xuid and tx.get('x:' + xuid) != pid:
+            tx.set('x:' + xuid, pid)
+        await tx.save()
+
+    @service('resolve', major=1)
+    async def resolve(self, ctx: PluginContext, arguments):
+        if len(arguments) != 1:
+            raise ServiceRejected('invalid_argument')
+        (field, value), = arguments.items()
+        if field == 'uuid':
+            pid = value
+        else:
+            index = name_key(value) if field == 'name' else 'x:' + value
+            pid = await ctx.storage.get(index)
+            # 没有 uuid 的玩家不写 xuid 索引，他们的 ID 本身就带着 xuid。
+            if pid is None and field == 'xuid':
+                pid = 'xuid-' + value
+        record = await ctx.storage.get('p:' + pid) if pid else None
+        if record is None or (field != 'name' and record[field] != value):
             raise ServiceRejected('not_found')
-        return value
-
-    @service('resolve', with_context=True)
-    async def resolve(self, ctx, args, call):
-        self.owner(call)
-        if args.get('player_id'):
-            return {'status': 'resolved', 'player': await self.record(ctx, args['player_id'])}
-        criteria = {key: text(args[key]) for key in ('uuid', 'xuid', 'name') if key in args}
-        if not criteria:
-            raise ServiceRejected('invalid_argument')
-        matches = None
-        for kind, value in criteria.items():
-            ids = set(await ctx.storage.get(index_key(kind, value), []))
-            matches = ids if matches is None else matches & ids
-        if not matches:
-            raise ServiceRejected('not_found')
-        if len(matches) != 1:
-            raise ServiceRejected('conflict')
-        return {'status': 'resolved', 'player': await self.record(ctx, next(iter(matches)))}
-
-    @service('get', with_context=True)
-    async def get(self, ctx, args, call):
-        owner = self.owner(call)
-        player = await self.record(ctx, args.get('player_id'))
-        fields = await ctx.storage.get('fields:' + digest(owner + '\0' + player['player_id']), {'revision': 0, 'fields': {}})
-        registration = await self.get_schema(ctx, {}, call)
-        return {'status': 'resolved', 'player': player, 'fields': fields['fields'], 'fields_revision': fields['revision'],
-                'schema_version': registration['schema_version']}
-
-    @service('history', with_context=True)
-    async def history(self, ctx, args, call):
-        self.owner(call)
-        record = await self.record(ctx, args.get('player_id'))
-        return {'player_id': record['player_id'], 'names': record['names'], 'first_seen': record['first_seen'],
-                'last_seen': record['last_seen'], 'revision': record['revision'], 'retained_name_limit': ctx.config.max_names}
-
-    @service('patch', with_context=True)
-    async def patch(self, ctx, args, call):
-        return await self.write_fields(ctx, args, call)
-
-    async def write_fields(self, ctx, args, call, *, imported=None):
-        owner = self.owner(call)
-        pid = text(args.get('player_id'))
-        request = text(args.get('request_id'), 128)
-        expected = args.get('expected_revision')
-        fields = args.get('fields')
-        if type(expected) is not int or expected < 0 or not isinstance(fields, dict):
-            raise ServiceRejected('invalid_argument')
-        if any(not isinstance(k, str) or not k or len(k.encode()) > 128 for k in fields):
-            raise ServiceRejected('invalid_argument')
-        try:
-            encoded = json.dumps(fields, ensure_ascii=False, allow_nan=False, sort_keys=True)
-        except (ValueError, TypeError):
-            raise ServiceRejected('invalid_argument') from None
-        if len(encoded.encode()) > ctx.config.max_field_bytes:
-            raise ServiceRejected('invalid_argument')
-        fingerprint = digest(json.dumps(args if imported is None else {'args': args, 'imported': imported}, sort_keys=True, ensure_ascii=False, allow_nan=False))
-        receipt_key = 'request:' + digest(owner + '\0' + request)
-        field_key = 'fields:' + digest(owner + '\0' + pid)
-        async with self.lock:
-            await self.writable(ctx)
-            player = await self.record(ctx, pid)
-            tx = await ctx.storage.transaction(keys=[field_key, receipt_key])
-            receipt = tx.get(receipt_key)
-            if receipt:
-                if receipt['fingerprint'] != fingerprint:
-                    raise ServiceRejected('conflict')
-                return receipt['result']
-            if imported is not None:
-                if imported.get('player_id') != pid or any(imported.get(k, '') != player.get(k, '') for k in ('uuid', 'xuid')):
-                    raise ServiceRejected('identity_conflict')
-            row = tx.get(field_key, {'revision': 0, 'fields': {}})
-            if row['revision'] != expected:
-                raise ServiceRejected('conflict')
-            registration = await self.get_schema(ctx, {}, call)
-            if registration['schema'] is not None and args.get('schema_version') != registration['schema_version']:
-                raise ServiceRejected('schema_version_conflict')
-            if imported is not None:
-                if registration['schema'] is None:
-                    raise ServiceRejected('schema_not_registered')
-                row['fields'] = fields.copy()
-            for key, value in (fields.items() if imported is None else []):
-                if value is None:
-                    row['fields'].pop(key, None)
-                else:
-                    row['fields'][key] = value
-            if len(json.dumps(row['fields'], ensure_ascii=False).encode()) > ctx.config.max_field_bytes:
-                raise ServiceRejected('invalid_argument')
-            if registration['schema'] is not None:
-                validate(registration['schema'], row['fields'])
-            row['revision'] += 1
-            row['updated_at'] = time.time()
-            result = dict(status='saved', player_id=pid, request_id=request, revision=row['revision'], fields=row['fields'], schema_version=registration['schema_version'])
-            tx.set(field_key, row).set(receipt_key, {'fingerprint': fingerprint, 'result': result})
-            await self.save(tx)
-            return result
-
-    @service('get_schema', with_context=True)
-    async def get_schema(self, ctx, args, call):
-        owner = self.owner(call)
-        row = await ctx.storage.get('field_schema:' + digest(owner))
-        return dict(namespace=owner, **(row or {'revision': 0, 'schema_version': None, 'schema': None}))
-
-    @service('register_schema', with_context=True)
-    async def register_schema(self, ctx, args, call):
-        owner = self.owner(call)
-        request = text(args.get('request_id'), 128)
-        version, expected, schema = (args.get(k) for k in ('schema_version', 'expected_revision', 'schema'))
-        if type(version) is not int or version < 1 or type(expected) is not int or expected < 0:
-            raise ServiceRejected('invalid_argument')
-        check_schema(schema)
-        if schema['type'] != 'object' or len(json.dumps(schema, allow_nan=False).encode()) > ctx.config.max_field_bytes:
-            raise ServiceRejected('invalid_field_schema')
-        fingerprint = digest(json.dumps({'register_schema': args}, sort_keys=True, allow_nan=False))
-        skey = 'field_schema:' + digest(owner)
-        rkey = 'request:' + digest(owner + '\0' + request)
-        async with self.lock:
-            await self.writable(ctx)
-            tx = await ctx.storage.transaction(keys=[skey, rkey])
-            previous = tx.get(rkey)
-            if previous:
-                if previous['fingerprint'] != fingerprint: raise ServiceRejected('conflict')
-                return previous['result']
-            row = tx.get(skey, {'revision': 0, 'schema_version': 0})
-            if expected != row['revision'] or version <= row['schema_version']:
-                raise ServiceRejected('schema_version_conflict')
-            # A changed namespace schema may not invalidate already stored fields.
-            for bucket in range(256):
-                for pid in await ctx.storage.get('bucket:' + format(bucket, '02x'), []):
-                    fields = await ctx.storage.get('fields:' + digest(owner + '\0' + pid))
-                    if fields is not None: validate(schema, fields['fields'])
-            row = dict(revision=expected + 1, schema_version=version, schema=schema)
-            result = dict(status='saved', namespace=owner, **row)
-            tx.set(skey, row).set(rkey, {'fingerprint': fingerprint, 'result': result})
-            await self.save(tx)
-            return result
-
-    @service('import', with_context=True)
-    async def import_fields(self, ctx, args, call):
-        owner = self.owner(call)
-        if args.get('namespace') != owner:
-            raise ServiceRejected('permission_denied')
-        item = args.get('item')
-        if not isinstance(item, dict) or not isinstance(item.get('player'), dict):
-            raise ServiceRejected('invalid_argument')
-        converted = {key: args.get(key) for key in ('request_id', 'expected_revision', 'schema_version')}
-        converted.update(player_id=item['player'].get('player_id'), fields=item.get('fields'))
-        return await self.write_fields(ctx, converted, call, imported=item['player'])
-
-    async def page(self, ctx, args, call):
-        owner = self.owner(call)
-        limit = args.get('limit', 50)
-        cursor = args.get('cursor', '0:0')
-        if type(limit) is not int or not 1 <= limit <= 100 or not isinstance(cursor, str):
-            raise ServiceRejected('invalid_argument')
-        try:
-            bucket, offset = map(int, cursor.split(':'))
-            if not 0 <= bucket <= 256 or offset < 0:
-                raise ValueError()
-        except ValueError:
-            raise ServiceRejected('invalid_argument') from None
-        items = []
-        response_bytes = 1024
-        while bucket < 256 and len(items) < limit:
-            ids = await ctx.storage.get('bucket:' + format(bucket, '02x'), [])
-            while offset < len(ids) and len(items) < limit:
-                item = await self.get(ctx, {'player_id': ids[offset]}, call)
-                item_bytes = len(json.dumps(item, ensure_ascii=True).encode()) + 2
-                if response_bytes + item_bytes > 512 * 1024:
-                    return {'items': items, 'next_cursor': f'{bucket}:{offset}',
-                            'namespace': owner, 'consistency': 'live_paginated'}
-                items.append(item)
-                response_bytes += item_bytes
-                offset += 1
-            if offset >= len(ids):
-                bucket, offset = bucket + 1, 0
-        return {'items': items, 'next_cursor': f'{bucket}:{offset}' if bucket < 256 else None,
-                'namespace': owner, 'consistency': 'live_paginated'}
-
-    @service('query', with_context=True)
-    async def query(self, ctx, args, call):
-        return await self.page(ctx, args, call)
-
-    @service('export', with_context=True)
-    async def export(self, ctx, args, call):
-        return await self.page(ctx, args, call)
-
-    async def on_maintenance(self, ctx, request):
-        async with self.lock:
-            token = request['token']
-            if request['operation'] == 'seal':
-                if not await self.reconcile(ctx) or self.sealed not in (None, token):
-                    return {'status': 'busy', 'token': token}
-                self.sealed = token
-                return {'status': 'sealed', 'token': token}
-            if request['operation'] == 'release' and self.sealed in (None, token):
-                self.sealed = None
-                return {'status': 'released', 'token': token}
-            return {'status': 'busy', 'token': token}
+        return {'id': pid, 'name': record['name'], 'uuid': record['uuid'], 'xuid': record['xuid'],
+                'names': record['names'], 'last_seen': record['last_seen']}
 
 
 if __name__ == '__main__':
