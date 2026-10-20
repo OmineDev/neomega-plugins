@@ -1,0 +1,12 @@
+{
+  "utc_offset_hours": 8,
+  "rewards": [
+    {
+      "minutes": 60,
+      "commands": [
+        "give {player} bread 5"
+      ],
+      "message": "今天已在线 1 小时，送你 5 个面包！"
+    }
+  ]
+}

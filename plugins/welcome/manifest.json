@@ -1,0 +1,47 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.welcome",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 2
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    },
+    {
+      "name": "join",
+      "kind": "player.list_added",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !帮助 命令",
+      "event:player.list_added": "在玩家进服时发送欢迎语",
+      "operation:framework.command.execute": "发送欢迎语、帮助和公告，发放新手礼包",
+      "players:list": "确认进服和发命令的玩家身份"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

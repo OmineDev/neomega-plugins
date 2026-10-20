@@ -1,0 +1,12 @@
+{
+  "name": "欢迎与公告",
+  "description": "玩家进服时发送欢迎语，第一次进服送新手礼包，并定时向全服轮播公告。开箱即用，无需其他插件。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}

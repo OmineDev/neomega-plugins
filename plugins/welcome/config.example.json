@@ -1,0 +1,12 @@
+{
+  "welcome_text": "欢迎回来，{name}！输入 !帮助 查看可用命令。",
+  "first_join_text": "欢迎 {name} 第一次来到服务器！送你一份新手礼包。",
+  "first_join_commands": [
+    "give {player} bread 16"
+  ],
+  "help_text": "可用命令：!签到、!回家、!tpa 玩家名。有问题请联系管理员。",
+  "announcements": [
+    "请文明交流，祝你玩得开心！"
+  ],
+  "announcement_minutes": 10
+}

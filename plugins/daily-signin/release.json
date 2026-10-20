@@ -1,0 +1,12 @@
+{
+  "name": "每日签到",
+  "description": "玩家发送 !签到 领取每日奖励，连续签到满指定天数另有额外奖励。开箱即用，无需其他插件。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "utc_offset_hours": {
+      "type": "integer",
+      "title": "时区",
+      "description": "与 UTC 相差的小时数，北京时间填 8；用于每日时刻",
+      "minimum": -12,
+      "maximum": 14,
+      "default": 8
+    },
+    "grace_minutes": {
+      "type": "integer",
+      "title": "补执行宽限（分钟）",
+      "description": "到点后插件不在线超过这么久，就跳过这一次，不再补执行",
+      "minimum": 1,
+      "default": 5
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "任务名",
+            "description": "每个任务的名字不能重复"
+          },
+          "every_minutes": {
+            "type": "integer",
+            "title": "间隔分钟",
+            "description": "每隔多少分钟执行一次；与\"每日时刻\"二选一，不用时填 0",
+            "minimum": 0,
+            "default": 0
+          },
+          "daily_at": {
+            "type": "string",
+            "title": "每日时刻",
+            "description": "每天在这个时刻执行，格式 HH:MM，例如 20:00；与\"间隔分钟\"二选一",
+            "default": ""
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "执行命令",
+            "default": []
+          },
+          "message": {
+            "type": "string",
+            "title": "全服广播",
+            "description": "留空则不广播",
+            "default": ""
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "title": "定时任务",
+      "description": "最多 64 个",
+      "default": [
+        {
+          "name": "整点公告",
+          "every_minutes": 60,
+          "daily_at": "",
+          "commands": [],
+          "message": "感谢游玩，祝你玩得开心！"
+        }
+      ]
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

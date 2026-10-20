@@ -1,0 +1,41 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.tpa",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 2
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !tpa、!tpahere、!同意、!拒绝 命令",
+      "operation:framework.command.execute": "执行传送并给双方发送提示",
+      "players:list": "按名字查找在线玩家，确认发命令的玩家身份"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

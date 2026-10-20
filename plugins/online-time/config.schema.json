@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "utc_offset_hours": {
+      "type": "integer",
+      "title": "时区",
+      "description": "与 UTC 相差的小时数，北京时间填 8",
+      "minimum": -12,
+      "maximum": 14,
+      "default": 8
+    },
+    "rewards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "type": "integer",
+            "title": "当天在线分钟数",
+            "minimum": 1
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "奖励命令",
+            "description": "{player} 会替换为获奖的玩家",
+            "default": []
+          },
+          "message": {
+            "type": "string",
+            "title": "奖励提示",
+            "description": "私聊发给获奖的玩家",
+            "default": ""
+          }
+        },
+        "required": [
+          "minutes"
+        ],
+        "additionalProperties": false
+      },
+      "title": "每日在线奖励",
+      "description": "当天在线时长正好达到设定分钟数时发放一次",
+      "default": [
+        {
+          "minutes": 60,
+          "commands": [
+            "give {player} bread 5"
+          ],
+          "message": "今天已在线 1 小时，送你 5 个面包！"
+        }
+      ]
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

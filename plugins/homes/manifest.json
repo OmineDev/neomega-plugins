@@ -1,0 +1,43 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.homes",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 2
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute",
+      "framework.entities.query"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !设家、!回家 等命令",
+      "operation:framework.command.execute": "把玩家传送回家并回复玩家",
+      "operation:framework.entities.query": "设家时读取玩家当前的位置",
+      "players:list": "确认发命令的玩家身份"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

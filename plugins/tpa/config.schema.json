@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "request_timeout_seconds": {
+      "type": "integer",
+      "title": "请求有效时间（秒）",
+      "description": "超过这个时间没有同意，请求自动失效",
+      "minimum": 5,
+      "default": 60
+    },
+    "cooldown_seconds": {
+      "type": "integer",
+      "title": "发起冷却（秒）",
+      "description": "同一玩家两次发起请求之间至少间隔的秒数，填 0 不限制",
+      "minimum": 0,
+      "default": 10
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

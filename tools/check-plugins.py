@@ -28,3 +28,9 @@ for plugin in sorted((ROOT / 'plugins').iterdir()):
     if (plugin / 'tools/check-offline.py').is_file():
         subprocess.run([sys.executable, str(plugin / 'tools/check-offline.py')], env=env, check=True)
     print('Validated ' + manifest['id'])
+for library in sorted((ROOT / 'libraries').iterdir()):
+    if (library / 'tests').is_dir():
+        paths = [str(ROOT / 'libraries')] + ([os.environ['PYTHONPATH']] if os.environ.get('PYTHONPATH') else [])
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(paths), PYTHONDONTWRITEBYTECODE='1')
+        subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', str(library / 'tests')], env=env, check=True)
+        print('Validated library ' + library.name)
