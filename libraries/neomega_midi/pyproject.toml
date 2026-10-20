@@ -6,7 +6,7 @@ name = "neomega-midi"
 version = "1.0.0"
 description = "Bounded MIDI parsing and Bedrock note mapping"
 requires-python = ">=3.10"
-license = {text = "AGPL-3.0-only"}
+license = {text = "MIT"}
 [tool.setuptools]
 packages = ["neomega_midi"]
 package-dir = {neomega_midi = "."}

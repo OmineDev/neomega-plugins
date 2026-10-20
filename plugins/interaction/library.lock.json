@@ -5,9 +5,9 @@
     {
       "name": "neomega_common",
       "version": "1.0.0",
-      "license": "AGPL-3.0-only",
+      "license": "MIT",
       "files": {
-        "LICENSE": "6f1e622c82a380075843bb084a7ec3b1f1d12a4a02526d75e78b0924a860aa75",
+        "LICENSE": "ad4d2d600a26b8eb588d31b9479b7bd55fac3051df91ea63142bad8f3c5f5b78",
         "README.md": "e94e07ec9619d3f650745eefc2b995afa52b6ec6f04a92911ee21dc4485c2a61",
         "__init__.py": "a902b0a9d3bb2ce90635a2e7d742fe3699cb1e566cbb95c29d1623b8ba6a3729"
       }
