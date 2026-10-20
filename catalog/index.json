@@ -14,7 +14,8 @@
         ],
         "services": []
       },
-      "permission_purposes": {}
+      "permission_purposes": {},
+      "kind": "app"
     },
     {
       "plugin_id": "fatalder.cloud-import",
@@ -51,7 +52,8 @@
         "players:list": "将聊天玩家唯一匹配到管理员 UUID 白名单",
         "players:observe": "核对 Worker 机器人身份及权限变更读回",
         "packet_send:185": "发送 RequestPermissions，为已核验机器人授予 OP 或按配置恢复原权限"
-      }
+      },
+      "kind": "app"
     },
     {
       "plugin_id": "fatalder.cloud-import",
@@ -116,7 +118,8 @@
         "repository": "https://github.com/OmineDev/neomega-plugins",
         "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
         "path": "plugins/fatalder-cloud-import"
-      }
+      },
+      "kind": "app"
     },
     {
       "plugin_id": "neomega.daily-signin",
@@ -170,7 +173,8 @@
         "repository": "https://github.com/OmineDev/neomega-plugins",
         "ref": "05c3235791f0c017fffbbf64e506bdea6d69606e",
         "path": "plugins/daily-signin"
-      }
+      },
+      "kind": "app"
     },
     {
       "plugin_id": "neomega.homes",
@@ -227,7 +231,8 @@
         "repository": "https://github.com/OmineDev/neomega-plugins",
         "ref": "e5d538038a99940baeef06c334cbfb9e67177037",
         "path": "plugins/homes"
-      }
+      },
+      "kind": "app"
     },
     {
       "plugin_id": "neomega.online-time",
@@ -281,7 +286,8 @@
         "repository": "https://github.com/OmineDev/neomega-plugins",
         "ref": "87ed54781fcd63b3b4ade47bb7e2ec9f6338f13e",
         "path": "plugins/online-time"
-      }
+      },
+      "kind": "app"
     },
     {
       "plugin_id": "neomega.timed-commands",
@@ -323,7 +329,8 @@
         "repository": "https://github.com/OmineDev/neomega-plugins",
         "ref": "2c4e9ae7c50f4fb1c57fa6feb56299984830b79a",
         "path": "plugins/timed-commands"
-      }
+      },
+      "kind": "app"
     },
     {
       "plugin_id": "neomega.tpa",
@@ -377,7 +384,8 @@
         "repository": "https://github.com/OmineDev/neomega-plugins",
         "ref": "35ac62fc89ae0b2e0d4b86826e6dd775956c8dd1",
         "path": "plugins/tpa"
-      }
+      },
+      "kind": "app"
     },
     {
       "plugin_id": "neomega.welcome",
@@ -438,7 +446,8 @@
         "repository": "https://github.com/OmineDev/neomega-plugins",
         "ref": "a296e23151fb769ce447ec514db5c91a431f13fb",
         "path": "plugins/welcome"
-      }
+      },
+      "kind": "app"
     }
   ]
 }

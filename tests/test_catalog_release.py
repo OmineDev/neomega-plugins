@@ -21,6 +21,7 @@ class ReleaseTests(unittest.TestCase):
             entry=json.loads(index.read_text())['plugins'][0]
             self.assertEqual(entry['url'],'https://github.com/OmineDev/neomega-plugins/releases/download/test.demo-v1.0.0/test.demo-1.0.0.zip')
             self.assertEqual(entry['sha256'],hashlib.sha256(package.read_bytes()).hexdigest())
+            self.assertEqual(entry['kind'],'app')
             before=index.read_bytes()
             args[args.index('--version')+1]='2.0.0'
             self.assertNotEqual(subprocess.run(args,capture_output=True).returncode,0)

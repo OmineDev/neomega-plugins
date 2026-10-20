@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--version',required=True)
     parser.add_argument('--name')
     parser.add_argument('--description', help='Short author description (maximum 2000 characters)')
+    parser.add_argument('--kind', choices=('app', 'provider'), default='app', help='app for player-facing plugins, provider for shared services other plugins depend on')
     parser.add_argument('--index',required=True,type=Path)
     parser.add_argument('--permission-purposes',type=Path,help='Reviewed JSON map explaining requested capabilities; never grants authority')
     args=parser.parse_args()
@@ -63,6 +64,7 @@ def main():
             if len(description) > 2000:
                 raise ValueError('description exceeds 2000 characters')
             entry['description'] = description
+            entry['kind'] = args.kind
             if readme is not None:
                 entry['readme'] = {'path': 'README.md', 'sha256': hashlib.sha256(readme).hexdigest(), 'size': len(readme)}
             for field in ('subscriptions','runtime','host_api','worker_protocol','dependencies','target_os','target_arch','min_host_version'):

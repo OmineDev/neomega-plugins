@@ -19,6 +19,8 @@ def validate(root):
     names = meta['files']
     if 'description' in meta and (not isinstance(meta['description'], str) or len(meta['description']) > 2000):
         raise ValueError('description must be a string of at most 2000 characters')
+    if meta.get('kind', 'app') not in ('app', 'provider'):
+        raise ValueError('kind must be app or provider')
     if not isinstance(meta.get('name'), str) or not meta['name'].strip():
         raise ValueError('release name is required')
     if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names):
