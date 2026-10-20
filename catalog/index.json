@@ -117,6 +117,60 @@
         "ref": "6d0d8b0fe7c41e7598c98db4ed5adcbc007a0dc3",
         "path": "plugins/fatalder-cloud-import"
       }
+    },
+    {
+      "plugin_id": "neomega.daily-signin",
+      "version": "1.0.0",
+      "name": "每日签到",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.daily-signin-v1.0.0/neomega.daily-signin-1.0.0.zip",
+      "sha256": "60ab13a93827ed1b341d3b7843dcfdc488d626c5328a28b1fee76bc59c4dffbd",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !签到 命令",
+          "operation:framework.command.execute": "发放签到奖励并回复玩家",
+          "players:list": "确认发命令的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !签到 命令",
+        "operation:framework.command.execute": "发放签到奖励并回复玩家",
+        "players:list": "确认发命令的玩家身份"
+      },
+      "description": "玩家发送 !签到 领取每日奖励，连续签到满指定天数另有额外奖励。开箱即用，无需其他插件。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "e29de744c2729e6fe8319f1345fc6128c2fb870e73385eb561f54460a5fce911",
+        "size": 1301
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "05c3235791f0c017fffbbf64e506bdea6d69606e",
+        "path": "plugins/daily-signin"
+      }
     }
   ]
 }
