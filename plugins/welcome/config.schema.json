@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "welcome_text": {
+      "type": "string",
+      "title": "欢迎语",
+      "description": "玩家进服时私聊发送，{name} 会替换为玩家名",
+      "default": "欢迎回来，{name}！输入 !帮助 查看可用命令。"
+    },
+    "first_join_text": {
+      "type": "string",
+      "title": "首次进服欢迎语",
+      "description": "玩家第一次进服时改发这句；留空则发普通欢迎语",
+      "default": "欢迎 {name} 第一次来到服务器！送你一份新手礼包。"
+    },
+    "first_join_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "新手礼包命令",
+      "description": "玩家第一次进服时执行，{player} 会替换为该玩家；留空则不发礼包",
+      "default": [
+        "give {player} bread 16"
+      ]
+    },
+    "help_text": {
+      "type": "string",
+      "title": "帮助内容",
+      "description": "玩家发送 !帮助 时私聊发送",
+      "default": "可用命令：!签到、!回家、!tpa 玩家名。有问题请联系管理员。"
+    },
+    "announcements": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "公告",
+      "description": "按顺序轮流向全服广播；留空则不发公告",
+      "default": [
+        "请文明交流，祝你玩得开心！"
+      ]
+    },
+    "announcement_minutes": {
+      "type": "integer",
+      "title": "公告间隔（分钟）",
+      "description": "每隔多少分钟广播下一条公告",
+      "minimum": 1,
+      "default": 10
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
