@@ -47,8 +47,11 @@ def validate(root):
         raise ValueError('README exceeds 256 KiB')
     readme.decode('utf-8')
     manifest = json.loads((root / 'manifest.json').read_text())
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', manifest['id']):
-        raise ValueError('invalid plugin ID')
+    # <namespace>.<name> is accepted unchanged by Host, Polaris and the catalog.
+    if not re.fullmatch(r'[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*', manifest['id']) or len(manifest['id']) > 80:
+        raise ValueError('plugin ID must be <namespace>.<name> in lowercase letters, digits and hyphens, at most 80 characters')
+    if manifest['id'].split('.')[0] in {'community', 'example', 'test'}:
+        raise ValueError('reserved plugin namespace: ' + manifest['id'])
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', manifest['version']):
         raise ValueError('explicit semantic version required')
     if manifest.get('manifest_version') != 1 or manifest.get('runtime') != 'python':

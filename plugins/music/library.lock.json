@@ -5,9 +5,9 @@
     {
       "name": "neomega_midi",
       "version": "1.0.0",
-      "license": "AGPL-3.0-only",
+      "license": "MIT",
       "files": {
-        "LICENSE": "6f1e622c82a380075843bb084a7ec3b1f1d12a4a02526d75e78b0924a860aa75",
+        "LICENSE": "ad4d2d600a26b8eb588d31b9479b7bd55fac3051df91ea63142bad8f3c5f5b78",
         "README.md": "89faed58c441206b1e7c45e1b9cd43af3c0b41ff279257947fa655ad925f6b41",
         "__init__.py": "7468aa2b87bc899ae18e28382cd53fd72e56bcea6202bfc772265748222c2e63"
       }

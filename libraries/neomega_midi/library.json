@@ -1,7 +1,7 @@
 {
   "name": "neomega_midi",
   "version": "1.0.0",
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "files": [
     "__init__.py",
     "README.md",

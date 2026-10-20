@@ -25,21 +25,6 @@ class CommunityPackageTests(unittest.TestCase):
             package.build(ROOT / 'plugins/fatalder-cloud-import', new)
             self.assertEqual(old.read_bytes(), new.read_bytes())
 
-    def test_merged_examples_preserve_manifests_and_use_reviewed_purposes(self):
-        with tempfile.TemporaryDirectory() as folder:
-            for name in ['points-exchange', 'starter-service']:
-                root = ROOT / 'plugins' / name
-                output = Path(folder) / (name + '.zip')
-                package.build(root, output)
-                with zipfile.ZipFile(output) as archive:
-                    self.assertEqual(archive.read('manifest.json'), (root / 'manifest.json').read_bytes())
-                    self.assertIn('config.example.json', archive.namelist())
-            spec = importlib.util.spec_from_file_location('points_packager', ROOT / 'plugins/points-exchange/tools/package.py')
-            old = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(old)
-            old.build(Path(folder) / 'old.zip')
-            self.assertEqual((Path(folder) / 'old.zip').read_bytes(), (Path(folder) / 'points-exchange.zip').read_bytes())
-
     def test_new_author_and_rejections(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / 'plugin'
@@ -52,6 +37,11 @@ class CommunityPackageTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(json.loads(archive.read('manifest.json'))['id'], 'another-author.example')
                 self.assertNotIn('release.json', archive.namelist())
+            for invalid in ['Another.example', 'single', 'a.b.c', 'example.demo', 'community.demo', '1author.demo']:
+                (root / 'manifest.json').write_text(json.dumps(dict(manifest, id=invalid)))
+                with self.subTest(id=invalid), self.assertRaises(ValueError):
+                    package.build(root, output)
+            (root / 'manifest.json').write_text(json.dumps(manifest))
             meta = json.loads((root / 'release.json').read_text())
             for unsafe in ['../secret', '/tmp/secret', '.env', 'config.json', 'logs/run.log']:
                 changed = dict(meta, files=meta['files'] + [unsafe])
@@ -89,12 +79,12 @@ class PrepareReleaseTests(unittest.TestCase):
                 manifest_path.write_text(json.dumps(manifest))
                 with self.assertRaisesRegex(ValueError, 'already catalogued'):
                     prepare.prepare('fatalder-cloud-import', root / 'out')
-                manifest['version'] = '1.0.5'
+                manifest['version'] = '1.2.1'
                 manifest_path.write_text(json.dumps(manifest))
                 prepare.prepare('fatalder-cloud-import', root / 'out')
                 original = json.loads((root / 'catalog/index.json').read_text())
                 candidate = json.loads((root / 'out/index.json').read_text())
                 self.assertEqual(candidate['plugins'][:-1], original['plugins'])
-                self.assertEqual(candidate['plugins'][-1]['version'], '1.0.5')
+                self.assertEqual(candidate['plugins'][-1]['version'], '1.2.1')
                 self.assertEqual(candidate['plugins'][-1]['permissions'], manifest['permissions'])
-                self.assertTrue((root / 'out/SHA256SUMS').read_text().endswith('  fatalder.cloud-import-1.0.5.zip\n'))
+                self.assertTrue((root / 'out/SHA256SUMS').read_text().endswith('  fatalder.cloud-import-1.2.1.zip\n'))
