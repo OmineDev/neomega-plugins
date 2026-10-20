@@ -378,6 +378,67 @@
         "ref": "35ac62fc89ae0b2e0d4b86826e6dd775956c8dd1",
         "path": "plugins/tpa"
       }
+    },
+    {
+      "plugin_id": "neomega.welcome",
+      "version": "1.0.0",
+      "name": "欢迎与公告",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.welcome-v1.0.0/neomega.welcome-1.0.0.zip",
+      "sha256": "58726fe457c02c8184c9b52d9c6aa376f41144aaedafc1dc6ec9462a2f45acec",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !帮助 命令",
+          "event:player.list_added": "在玩家进服时发送欢迎语",
+          "operation:framework.command.execute": "发送欢迎语、帮助和公告，发放新手礼包",
+          "players:list": "确认进服和发命令的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !帮助 命令",
+        "event:player.list_added": "在玩家进服时发送欢迎语",
+        "operation:framework.command.execute": "发送欢迎语、帮助和公告，发放新手礼包",
+        "players:list": "确认进服和发命令的玩家身份"
+      },
+      "description": "玩家进服时发送欢迎语，第一次进服送新手礼包，并定时向全服轮播公告。开箱即用，无需其他插件。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "b1fa46577a433e8f59001d48aa851c4e1d4bb0151725aaa890a4de646d1b65ff",
+        "size": 1834
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "a296e23151fb769ce447ec514db5c91a431f13fb",
+        "path": "plugins/welcome"
+      }
     }
   ]
 }
