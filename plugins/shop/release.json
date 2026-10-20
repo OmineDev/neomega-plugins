@@ -1,0 +1,15 @@
+{
+  "name": "积分商店",
+  "description": "玩家发送 !商店，在聊天菜单里用金币购买服主设置的商品。安装时会一并装上经济和玩家档案插件。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ],
+  "libraries": [
+    "neomega_menu"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "title": "商店标题",
+      "default": "积分商店"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "商品名称"
+          },
+          "price": {
+            "type": "integer",
+            "title": "价格",
+            "description": "需要的金币数量",
+            "minimum": 1
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "发货命令",
+            "description": "{player} 会替换为购买的玩家"
+          }
+        },
+        "required": [
+          "name",
+          "price",
+          "commands"
+        ],
+        "additionalProperties": false
+      },
+      "title": "商品",
+      "description": "至少一件，名称不能重复",
+      "default": [
+        {
+          "name": "面包 ×16",
+          "price": 10,
+          "commands": [
+            "give {player} bread 16"
+          ]
+        },
+        {
+          "name": "钻石",
+          "price": 100,
+          "commands": [
+            "give {player} diamond 1"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
