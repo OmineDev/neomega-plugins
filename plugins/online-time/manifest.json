@@ -1,0 +1,41 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.online-time",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 2
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !在线时长 和 !在线排行 命令",
+      "operation:framework.command.execute": "发放在线奖励并回复玩家",
+      "players:list": "每分钟统计在线玩家，并确认发命令的玩家身份"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}
