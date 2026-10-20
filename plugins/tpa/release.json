@@ -1,0 +1,12 @@
+{
+  "name": "玩家互传",
+  "description": "玩家用 !tpa 请求传送到朋友身边，或用 !tpahere 把朋友拉过来，对方同意后立即传送。开箱即用，无需其他插件。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}

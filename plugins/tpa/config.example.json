@@ -1,0 +1,4 @@
+{
+  "request_timeout_seconds": 60,
+  "cooldown_seconds": 10
+}
