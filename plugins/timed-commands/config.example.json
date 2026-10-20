@@ -1,0 +1,13 @@
+{
+  "utc_offset_hours": 8,
+  "grace_minutes": 5,
+  "tasks": [
+    {
+      "name": "整点公告",
+      "every_minutes": 60,
+      "daily_at": "",
+      "commands": [],
+      "message": "感谢游玩，祝你玩得开心！"
+    }
+  ]
+}

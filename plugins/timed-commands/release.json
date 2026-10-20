@@ -1,0 +1,12 @@
+{
+  "name": "定时命令",
+  "description": "按固定间隔或每天的固定时刻自动执行命令、发送全服公告。开箱即用，无需其他插件。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}
