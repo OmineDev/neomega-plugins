@@ -173,6 +173,63 @@
       }
     },
     {
+      "plugin_id": "neomega.homes",
+      "version": "1.0.0",
+      "name": "个人传送点",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.homes-v1.0.0/neomega.homes-1.0.0.zip",
+      "sha256": "cdb7262a017e6a9217880064935b9208e8e2079535b182ac7fb3a0d867878037",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !设家、!回家 等命令",
+          "operation:framework.command.execute": "把玩家传送回家并回复玩家",
+          "operation:framework.entities.query": "设家时读取玩家当前的位置",
+          "players:list": "确认发命令的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !设家、!回家 等命令",
+        "operation:framework.command.execute": "把玩家传送回家并回复玩家",
+        "operation:framework.entities.query": "设家时读取玩家当前的位置",
+        "players:list": "确认发命令的玩家身份"
+      },
+      "description": "玩家用 !设家 记下当前位置，随时用 !回家 传送回去，每人可设多个家。开箱即用，无需其他插件。",
+      "readme": {
+        "path": "README.md",
+        "sha256": "365dc1cf16d8780fde8803aff3e0d340a995038e803fe72f5726f3ce999e1afd",
+        "size": 1663
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "e5d538038a99940baeef06c334cbfb9e67177037",
+        "path": "plugins/homes"
+      }
+    },
+    {
       "plugin_id": "neomega.online-time",
       "version": "1.0.0",
       "name": "在线时长",
