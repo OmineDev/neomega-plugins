@@ -308,6 +308,93 @@
       }
     },
     {
+      "plugin_id": "neomega.economy",
+      "version": "2.1.0",
+      "name": "经济",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.economy-v2.1.0/neomega.economy-2.1.0.zip",
+      "sha256": "300fe593f787f6fa0195476b8cc73c1e0ff260f5d5c934eb4569f38d05e8b2b6",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.scoreboard.get",
+          "framework.scoreboard.add",
+          "framework.scoreboard.objectives.list",
+          "framework.scoreboard.objectives.add",
+          "framework.scoreboard.objectives.setdisplay"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.players.resolve"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !余额、!转账、!流水 命令",
+          "event:player.list_added": "玩家进服时发放初始金币和离线期间的收入",
+          "operation:framework.command.execute": "回复玩家并通知转账双方",
+          "operation:framework.scoreboard.get": "从计分板读取玩家余额",
+          "operation:framework.scoreboard.add": "在计分板上给玩家加减金币",
+          "operation:framework.scoreboard.objectives.list": "启动时检查货币计分板是否存在",
+          "operation:framework.scoreboard.objectives.add": "货币计分板不存在时新建",
+          "operation:framework.scoreboard.objectives.setdisplay": "按配置把货币计分板显示在侧边栏、玩家列表或名字下方",
+          "players:list": "确认玩家是否在线、身份和当前名字，并在在线玩家里查找转账对象",
+          "service:plugin.neomega.players.resolve": "按名字查找不在线的转账对象"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !余额、!转账、!流水 命令",
+        "event:player.list_added": "玩家进服时发放初始金币和离线期间的收入",
+        "operation:framework.command.execute": "回复玩家并通知转账双方",
+        "operation:framework.scoreboard.get": "从计分板读取玩家余额",
+        "operation:framework.scoreboard.add": "在计分板上给玩家加减金币",
+        "operation:framework.scoreboard.objectives.list": "启动时检查货币计分板是否存在",
+        "operation:framework.scoreboard.objectives.add": "货币计分板不存在时新建",
+        "operation:framework.scoreboard.objectives.setdisplay": "按配置把货币计分板显示在侧边栏、玩家列表或名字下方",
+        "players:list": "确认玩家是否在线、身份和当前名字，并在在线玩家里查找转账对象",
+        "service:plugin.neomega.players.resolve": "按名字查找不在线的转账对象"
+      },
+      "description": "用游戏计分板当余额的单一货币，供其他插件发奖和扣款；玩家可以查余额、互相转账、查看最近收支，离线收入在下次进服时到账。安装时会一并装上玩家档案插件。",
+      "kind": "provider",
+      "readme": {
+        "path": "README.md",
+        "sha256": "e0a587182be95e2fdb63da71cc9f61e7a495bb39b21c1993eb9a9dc6594af34a",
+        "size": 3133
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.players",
+          "major": 2,
+          "min_version": "2.0.0"
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "3ebc28d613bc9fe5f7b060a47b6d43c46ab61c42",
+        "path": "plugins/economy"
+      }
+    },
+    {
       "plugin_id": "neomega.homes",
       "version": "1.0.0",
       "name": "个人传送点",
