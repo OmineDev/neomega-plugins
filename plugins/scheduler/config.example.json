@@ -1,5 +1,0 @@
-{
-  "max_schedules_per_owner": 128,
-  "lease_seconds": 60,
-  "max_catch_up": 32
-}
