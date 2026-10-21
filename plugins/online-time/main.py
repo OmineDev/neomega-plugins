@@ -4,14 +4,18 @@
 私聊一起写入，要么全部生效，要么全部不生效。提交结果不明时只记日志，下一轮
 重新读取：Host 对整个安装做全局版本校验，同一份快照不可能提交两次，所以不会
 重复记时或重复发奖。定时器和聊天命令共用一把锁，避免两边读到同一版本互相冲突。
+
+金币交给可选的经济插件，在提交前调用。request_id 由日期和当天第几次决定，
+本轮没能保存时下一轮重算同一分钟，经济插件按它去重，不会重复发放。
 """
 import asyncio
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
-                             PlayerNotFound, player_target)
+                             PlayerNotFound, ServiceRejected, player_target)
 from neomega_runtime.managed import IPCRejected
+from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
 from neomega_runtime.storage import CommitUncertain
 
 BATCH = 255  # 每批玩家数；再加上排行键，正好是一次最多读取的 256 个键。
@@ -33,6 +37,12 @@ class Settings:
     rewards: list[Reward] = field(default_factory=lambda: [
         Reward(60, ['give {player} bread 5'], '今天已在线 1 小时，送你 5 个面包！'),
     ], metadata={'title': '每日在线奖励', 'description': '当天在线时长正好达到设定分钟数时发放一次'})
+    coin_interval_minutes: int = field(default=30, metadata={
+        'title': '金币间隔分钟数', 'description': '当天在线每满这么多分钟发一次金币', 'minimum': 1})
+    coins_per_interval: int = field(default=5, metadata={
+        'title': '每次金币', 'description': '需要安装经济插件，没装时不发；填 0 不发金币', 'minimum': 0})
+    daily_coin_limit: int = field(default=0, metadata={
+        'title': '每日金币上限', 'description': '当天最多发这么多金币，最后一次按剩余额度发；填 0 不限', 'minimum': 0})
 
     def __post_init__(self):
         if any(not command.strip() for reward in self.rewards for command in reward.commands):
@@ -99,17 +109,25 @@ class OnlineTime(Plugin):
 
     async def count(self, ctx, players):
         tx = await ctx.storage.transaction(keys=['player:' + player_id(p) for p in players] + ['top'])
-        today, number = self.today(ctx).isoformat(), 0
+        today, number, config, grants = self.today(ctx).isoformat(), 0, ctx.config, []
         top = {entry['id']: entry for entry in tx.get('top', [])}
         for player in players:
             key = 'player:' + player_id(player)
             record = tx.get(key, {'name': player['name'], 'total': 0, 'day': today, 'today': 0})
-            minutes = (record['today'] if record['day'] == today else 0) + 1
-            record = {'name': player['name'], 'total': record['total'] + 1, 'day': today, 'today': minutes}
+            same_day = record['day'] == today
+            minutes = (record['today'] if same_day else 0) + 1
+            record = {'name': player['name'], 'total': record['total'] + 1, 'day': today, 'today': minutes,
+                      'coins_today': record.get('coins_today', 0) if same_day else 0}
             tx.set(key, record)
             top[player_id(player)] = {'id': player_id(player), 'name': player['name'], 'minutes': record['total']}
 
-            rewards = [reward for reward in ctx.config.rewards if reward.minutes == minutes]
+            coins = config.coins_per_interval
+            if config.daily_coin_limit:
+                coins = min(coins, config.daily_coin_limit - record['coins_today'])
+            if coins > 0 and minutes % config.coin_interval_minutes == 0:
+                grants.append((player, record, coins, f'online-{today}-{minutes // config.coin_interval_minutes}'))
+
+            rewards = [reward for reward in config.rewards if reward.minutes == minutes]
             if not rewards:
                 continue
             try:
@@ -127,6 +145,16 @@ class OnlineTime(Plugin):
                 if reward.message:
                     self.tell(ctx, tx, player, reward.message, f'{tx.commit_id}_message_{number}')
                     number += 1
+
+        results = await asyncio.gather(*(self.grant(ctx, player, coins, request_id)
+                                         for player, _, coins, request_id in grants))
+        for (player, record, _, _), (given, text) in zip(grants, results):
+            if given:
+                tx.set('player:' + player_id(player), {**record, 'coins_today': record['coins_today'] + given})
+            if text:
+                self.tell(ctx, tx, player, f'今天已在线 {duration(record["today"])}，{text}',
+                          f'{tx.commit_id}_message_{number}')
+                number += 1
         tx.set('top', sorted(top.values(), key=lambda entry: -entry['minutes'])[:TOP])
         await tx.save()
 
@@ -147,6 +175,22 @@ class OnlineTime(Plugin):
         self.tell(ctx, tx, command.player, '\n'.join(lines) if top else '还没有人上榜，多在线一会儿吧。',
                   tx.commit_id + '_reply')
         await tx.save()
+
+    async def grant(self, ctx, player, coins, request_id) -> tuple[int, str]:
+        """返回计入今日上限的金币数和提示；结果不明时也计入，保证不超过上限。"""
+        arguments = {'player_id': player_id(player), 'amount': coins, 'reason': '在线奖励', 'request_id': request_id}
+        try:
+            result = await ctx.services.call('plugin.neomega.economy.grant', arguments, timeout=5)
+        except IPCRejected:
+            return 0, ''  # 没有安装或没有启动经济插件。
+        except (ServiceWaitTimeout, ServiceUncertain):
+            return coins, '金币奖励结果暂时不确定，可以用 !流水 查看。'
+        except (ServiceRejected, ServiceFailed):
+            return 0, '金币奖励暂时没有发出。'
+        currency = result['currency']
+        if result['pending']:
+            return coins, f'获得 {coins} {currency}，下次上线时到账。'
+        return coins, f'获得 {coins} {currency}，现有 {result["balance"]} {currency}。'
 
     def tell(self, ctx, tx, player, text, key):
         plan = ctx.notifications.prepare(player['name'], text, idempotency_key=key, deadline=deadline())

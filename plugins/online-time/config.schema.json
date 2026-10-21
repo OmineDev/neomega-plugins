@@ -52,6 +52,27 @@
           "message": "今天已在线 1 小时，送你 5 个面包！"
         }
       ]
+    },
+    "coin_interval_minutes": {
+      "type": "integer",
+      "title": "金币间隔分钟数",
+      "description": "当天在线每满这么多分钟发一次金币",
+      "minimum": 1,
+      "default": 30
+    },
+    "coins_per_interval": {
+      "type": "integer",
+      "title": "每次金币",
+      "description": "需要安装经济插件，没装时不发；填 0 不发金币",
+      "minimum": 0,
+      "default": 5
+    },
+    "daily_coin_limit": {
+      "type": "integer",
+      "title": "每日金币上限",
+      "description": "当天最多发这么多金币，最后一次按剩余额度发；填 0 不限",
+      "minimum": 0,
+      "default": 0
     }
   },
   "required": [],
