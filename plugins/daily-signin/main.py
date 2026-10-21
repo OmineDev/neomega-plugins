@@ -140,7 +140,8 @@ class DailySignin(Plugin):
             return ['金币奖励结果暂时不确定，可以用 !流水 查看。']
         except (ServiceRejected, ServiceFailed):
             return ['金币奖励暂时没有发出。']
-        return [f'获得 {coins} 金币，现有 {result["balance"]} 金币。']
+        coin = result.get('currency', '金币')  # 经济插件 2.0.0 不返回货币名
+        return [f'获得 {coins} {coin}，现有 {result["balance"]} {coin}。']
 
     def reply(self, ctx, tx, player, text):
         plan = ctx.notifications.prepare(player['name'], text,
