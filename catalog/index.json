@@ -243,6 +243,72 @@
       }
     },
     {
+      "plugin_id": "neomega.daily-signin",
+      "version": "1.1.1",
+      "name": "每日签到",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.daily-signin-v1.1.1/neomega.daily-signin-1.1.1.zip",
+      "sha256": "6821b2c9f8b37bd584e0b21725ceff643becdfdd69b37ba8c63a090efc6edfe4",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.grant"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !签到 命令",
+          "operation:framework.command.execute": "发放签到奖励并回复玩家",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.grant": "安装了经济插件时发放签到金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !签到 命令",
+        "operation:framework.command.execute": "发放签到奖励并回复玩家",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.grant": "安装了经济插件时发放签到金币"
+      },
+      "description": "玩家发送 !签到 领取每日奖励，连续签到满指定天数另有额外奖励。装了经济插件时还会发金币。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "63870a5a264dad0c79153a431158a32384795679f81ad5de770b9ca7b3650939",
+        "size": 1519
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "cd2da71b2707965fd38a5927b268f405949b338a",
+        "path": "plugins/daily-signin"
+      }
+    },
+    {
       "plugin_id": "neomega.economy",
       "version": "2.0.0",
       "name": "经济",
