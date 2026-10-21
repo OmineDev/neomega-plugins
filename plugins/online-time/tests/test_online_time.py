@@ -7,9 +7,10 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from neomega_runtime import Event, PluginContext
+from neomega_runtime import Event, PluginContext, ServiceRejected
 from neomega_runtime.managed import IPCRejected
 from neomega_runtime.operations import Operations
+from neomega_runtime.services import ServiceWaitTimeout
 from main import OnlineTime, Reward, Settings
 
 PLAYER = {'name': '玩家', 'uuid': 'u1', 'xuid': '42'}
@@ -68,6 +69,7 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
         self.ctx.config = Settings()
         self.ctx._operations = Operations(self.host, 's1')
         self.ctx.resolve_player = AsyncMock(return_value=dict(PLAYER))
+        self.ctx.services.call = AsyncMock(side_effect=IPCRejected('permission_denied', 'r1', False))
         self.plugin = OnlineTime()
         await self.plugin.on_start(self.ctx)
         self.day = date(2026, 10, 21)
@@ -84,7 +86,8 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
         await self.plugin.tick(self.ctx)
         await self.plugin.tick(self.ctx)
         self.assertEqual(len(self.host.commits), 2)
-        self.assertEqual(self.host.values['player:u1'], {'name': '玩家', 'total': 2, 'day': '2026-10-21', 'today': 2})
+        self.assertEqual(self.host.values['player:u1'], {'name': '玩家', 'total': 2, 'day': '2026-10-21', 'today': 2,
+                                                             'coins_today': 0})
         self.assertNotIn('player:bot', self.host.values)
         self.assertEqual(self.host.values['top'], [{'id': 'u1', 'name': '玩家', 'minutes': 2}])
         self.assertEqual(self.host.reads[-1], ['player:u1', 'top'])
@@ -92,7 +95,8 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_day_restarts_today(self):
         self.host.values['player:u1'] = {'name': '旧名', 'total': 100, 'day': '2026-10-20', 'today': 30}
         await self.plugin.tick(self.ctx)
-        self.assertEqual(self.host.values['player:u1'], {'name': '玩家', 'total': 101, 'day': '2026-10-21', 'today': 1})
+        self.assertEqual(self.host.values['player:u1'], {'name': '玩家', 'total': 101, 'day': '2026-10-21', 'today': 1,
+                                                             'coins_today': 0})
 
     async def test_reward_is_given_only_when_today_reaches_the_threshold(self):
         self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-21', 'today': 59}
@@ -141,6 +145,85 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
         self.host.online = [dict(PLAYER)]
         await self.plugin.tick(self.ctx)
         self.assertEqual(self.host.values['player:u1']['total'], 1)
+
+    def economy(self, **result):
+        self.ctx.services.call = AsyncMock(return_value={'balance': 25, 'duplicate': False,
+                                                         'currency': '积分', 'pending': False, **result})
+
+    def granted(self):
+        return [(call.args[1]['amount'], call.args[1]['request_id']) for call in self.ctx.services.call.await_args_list]
+
+    async def test_coins_are_granted_each_time_today_reaches_a_multiple_of_the_interval(self):
+        self.economy()
+        self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-21', 'today': 29}
+        await self.plugin.tick(self.ctx)
+        name, arguments = self.ctx.services.call.await_args.args
+        self.assertEqual(name, 'plugin.neomega.economy.grant')
+        self.assertEqual(arguments, {'player_id': 'u1', 'amount': 5, 'reason': '在线奖励',
+                                     'request_id': 'online-2026-10-21-1'})
+        self.assertEqual(self.host.reply(), '今天已在线 30 分钟，获得 5 积分，现有 25 积分。')
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 5)
+        await self.plugin.tick(self.ctx)
+        self.assertEqual(self.ctx.services.call.await_count, 1)
+        self.host.values['player:u1']['today'] = 59
+        await self.plugin.tick(self.ctx)
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-1'), (5, 'online-2026-10-21-2')])
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 10)
+
+    async def test_failed_save_recomputes_the_same_request_id(self):
+        self.economy(duplicate=True)
+        self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-21', 'today': 29}
+        self.host.fail_commit = ConnectionError('lost')
+        with self.assertLogs('online-time-test', 'WARNING'):
+            await self.plugin.tick(self.ctx)
+        self.host.fail_commit = None
+        await self.plugin.tick(self.ctx)
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-1')] * 2)
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 5)
+
+    async def test_daily_limit_trims_the_last_grant_and_then_stops(self):
+        self.economy()
+        self.ctx.config = Settings(rewards=[], coin_interval_minutes=1, daily_coin_limit=8)
+        for _ in range(3):
+            await self.plugin.tick(self.ctx)
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-1'), (3, 'online-2026-10-21-2')])
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 8)
+        self.assertEqual(self.host.commands(), [])
+
+    async def test_new_day_resets_coins_today(self):
+        self.economy()
+        self.ctx.config = Settings(rewards=[], coin_interval_minutes=1, daily_coin_limit=8)
+        self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-20', 'today': 300,
+                                         'coins_today': 8}
+        await self.plugin.tick(self.ctx)
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-1')])
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 5)
+
+    async def test_no_economy_means_no_coin_message(self):
+        self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-21', 'today': 29}
+        await self.plugin.tick(self.ctx)
+        self.assertEqual(self.ctx.services.call.await_count, 1)
+        self.assertEqual(self.host.commands(), [])
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 0)
+
+    async def test_unsettled_grant_is_reported_and_counted(self):
+        self.ctx.services.call = AsyncMock(side_effect=ServiceWaitTimeout('c1'))
+        self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-21', 'today': 29}
+        await self.plugin.tick(self.ctx)
+        self.assertEqual(self.host.reply(), '今天已在线 30 分钟，金币奖励结果暂时不确定，可以用 !流水 查看。')
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 5)
+
+    async def test_rejected_grant_is_reported_and_not_counted(self):
+        self.ctx.services.call = AsyncMock(side_effect=ServiceRejected('invalid_arguments'))
+        self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-21', 'today': 29}
+        await self.plugin.tick(self.ctx)
+        self.assertEqual(self.host.reply(), '今天已在线 30 分钟，金币奖励暂时没有发出。')
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 0)
+
+    async def test_zero_coins_never_calls_the_economy(self):
+        self.ctx.config = Settings(coins_per_interval=0, coin_interval_minutes=1)
+        await self.plugin.tick(self.ctx)
+        self.ctx.services.call.assert_not_awaited()
 
     async def test_online_time_reply(self):
         await self.say('!在线时长')

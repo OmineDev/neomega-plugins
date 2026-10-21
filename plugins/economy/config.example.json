@@ -1,5 +1,8 @@
 {
   "currency_name": "金币",
+  "objective": "coin",
+  "create_objective": true,
+  "display_slot": "",
   "starting_balance": 0,
   "allow_transfer": true
 }

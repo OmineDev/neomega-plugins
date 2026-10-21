@@ -115,12 +115,14 @@ class SigninTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.values['player:u1']['streak'], 1)
 
     async def test_grants_daily_and_milestone_coins_once_per_day(self):
-        self.ctx.services.call = AsyncMock(return_value={'balance': 25, 'duplicate': False})
+        self.ctx.services.call = AsyncMock(return_value={'balance': 25, 'duplicate': False,
+                                                         'currency': '积分', 'pending': False})
         self.ctx.config = Settings(milestones=[Milestone(2, coins=5)])
         self.day = date(2026, 10, 20)
         await self.say('!签到')
         self.day = date(2026, 10, 21)
         await self.say('!签到')
+        self.assertIn('获得 15 积分，现有 25 积分。', self.host.reply())
         await self.say('!签到')
         self.assertEqual(self.ctx.services.call.await_count, 2)
         name, arguments = self.ctx.services.call.await_args.args

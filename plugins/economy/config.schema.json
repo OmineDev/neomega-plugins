@@ -5,12 +5,31 @@
     "currency_name": {
       "type": "string",
       "title": "货币名称",
+      "description": "回复玩家时显示的货币名，也是新建计分板的显示名",
       "default": "金币"
+    },
+    "objective": {
+      "type": "string",
+      "title": "计分板",
+      "description": "存放余额的计分板 ID，只能用英文字母、数字和 _ . -，最长 16 个字符",
+      "default": "coin"
+    },
+    "create_objective": {
+      "type": "boolean",
+      "title": "自动创建计分板",
+      "description": "启动时计分板不存在就新建一个",
+      "default": true
+    },
+    "display_slot": {
+      "type": "string",
+      "title": "显示位置",
+      "description": "留空不显示；sidebar 侧边栏，list 玩家列表，belowname 名字下方",
+      "default": ""
     },
     "starting_balance": {
       "type": "integer",
       "title": "初始余额",
-      "description": "玩家账户第一次有收支时的金额",
+      "description": "玩家第一次进服时加到计分板上，每人只发一次",
       "minimum": 0,
       "default": 0
     },

@@ -85,41 +85,58 @@ class Shop(Plugin):
         ctx.spawn(self.browse(ctx, command.player))
 
     async def browse(self, ctx, player):
-        items = ctx.config.items
-        index = await menu.choose(ctx, player, ctx.config.title,
-                                  [f'{item.name} — {item.price} 金币' for item in items])
+        items, account = ctx.config.items, player_id(player)
+        balance, coin = await self.wallet(ctx, account)
+        title = ctx.config.title if balance is None else f'{ctx.config.title}（你有 {balance} {coin}）'
+        index = await menu.choose(ctx, player, title, [f'{item.name} — {item.price} {coin}' for item in items])
         if index is None:
             return
         item = items[index]
-        if not await menu.confirm(ctx, player, f'购买「{item.name}」需要 {item.price} 金币，确认吗？'):
+        if not await menu.confirm(ctx, player, f'购买「{item.name}」需要 {item.price} {coin}，确认吗？'):
             return
 
-        account = player_id(player)
         arguments = {'player_id': account, 'amount': item.price,
                      'reason': ('购买 ' + item.name)[:32], 'request_id': uuid.uuid4().hex}
         try:
-            try:
-                result = await ctx.services.call(ECONOMY + 'pay', arguments, timeout=5)
-            except UNSETTLED:
-                result = await ctx.services.call(ECONOMY + 'pay', arguments, timeout=5)
+            result = await self.charge(ctx, arguments)
         except ServiceRejected as error:
+            if error.code == 'player_offline':
+                return  # 玩家在确认后下线，没有扣款。
+            if error.code == 'unavailable':
+                await menu.say(ctx, player, '扣款结果暂时不确定，请用 !流水 查看；没有扣款可以重新购买。')
+                return
             if error.code != 'insufficient_funds':
                 raise
-            await menu.say(ctx, player, await self.short_of_funds(ctx, account, item.price))
+            balance, coin = await self.wallet(ctx, account)
+            await menu.say(ctx, player, f'{coin}不足。' if balance is None
+                           else f'{coin}不足，需要 {item.price} {coin}，你现在有 {balance} {coin}。')
             return
         except UNSETTLED:
             await menu.say(ctx, player, '扣款结果暂时不确定，请用 !流水 查看；没有扣款可以重新购买。')
             return
         # duplicate=True 表示这笔扣款之前已经成功，同样发货。
-        await self.deliver(ctx, player, item, result['balance'], arguments['request_id'])
+        await self.deliver(ctx, player, item, f'{result["balance"]} {result.get("currency", coin)}',
+                           arguments['request_id'])
 
-    async def short_of_funds(self, ctx, account, price):
+    async def charge(self, ctx, arguments):
+        """扣款；结果不明（含经济插件回 unavailable）时用同一个 request_id 再试一次。"""
+        for retry in (False, True):
+            try:
+                return await ctx.services.call(ECONOMY + 'pay', arguments, timeout=5)
+            except ServiceRejected as error:
+                if error.code != 'unavailable' or retry:
+                    raise
+            except UNSETTLED:
+                if retry:
+                    raise
+
+    async def wallet(self, ctx, account):
+        """当前余额和货币名；查不到时余额为 None。经济插件 2.0.0 不返回货币名。"""
         try:
-            balance = (await ctx.services.call(ECONOMY + 'balance', {'player_id': account},
-                                               timeout=5))['balance']
+            result = await ctx.services.call(ECONOMY + 'balance', {'player_id': account}, timeout=5)
         except (ServiceRejected, *UNSETTLED):
-            return '金币不足。'
-        return f'金币不足，需要 {price} 金币，你现在有 {balance} 金币。'
+            return None, '金币'
+        return result['balance'], result.get('currency', '金币')
 
     async def deliver(self, ctx, player, item, balance, request_id):
         target = player_target(player['name'])
@@ -129,7 +146,7 @@ class Shop(Plugin):
                 tx.action(ctx.commands.prepare(line.strip().removeprefix('/').replace('{player}', target),
                                                idempotency_key=f'{tx.commit_id}_item_{index}',
                                                deadline=deadline()))
-            plan = ctx.notifications.prepare(player['name'], f'购买成功，剩余 {balance} 金币。',
+            plan = ctx.notifications.prepare(player['name'], f'购买成功，剩余 {balance}。',
                                              idempotency_key=tx.commit_id + '_reply', deadline=deadline())
             for part in plan.parts:
                 tx.action(part.intent)

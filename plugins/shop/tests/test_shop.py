@@ -77,7 +77,9 @@ class ShopTests(unittest.IsolatedAsyncioTestCase):
     async def call(self, service, arguments, *, major=1, timeout=5, idempotency_key=None):
         self.assertEqual((major, timeout), (1, 5))
         self.calls.append((service, dict(arguments)))
-        outcome = self.outcomes[service].pop(0)
+        # The menu looks up the balance first; unscripted lookups behave as if economy were busy.
+        outcomes = self.outcomes[service]
+        outcome = outcomes.pop(0) if outcomes or service != BALANCE else ServiceWaitTimeout('busy')
         if isinstance(outcome, BaseException):
             raise outcome
         return outcome
@@ -118,6 +120,34 @@ class ShopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('give @a[name="玩家"] bread 16', commands)
         self.assertIn('购买成功，剩余 90 金币。', ''.join(text_of(c) for c in commands if c.startswith('tellraw')))
 
+    async def test_menu_shows_balance_in_the_economy_currency(self):
+        self.outcomes[BALANCE] = [{'balance': 120, 'currency': '积分', 'pending': False}]
+        self.outcomes[PAY] = [{'balance': 110, 'duplicate': False, 'currency': '积分', 'pending': False}]
+        await self.buy('1', '1')
+        self.assertIn('积分商店（你有 120 积分）', self.host.sent[0])
+        self.assertIn('1. 面包 ×16 — 10 积分', self.host.sent[0])
+        self.assertIn('需要 10 积分', self.host.sent[1])
+        self.assertIn('购买成功，剩余 110 积分。',
+                      ''.join(text_of(c) for c in self.host.commands() if c.startswith('tellraw')))
+
+    async def test_player_leaving_before_payment_charges_and_says_nothing(self):
+        self.outcomes[PAY] = [ServiceRejected('player_offline')]
+        await self.buy('1', '1')
+        self.assertEqual(self.host.deliveries(), [])
+        self.assertEqual(len(self.host.sent), 2)
+
+    async def test_unavailable_charge_retries_then_reports_uncertain(self):
+        self.outcomes[PAY] = [ServiceRejected('unavailable'), {'balance': 90, 'duplicate': True}]
+        await self.buy('1', '1')
+        first, second = self.pays()
+        self.assertEqual(first['request_id'], second['request_id'])
+        self.assertIn('give @a[name="玩家"] bread 16', self.host.commands())
+        self.calls.clear()
+        self.outcomes[PAY] = [ServiceRejected('unavailable'), ServiceRejected('unavailable')]
+        await self.buy('1', '1')
+        self.assertIn('扣款结果暂时不确定', self.host.sent[-1])
+        self.assertEqual(len(self.host.deliveries()), 1)
+
     async def test_full_width_prefix_and_alias_open_the_shop(self):
         self.outcomes[PAY] = [{'balance': 0, 'duplicate': False}]
         await self.say('！sd')
@@ -129,7 +159,7 @@ class ShopTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_insufficient_funds_shows_balance_and_delivers_nothing(self):
         self.outcomes[PAY] = [ServiceRejected('insufficient_funds')]
-        self.outcomes[BALANCE] = [{'balance': 30}]
+        self.outcomes[BALANCE] = [ServiceWaitTimeout('c0'), {'balance': 30}]
         await self.buy('2', '1')
         self.assertEqual(self.calls[-1], (BALANCE, {'player_id': 'u1'}))
         self.assertEqual(self.host.sent[-1], '金币不足，需要 100 金币，你现在有 30 金币。')
@@ -137,7 +167,7 @@ class ShopTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_insufficient_funds_without_balance_when_lookup_fails(self):
         self.outcomes[PAY] = [ServiceRejected('insufficient_funds')]
-        self.outcomes[BALANCE] = [ServiceWaitTimeout('c1')]
+        self.outcomes[BALANCE] = [ServiceWaitTimeout('c0'), ServiceWaitTimeout('c1')]
         await self.buy('2', '1')
         self.assertEqual(self.host.sent[-1], '金币不足。')
 
@@ -146,7 +176,7 @@ class ShopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('已取消', self.host.sent[-1])
         self.tasks.clear()
         await self.buy('1', '不要')
-        self.assertEqual(self.calls, [])
+        self.assertEqual(self.pays(), [])
         self.assertEqual(self.host.deliveries(), [])
 
     async def test_timeout_retries_with_same_request_id(self):

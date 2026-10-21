@@ -8,5 +8,8 @@
       ],
       "message": "今天已在线 1 小时，送你 5 个面包！"
     }
-  ]
+  ],
+  "coin_interval_minutes": 30,
+  "coins_per_interval": 5,
+  "daily_coin_limit": 0
 }

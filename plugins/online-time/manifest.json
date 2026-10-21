@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
   "id": "neomega.online-time",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "host_api": {
     "major": 1,
-    "min_minor": 2
+    "min_minor": 4
   },
   "worker_protocol": {
     "major": 1,
@@ -29,13 +29,23 @@
     "players": [
       "list"
     ],
-    "services": [],
+    "services": [
+      "plugin.neomega.economy.grant"
+    ],
     "purposes": {
       "event:chat.received": "接收玩家的 !在线时长 和 !在线排行 命令",
       "operation:framework.command.execute": "发放在线奖励并回复玩家",
-      "players:list": "每分钟统计在线玩家，并确认发命令的玩家身份"
+      "players:list": "每分钟统计在线玩家，并确认发命令的玩家身份",
+      "service:plugin.neomega.economy.grant": "安装了经济插件时按在线时长发放金币"
     }
   },
-  "dependencies": [],
+  "dependencies": [
+    {
+      "id": "neomega.economy",
+      "major": 2,
+      "min_version": "2.1.0",
+      "optional": true
+    }
+  ],
   "exports": []
 }

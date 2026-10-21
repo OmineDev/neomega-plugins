@@ -138,9 +138,14 @@ class DailySignin(Plugin):
             return []  # 没有安装或没有启动经济插件。
         except (ServiceWaitTimeout, ServiceUncertain):
             return ['金币奖励结果暂时不确定，可以用 !流水 查看。']
-        except (ServiceRejected, ServiceFailed):
+        except ServiceRejected as error:
+            if error.code == 'unavailable':  # 经济插件已记账，只是没等到计分板回应。
+                return ['金币奖励结果暂时不确定，可以用 !流水 查看。']
             return ['金币奖励暂时没有发出。']
-        return [f'获得 {coins} 金币，现有 {result["balance"]} 金币。']
+        except ServiceFailed:
+            return ['金币奖励暂时没有发出。']
+        coin = result.get('currency', '金币')  # 经济插件 2.0.0 不返回货币名
+        return [f'获得 {coins} {coin}，现有 {result["balance"]} {coin}。']
 
     def reply(self, ctx, tx, player, text):
         plan = ctx.notifications.prepare(player['name'], text,
