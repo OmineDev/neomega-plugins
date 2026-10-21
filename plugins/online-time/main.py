@@ -185,7 +185,11 @@ class OnlineTime(Plugin):
             return 0, ''  # 没有安装或没有启动经济插件。
         except (ServiceWaitTimeout, ServiceUncertain):
             return coins, '金币奖励结果暂时不确定，可以用 !流水 查看。'
-        except (ServiceRejected, ServiceFailed):
+        except ServiceRejected as error:
+            if error.code == 'unavailable':  # 经济插件已记账，只是没等到计分板回应。
+                return coins, '金币奖励结果暂时不确定，可以用 !流水 查看。'
+            return 0, '金币奖励暂时没有发出。'
+        except ServiceFailed:
             return 0, '金币奖励暂时没有发出。'
         currency = result['currency']
         if result['pending']:

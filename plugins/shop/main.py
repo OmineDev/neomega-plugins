@@ -98,13 +98,13 @@ class Shop(Plugin):
         arguments = {'player_id': account, 'amount': item.price,
                      'reason': ('购买 ' + item.name)[:32], 'request_id': uuid.uuid4().hex}
         try:
-            try:
-                result = await ctx.services.call(ECONOMY + 'pay', arguments, timeout=5)
-            except UNSETTLED:
-                result = await ctx.services.call(ECONOMY + 'pay', arguments, timeout=5)
+            result = await self.charge(ctx, arguments)
         except ServiceRejected as error:
             if error.code == 'player_offline':
                 return  # 玩家在确认后下线，没有扣款。
+            if error.code == 'unavailable':
+                await menu.say(ctx, player, '扣款结果暂时不确定，请用 !流水 查看；没有扣款可以重新购买。')
+                return
             if error.code != 'insufficient_funds':
                 raise
             balance, coin = await self.wallet(ctx, account)
@@ -117,6 +117,18 @@ class Shop(Plugin):
         # duplicate=True 表示这笔扣款之前已经成功，同样发货。
         await self.deliver(ctx, player, item, f'{result["balance"]} {result.get("currency", coin)}',
                            arguments['request_id'])
+
+    async def charge(self, ctx, arguments):
+        """扣款；结果不明（含经济插件回 unavailable）时用同一个 request_id 再试一次。"""
+        for retry in (False, True):
+            try:
+                return await ctx.services.call(ECONOMY + 'pay', arguments, timeout=5)
+            except ServiceRejected as error:
+                if error.code != 'unavailable' or retry:
+                    raise
+            except UNSETTLED:
+                if retry:
+                    raise
 
     async def wallet(self, ctx, account):
         """当前余额和货币名；查不到时余额为 None。经济插件 2.0.0 不返回货币名。"""

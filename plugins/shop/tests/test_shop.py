@@ -136,6 +136,18 @@ class ShopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.deliveries(), [])
         self.assertEqual(len(self.host.sent), 2)
 
+    async def test_unavailable_charge_retries_then_reports_uncertain(self):
+        self.outcomes[PAY] = [ServiceRejected('unavailable'), {'balance': 90, 'duplicate': True}]
+        await self.buy('1', '1')
+        first, second = self.pays()
+        self.assertEqual(first['request_id'], second['request_id'])
+        self.assertIn('give @a[name="玩家"] bread 16', self.host.commands())
+        self.calls.clear()
+        self.outcomes[PAY] = [ServiceRejected('unavailable'), ServiceRejected('unavailable')]
+        await self.buy('1', '1')
+        self.assertIn('扣款结果暂时不确定', self.host.sent[-1])
+        self.assertEqual(len(self.host.deliveries()), 1)
+
     async def test_full_width_prefix_and_alias_open_the_shop(self):
         self.outcomes[PAY] = [{'balance': 0, 'duplicate': False}]
         await self.say('！sd')
