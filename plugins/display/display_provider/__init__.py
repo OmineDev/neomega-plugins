@@ -1,1 +1,0 @@
-"""Bounded world display provider."""
