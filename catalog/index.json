@@ -508,6 +508,72 @@
       "kind": "app"
     },
     {
+      "plugin_id": "neomega.online-time",
+      "version": "1.1.0",
+      "name": "在线时长",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.online-time-v1.1.0/neomega.online-time-1.1.0.zip",
+      "sha256": "db7460d50019c4dbbac7c3b32bd01f491eaf27b65ff2e63228c8aeead9303cfb",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.grant"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !在线时长 和 !在线排行 命令",
+          "operation:framework.command.execute": "发放在线奖励并回复玩家",
+          "players:list": "每分钟统计在线玩家，并确认发命令的玩家身份",
+          "service:plugin.neomega.economy.grant": "安装了经济插件时按在线时长发放金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !在线时长 和 !在线排行 命令",
+        "operation:framework.command.execute": "发放在线奖励并回复玩家",
+        "players:list": "每分钟统计在线玩家，并确认发命令的玩家身份",
+        "service:plugin.neomega.economy.grant": "安装了经济插件时按在线时长发放金币"
+      },
+      "description": "统计玩家每日和累计在线时长，当天在线满指定时间自动发奖励，并提供在线排行。装了经济插件时按在线时长发金币。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "c8ef1ba900cc9ffa2b4118d36b0a186bfc00b556843d013e12c960f56aaf5cf7",
+        "size": 2076
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.1.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "b98041f06f51d8585f03fc32f5a9fd09420320ba",
+        "path": "plugins/online-time"
+      }
+    },
+    {
       "plugin_id": "neomega.players",
       "version": "2.0.0",
       "name": "玩家档案",
