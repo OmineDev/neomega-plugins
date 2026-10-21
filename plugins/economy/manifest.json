@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "id": "neomega.economy",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "host_api": {
     "major": 1,
     "min_minor": 4
@@ -20,11 +20,21 @@
       "name": "chat",
       "kind": "chat.received",
       "delivery": "durable"
+    },
+    {
+      "name": "join",
+      "kind": "player.list_added",
+      "delivery": "durable"
     }
   ],
   "permissions": {
     "operations": [
-      "framework.command.execute"
+      "framework.command.execute",
+      "framework.scoreboard.get",
+      "framework.scoreboard.add",
+      "framework.scoreboard.objectives.list",
+      "framework.scoreboard.objectives.add",
+      "framework.scoreboard.objectives.setdisplay"
     ],
     "players": [
       "list"
@@ -34,8 +44,14 @@
     ],
     "purposes": {
       "event:chat.received": "接收玩家的 !余额、!转账、!流水 命令",
+      "event:player.list_added": "玩家进服时发放初始金币和离线期间的收入",
       "operation:framework.command.execute": "回复玩家并通知转账双方",
-      "players:list": "确认发命令的玩家身份，并在在线玩家里查找转账对象",
+      "operation:framework.scoreboard.get": "从计分板读取玩家余额",
+      "operation:framework.scoreboard.add": "在计分板上给玩家加减金币",
+      "operation:framework.scoreboard.objectives.list": "启动时检查货币计分板是否存在",
+      "operation:framework.scoreboard.objectives.add": "货币计分板不存在时新建",
+      "operation:framework.scoreboard.objectives.setdisplay": "按配置把货币计分板显示在侧边栏、玩家列表或名字下方",
+      "players:list": "确认玩家是否在线、身份和当前名字，并在在线玩家里查找转账对象",
       "service:plugin.neomega.players.resolve": "按名字查找不在线的转账对象"
     }
   },
@@ -67,12 +83,19 @@
         "type": "object",
         "properties": {
           "balance": {
-            "type": "integer",
-            "minimum": 0
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "boolean"
           }
         },
         "required": [
-          "balance"
+          "balance",
+          "currency",
+          "pending"
         ],
         "additionalProperties": false
       }
@@ -112,16 +135,23 @@
         "type": "object",
         "properties": {
           "balance": {
-            "type": "integer",
-            "minimum": 0
+            "type": "integer"
           },
           "duplicate": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "pending": {
             "type": "boolean"
           }
         },
         "required": [
           "balance",
-          "duplicate"
+          "duplicate",
+          "currency",
+          "pending"
         ],
         "additionalProperties": false
       }
@@ -161,16 +191,23 @@
         "type": "object",
         "properties": {
           "balance": {
-            "type": "integer",
-            "minimum": 0
+            "type": "integer"
           },
           "duplicate": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "pending": {
             "type": "boolean"
           }
         },
         "required": [
           "balance",
-          "duplicate"
+          "duplicate",
+          "currency",
+          "pending"
         ],
         "additionalProperties": false
       }
@@ -215,16 +252,23 @@
         "type": "object",
         "properties": {
           "balance": {
-            "type": "integer",
-            "minimum": 0
+            "type": "integer"
           },
           "duplicate": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "pending": {
             "type": "boolean"
           }
         },
         "required": [
           "balance",
-          "duplicate"
+          "duplicate",
+          "currency",
+          "pending"
         ],
         "additionalProperties": false
       }
