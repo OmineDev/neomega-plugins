@@ -1253,6 +1253,68 @@
       }
     },
     {
+      "plugin_id": "neomega.guard",
+      "version": "1.0.1",
+      "name": "服务器守卫",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.guard-v1.0.1/neomega.guard-1.0.1.zip",
+      "sha256": "df4adde1e1f92e6a61c04c8f3dec3179a30bd1f49a41bea8613e6b99b0b82e3e",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "统计玩家发言以发现刷屏，并接收管理员的 !守卫记录 命令",
+          "event:player.list_added": "在玩家进服时检查等级、昵称和在线人数",
+          "operation:framework.command.execute": "查询玩家等级，发送提示和标题，踢出违规玩家或执行设置的处罚命令",
+          "players:list": "统计在线人数，确认进服和发言的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "统计玩家发言以发现刷屏，并接收管理员的 !守卫记录 命令",
+        "event:player.list_added": "在玩家进服时检查等级、昵称和在线人数",
+        "operation:framework.command.execute": "查询玩家等级，发送提示和标题，踢出违规玩家或执行设置的处罚命令",
+        "players:list": "统计在线人数，确认进服和发言的玩家身份"
+      },
+      "description": "进服门槛（最低等级、昵称黑名单、人数上限）和聊天防刷屏。不满足条件时先告诉玩家原因再请出，刷屏先警告再处罚，每次处置都有记录。开箱即用，无需其他插件。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "88a70aeda7b5a56f38f9383a42398f460dcc1d18037ac3aa84208f0b2fa76d53",
+        "size": 6037
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "b7017305a8a080035c8c4a991d2e73d4e75c33df",
+        "path": "plugins/guard"
+      }
+    },
+    {
       "plugin_id": "neomega.menu",
       "version": "1.0.0",
       "name": "自定义菜单",
