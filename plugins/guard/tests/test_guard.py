@@ -105,17 +105,18 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
         self.timers = []
         self.ctx.later = lambda seconds, callback, name=None: self.timers.append((seconds, callback))
         self.plugin = Guard()
-        await self.plugin.on_start(self.ctx)
         self.t = 1000.0
         self.plugin.now = lambda: self.t
+        await self.plugin.on_start(self.ctx)
+        self.t += 5   # 启动后没有积压事件，第一条事件就是实时的
 
     def configure(self, **changes):
         self.ctx.config = dataclasses.replace(self.ctx.config, **changes)
 
-    async def deliver(self, kind, payload):
+    async def deliver(self, kind, payload, **extra):
         await self.plugin.on_event(self.ctx, Event(self.ctx, {
             'kind': kind, 'payload': payload,
-            'subscription_id': 'sub', 'event_id': 'e1', 'delivery_token': 'd1'}))
+            'subscription_id': 'sub', 'event_id': 'e1', 'delivery_token': 'd1', **extra}))
         # Every event is acknowledged in exactly one commit.
         self.assertEqual(self.host.commits[-1]['delivery_token'], 'd1')
 
@@ -225,6 +226,28 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
         await self.run_timers()
         self.assertEqual(self.host.kicks(), ['kick @a[name="Steve"] 需要达到 15 级才能进入本服务器，升级后再来吧。'])
 
+    async def test_level_check_accepts_success_message_with_parameters(self):
+        # 实服 Host 返回的消息把参数拼在键后面：commands.testfor.success Steve。
+        self.configure(level_check=True, min_level=15)
+        self.host.level = command_receipt('succeeded', 1, [
+            {'success': True, 'message': 'commands.testfor.success Steve', 'parameters': ['Steve']}])
+        with self.assertNoLogs('guard-test', 'WARNING'):
+            await self.join(STEVE)
+        self.assert_only_acknowledged()
+
+    async def test_join_checks_work_when_roster_has_no_xuid(self):
+        # 实服 Host 的在线名单不带 XUID，进服事件带着；按两者一起找会找不到人，门槛整个失效。
+        self.configure(name_check=True, name_keywords=['bob'], kick_delay_seconds=0)
+        self.host.online.append(dict(BOB, xuid=''))
+        await self.deliver('player.list_added', dict(BOB))
+        self.assertEqual(self.host.kicks(), ['kick @a[name="Bob"] 你的名字含有本服务器不允许的内容，请改名后再来。'])
+
+    async def test_roster_with_another_xuid_is_not_this_player(self):
+        self.configure(name_check=True, name_keywords=['bob'], kick_delay_seconds=0)
+        self.host.online.append(dict(BOB, xuid='99'))
+        await self.deliver('player.list_added', dict(BOB))
+        self.assert_only_acknowledged()
+
     async def test_inconclusive_level_check_lets_player_in(self):
         self.configure(level_check=True)
         for receipt in (LEVEL_UNKNOWN, SYNTAX_ERROR):
@@ -302,6 +325,45 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
                          ('spam', 'warn', '10 秒内发了 7 条消息，第 1 次警告'))
         self.assertEqual(self.host.kicks(), [])
         self.assertEqual(self.timers, [])
+
+    async def restart(self):
+        """新进程：内存清空，启动时间为当前 self.t。"""
+        config = self.ctx.config
+        self.ctx = PluginContext(SimpleNamespace(peer=self.host, log=logging.getLogger('guard-test')), None)
+        self.ctx.config = config
+        self.ctx._operations = Operations(self.host, 's1')
+        self.ctx.later = lambda seconds, callback, name=None: self.timers.append((seconds, callback))
+        self.plugin = Guard()
+        self.plugin.now = lambda: self.t
+        await self.plugin.on_start(self.ctx)
+
+    async def test_backlog_delivered_at_start_is_not_spam(self):
+        # 新装插件时 Host 会补发积压的旧聊天，一口气到达；这些不能当成刚刚刷屏。
+        await self.restart()
+        for index in range(12):
+            await self.say(STEVE, '!兑换 LIVETWICE' if index % 2 else f'旧消息 {index}')
+            self.assert_only_acknowledged()
+            self.t += 0.05
+        self.assertEqual(self.host.records(), [])
+        self.t += 2   # 积压处理完，之后是实时聊天
+        for _ in range(3):
+            await self.say(STEVE, '刷屏')
+        self.assertEqual(self.host.records()[-1]['detail'], '10 秒内同一句话发了 3 次，第 1 次警告')
+
+    async def test_backlog_wait_is_bounded(self):
+        await self.restart()
+        for index in range(130):   # 一直有消息、间隔不到 1 秒，最多等 60 秒
+            await self.say(dict(ALEX, name=f'P{index}', uuid=f'u{index}', xuid=f'x{index}'), '你好')
+            self.t += 0.5
+        for _ in range(3):
+            await self.say(STEVE, '刷屏')
+        self.assertEqual(self.host.records()[-1]['player'], 'Steve')
+
+    async def test_chat_from_previous_connection_is_not_spam(self):
+        for _ in range(3):
+            await self.deliver('chat.received', {'player': 'Steve', 'xuid': '2', 'message': '刷屏'}, session='old')
+            self.assert_only_acknowledged()
+        self.assertEqual(self.host.records(), [])
 
     async def test_messages_outside_window_do_not_count(self):
         for index in range(20):
