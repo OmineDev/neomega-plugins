@@ -1,0 +1,13 @@
+{
+  "name": "服务器守卫",
+  "kind": "app",
+  "description": "进服门槛（最低等级、昵称黑名单、人数上限）和聊天防刷屏。不满足条件时先告诉玩家原因再请出，刷屏先警告再处罚，每次处置都有记录。开箱即用，无需其他插件。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}
