@@ -27,6 +27,11 @@ from neomega_runtime.storage import CommitUncertain
 
 RECORDS = 'records'
 WAIT = 35  # 查询动作期限 30 秒，多等几秒回应。
+# 新装或重启后，Host 会先补发积压的旧聊天（新装插件能收到最近 24 小时的记录），
+# 这些消息几乎同时到达，按到达时间计数会被误判成刷屏。两条事件间隔超过 CATCH_UP_GAP
+# 秒，说明旧事件已经处理完；最多等 CATCH_UP_LIMIT 秒。在此之前只确认聊天，不计数。
+CATCH_UP_GAP = 1.0
+CATCH_UP_LIMIT = 60.0
 BEIJING = timezone(timedelta(hours=8))
 RULES = {'level': '等级不足', 'name': '昵称违规', 'full': '人数已满', 'spam': '刷屏'}
 ACTIONS = {'kick': '踢出', 'warn': '警告', 'punish': '处罚'}
@@ -142,8 +147,11 @@ class Guard(Plugin):
         self.joined: dict[str, int] = {}       # 玩家 ID -> 进服先后序号
         self.seq = 0
         self.leaving: dict[str, float] = {}    # 已决定踢出的玩家名 -> 截止时间：不计人数，不再处置
+        self.started = self.last_event = None
+        self.caught_up = False
 
     async def on_start(self, ctx: PluginContext):
+        self.started = self.now()
         # 全角感叹号是中文输入法的默认输出，两个前缀都接受。
         self.routers = (ctx.chat, ChatRouter(prefix='！'))
         for router in self.routers:
@@ -152,6 +160,7 @@ class Guard(Plugin):
                 lambda command: self.show(ctx, command))
 
     async def on_event(self, ctx: PluginContext, event: Event):
+        self.watch_backlog()
         try:
             if event.kind == 'player.list_added' and await self.join(ctx, event):
                 return
@@ -165,6 +174,32 @@ class Guard(Plugin):
 
     def now(self) -> float:
         return time.monotonic()
+
+    def watch_backlog(self):
+        """记下事件到达时间，判断启动时积压的旧事件是否已经处理完。"""
+        now = self.now()
+        if not self.caught_up:
+            last = self.last_event if self.last_event is not None else self.started
+            if last is None or now - last >= CATCH_UP_GAP or now - self.started >= CATCH_UP_LIMIT:
+                self.caught_up = True
+        self.last_event = now
+
+    @staticmethod
+    async def resolve(ctx, name, xuid):
+        """按名字和 XUID 确认在线玩家。
+
+        有的 Host 版本在线名单里不带 XUID，而进服事件带着，按两者一起查会找不到人。
+        名单里这个名字没有 XUID 时退回按名字确认；名单里有不同的 XUID 仍算找不到。
+        """
+        try:
+            return await ctx.resolve_player(name=name, xuid=xuid or None)
+        except PlayerNotFound:
+            if not xuid:
+                raise
+            player = await ctx.resolve_player(name=name)
+            if player.get('xuid'):
+                raise
+            return player
 
     async def robot(self, ctx):
         """机器人名字；读取失败时沿用上次读到的，从没读到过时返回 None。"""
@@ -189,7 +224,7 @@ class Guard(Plugin):
         if not (config.level_check or config.name_check or config.player_limit_check):
             return False
         body = event.payload['payload']
-        player = await ctx.resolve_player(name=body['name'], xuid=body.get('xuid') or None)
+        player = await self.resolve(ctx, body['name'], body.get('xuid'))
         bot = await self.robot(ctx)
         if bot is None:
             # 认不出机器人时宁可不查，也不能把机器人自己踢掉。
@@ -258,7 +293,9 @@ class Guard(Plugin):
         except (OperationWaitTimeout, IPCRejected) as error:
             ctx.log.warning('level check unavailable, %s allowed: %s', player['name'], type(error).__name__)
             return None
-        if CommandQueries.parse_testfor(receipt).known:
+        # 有的 Host 把参数拼进消息键（commands.testfor.success Steve），parse_testfor 认不出，
+        # 所以也接受“服务器确认执行成功且选中了玩家”。
+        if CommandQueries.parse_testfor(receipt).known or CommandResult(receipt).is_success:
             return None
         if below_level(receipt):
             return ('level', config.level_message.replace('{level}', str(config.min_level)),
@@ -281,6 +318,8 @@ class Guard(Plugin):
         config = ctx.config
         if not config.spam_check:
             return False
+        if not self.caught_up or event.payload.get('session', ctx.operations.session) != ctx.operations.session:
+            return False   # 启动时补发的旧聊天、上一次连接的聊天：不计入刷屏
         body = event.payload['payload']
         name, text = body.get('player'), body.get('message')
         if not isinstance(name, str) or not name or not isinstance(text, str):
@@ -305,7 +344,7 @@ class Guard(Plugin):
         else:
             return False
 
-        player = await ctx.resolve_player(name=name, xuid=body.get('xuid') or None)
+        player = await self.resolve(ctx, name, body.get('xuid'))
         del self.messages[name]   # 违规后重新计数，下一次违规要再刷一轮
         strikes = self.strikes.setdefault(name, deque())
         strikes.append(now)
