@@ -1,0 +1,16 @@
+{
+  "admins": ["Steve"],
+  "warps": [
+    {"name": "出生点", "dimension": 0, "x": 0, "y": 64, "z": 0, "description": "新手集合处"},
+    {"name": "下界枢纽", "dimension": 1, "x": 12.5, "y": 70, "z": -8.5}
+  ],
+  "teleport_cooldown_seconds": 10,
+  "teleport_cost": 0,
+  "city_enabled": true,
+  "city_dimension": 0,
+  "city_x": 100.5,
+  "city_y": 70,
+  "city_z": -200.5,
+  "spawnpoint_enabled": true,
+  "spawnpoint_cooldown_seconds": 60
+}
