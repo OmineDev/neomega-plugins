@@ -925,6 +925,75 @@
       "kind": "app"
     },
     {
+      "plugin_id": "neomega.warps",
+      "version": "1.0.0",
+      "name": "传送点与主城",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.warps-v1.0.0/neomega.warps-1.0.0.zip",
+      "sha256": "c9a79257d7d86c073730cfbf5d2407c2aaf70316ef4f755fd80039b0d7df111a",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.pay"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !传送点、!传送、!主城、!设重生点 等命令",
+          "operation:framework.command.execute": "把玩家传送到传送点或主城、设置重生点，并回复玩家",
+          "operation:framework.entities.query": "设传送点、设主城和设重生点时读取玩家当前的位置",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.pay": "设置了传送费并安装了经济插件时扣除金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !传送点、!传送、!主城、!设重生点 等命令",
+        "operation:framework.command.execute": "把玩家传送到传送点或主城、设置重生点，并回复玩家",
+        "operation:framework.entities.query": "设传送点、设主城和设重生点时读取玩家当前的位置",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.pay": "设置了传送费并安装了经济插件时扣除金币"
+      },
+      "description": "服主设置公共传送点和主城，玩家用 !传送点 查看、!传送 前往、!主城 回主城，还能用 !设重生点 把重生点设在脚下。可按次收金币（需经济插件）。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "9da62cb1b411fa949a60123e90a367960fb0cdfdbd43a14bc87c1f89fb11ce08",
+        "size": 3686
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "46b86b8f887b2dc552c7c92b2929c18dd5455381",
+        "path": "plugins/warps"
+      }
+    },
+    {
       "plugin_id": "neomega.welcome",
       "version": "1.0.0",
       "name": "欢迎与公告",
