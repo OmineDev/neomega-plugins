@@ -1,0 +1,18 @@
+{
+  "utc_offset_hours": 8,
+  "codes": [
+    {
+      "code": "XINSHOU2026",
+      "commands": [
+        "give {player} bread 16",
+        "give {player} iron_sword 1"
+      ],
+      "coins": 100,
+      "total_uses": 0,
+      "per_player_uses": 1,
+      "expires": "2026-12-31",
+      "message": "新手礼包已发放：16 个面包和 1 把铁剑。",
+      "note": "开服新手礼包"
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "utc_offset_hours": {
+      "type": "integer",
+      "title": "时区",
+      "description": "与 UTC 相差的小时数，北京时间填 8",
+      "minimum": -12,
+      "maximum": 14,
+      "default": 8
+    },
+    "codes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "兑换码",
+            "description": "玩家输入时不区分大小写；只能用字母、数字、汉字、- 和 _，最长 32 个字"
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "奖励命令",
+            "description": "{player} 会替换为兑换的玩家",
+            "default": []
+          },
+          "coins": {
+            "type": "integer",
+            "title": "金币",
+            "description": "需要安装经济插件，没装时不发；填 0 不发金币",
+            "minimum": 0,
+            "default": 0
+          },
+          "total_uses": {
+            "type": "integer",
+            "title": "总可用次数",
+            "description": "所有玩家合计能兑换几次，填 0 不限",
+            "minimum": 0,
+            "default": 0
+          },
+          "per_player_uses": {
+            "type": "integer",
+            "title": "每人可用次数",
+            "description": "同一个玩家能兑换几次，填 0 不限",
+            "minimum": 0,
+            "default": 1
+          },
+          "expires": {
+            "type": "string",
+            "title": "过期日期",
+            "description": "例如 2026-12-31，这一天过完后失效；留空则不过期",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "title": "兑换成功提示",
+            "description": "留空时显示“兑换成功！”",
+            "default": ""
+          },
+          "note": {
+            "type": "string",
+            "title": "备注",
+            "description": "只给自己看，玩家看不到",
+            "default": ""
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "additionalProperties": false
+      },
+      "title": "兑换码",
+      "description": "每个码写奖励和次数限制；码不能重复（不区分大小写）",
+      "default": []
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
