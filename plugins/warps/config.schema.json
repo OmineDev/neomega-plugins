@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "管理员",
+      "description": "可以在游戏里设置、删除传送点和主城的玩家名字",
+      "default": []
+    },
+    "warps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "名称",
+            "description": "最长 16 个字，不能是纯数字"
+          },
+          "dimension": {
+            "type": "integer",
+            "title": "维度",
+            "description": "0 主世界，1 下界，2 末地",
+            "minimum": 0,
+            "maximum": 2,
+            "default": 0
+          },
+          "x": {
+            "type": "number",
+            "title": "X 坐标"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y 坐标"
+          },
+          "z": {
+            "type": "number",
+            "title": "Z 坐标"
+          },
+          "description": {
+            "type": "string",
+            "title": "说明",
+            "description": "显示在传送点列表里，可以不填，最长 32 个字",
+            "default": ""
+          }
+        },
+        "required": [
+          "name",
+          "x",
+          "y",
+          "z"
+        ],
+        "additionalProperties": false
+      },
+      "title": "公共传送点",
+      "description": "名称不能重复，最多 64 个；管理员也可以在游戏里用 !设传送点 添加",
+      "default": []
+    },
+    "teleport_cooldown_seconds": {
+      "type": "integer",
+      "title": "传送冷却（秒）",
+      "description": "两次传送（传送点和主城）之间至少间隔的秒数，填 0 不限制",
+      "minimum": 0,
+      "default": 10
+    },
+    "teleport_cost": {
+      "type": "integer",
+      "title": "每次传送花费金币",
+      "description": "需要安装经济插件，没装时不收费；填 0 免费",
+      "minimum": 0,
+      "default": 0
+    },
+    "city_enabled": {
+      "type": "boolean",
+      "title": "启用设置里的主城",
+      "description": "开启后 !主城 传送到下面的坐标；管理员在游戏里用 !设主城 设的位置优先",
+      "default": false
+    },
+    "city_dimension": {
+      "type": "integer",
+      "title": "主城维度",
+      "description": "0 主世界，1 下界，2 末地",
+      "minimum": 0,
+      "maximum": 2,
+      "default": 0
+    },
+    "city_x": {
+      "type": "number",
+      "title": "主城 X 坐标",
+      "default": 0.0
+    },
+    "city_y": {
+      "type": "number",
+      "title": "主城 Y 坐标",
+      "default": 64.0
+    },
+    "city_z": {
+      "type": "number",
+      "title": "主城 Z 坐标",
+      "default": 0.0
+    },
+    "spawnpoint_enabled": {
+      "type": "boolean",
+      "title": "允许玩家设重生点",
+      "description": "开启后玩家可以用 !设重生点 把重生点设在当前位置",
+      "default": true
+    },
+    "spawnpoint_cooldown_seconds": {
+      "type": "integer",
+      "title": "设重生点冷却（秒）",
+      "description": "两次设重生点之间至少间隔的秒数，填 0 不限制",
+      "minimum": 0,
+      "default": 60
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

@@ -1,0 +1,13 @@
+{
+  "name": "传送点与主城",
+  "kind": "app",
+  "description": "服主设置公共传送点和主城，玩家用 !传送点 查看、!传送 前往、!主城 回主城，还能用 !设重生点 把重生点设在脚下。可按次收金币（需经济插件）。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}

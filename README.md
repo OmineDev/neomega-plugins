@@ -8,6 +8,7 @@ OmineDev 审核维护的 neomega 业务插件。社区通过 Pull Request 贡献
 | 在线时长 | `neomega.online-time` | [plugins/online-time](plugins/online-time/README.md) |
 | 个人传送点 | `neomega.homes` | [plugins/homes](plugins/homes/README.md) |
 | 玩家互传 | `neomega.tpa` | [plugins/tpa](plugins/tpa/README.md) |
+| 传送点与主城 | `neomega.warps` | [plugins/warps](plugins/warps/README.md) |
 | 定时命令 | `neomega.timed-commands` | [plugins/timed-commands](plugins/timed-commands/README.md) |
 | 欢迎与公告 | `neomega.welcome` | [plugins/welcome](plugins/welcome/README.md) |
 | Fatalder 云导入 | `fatalder.cloud-import` | [plugins/fatalder-cloud-import](plugins/fatalder-cloud-import/README.md) |
