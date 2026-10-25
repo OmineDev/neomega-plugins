@@ -461,6 +461,68 @@
       }
     },
     {
+      "plugin_id": "neomega.guard",
+      "version": "1.0.0",
+      "name": "服务器守卫",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.guard-v1.0.0/neomega.guard-1.0.0.zip",
+      "sha256": "66da9ea0336f24851b0a44d841355143076c1a4c366f8ba2368ef718065ccd54",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "统计玩家发言以发现刷屏，并接收管理员的 !守卫记录 命令",
+          "event:player.list_added": "在玩家进服时检查等级、昵称和在线人数",
+          "operation:framework.command.execute": "查询玩家等级，发送提示和标题，踢出违规玩家或执行设置的处罚命令",
+          "players:list": "统计在线人数，确认进服和发言的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "统计玩家发言以发现刷屏，并接收管理员的 !守卫记录 命令",
+        "event:player.list_added": "在玩家进服时检查等级、昵称和在线人数",
+        "operation:framework.command.execute": "查询玩家等级，发送提示和标题，踢出违规玩家或执行设置的处罚命令",
+        "players:list": "统计在线人数，确认进服和发言的玩家身份"
+      },
+      "description": "进服门槛（最低等级、昵称黑名单、人数上限）和聊天防刷屏。不满足条件时先告诉玩家原因再请出，刷屏先警告再处罚，每次处置都有记录。开箱即用，无需其他插件。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "4aef45341b96ec0314c5d34b4203f27f400e20818f97f080ca59c4630ca5c43d",
+        "size": 5757
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "46b86b8f887b2dc552c7c92b2929c18dd5455381",
+        "path": "plugins/guard"
+      }
+    },
+    {
       "plugin_id": "neomega.homes",
       "version": "1.0.0",
       "name": "个人传送点",
