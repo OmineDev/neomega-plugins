@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "abi": "py3-none-any",
+  "libraries": [
+    {
+      "name": "neomega_menu",
+      "version": "1.0.1",
+      "license": "MIT",
+      "files": {
+        "LICENSE": "ad4d2d600a26b8eb588d31b9479b7bd55fac3051df91ea63142bad8f3c5f5b78",
+        "README.md": "a1febbd7da39c14b7cd04a36fa8292db00e0835f69ebdf784817f54963db2d62",
+        "__init__.py": "ee600259ca08d779f8193714e0b0c1cc5f0051037fae40cffba1f24b6d261196"
+      }
+    }
+  ]
+}

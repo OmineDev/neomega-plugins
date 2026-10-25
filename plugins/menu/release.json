@@ -1,0 +1,16 @@
+{
+  "name": "自定义菜单",
+  "kind": "app",
+  "description": "服主配置菜单项，玩家发送 !菜单 按编号执行，或用快捷指令直接使用；可设花费金币、冷却、仅管理员和分组，并提供 !指令 列出本服命令。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ],
+  "libraries": [
+    "neomega_menu"
+  ]
+}
