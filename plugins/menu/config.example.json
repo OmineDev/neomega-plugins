@@ -1,0 +1,61 @@
+{
+  "title": "服务器菜单",
+  "menu_commands": [
+    "菜单",
+    "cd",
+    "menu"
+  ],
+  "page_size": 8,
+  "admins": [],
+  "items": [
+    {
+      "name": "回主城",
+      "commands": [
+        "tp {player} 0 100 0"
+      ],
+      "trigger": "主城",
+      "as_player": false,
+      "cost": 0,
+      "cooldown_seconds": 30,
+      "admin_only": false,
+      "group": "传送",
+      "message": ""
+    },
+    {
+      "name": "领取面包",
+      "commands": [
+        "give {player} bread 8"
+      ],
+      "trigger": "",
+      "as_player": false,
+      "cost": 5,
+      "cooldown_seconds": 300,
+      "admin_only": false,
+      "group": "福利",
+      "message": ""
+    },
+    {
+      "name": "设为白天",
+      "commands": [
+        "time set day"
+      ],
+      "trigger": "",
+      "as_player": false,
+      "cost": 0,
+      "cooldown_seconds": 0,
+      "admin_only": true,
+      "group": "管理",
+      "message": ""
+    }
+  ],
+  "help_takeover": false,
+  "help_plugins": {
+    "signin": false,
+    "economy": false,
+    "shop": false,
+    "homes": false,
+    "tpa": false,
+    "online_time": false
+  },
+  "help_extra": []
+}

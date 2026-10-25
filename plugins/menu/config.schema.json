@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "title": "菜单标题",
+      "default": "服务器菜单"
+    },
+    "menu_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "打开菜单的指令",
+      "description": "至少一个，例如 菜单 表示玩家发送 !菜单",
+      "default": [
+        "菜单",
+        "cd",
+        "menu"
+      ]
+    },
+    "page_size": {
+      "type": "integer",
+      "title": "每页条数",
+      "description": "菜单项多于这个数时分页显示",
+      "minimum": 3,
+      "maximum": 20,
+      "default": 8
+    },
+    "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "管理员",
+      "description": "玩家名，能看到和使用“仅管理员”的菜单项",
+      "default": []
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "显示名",
+            "description": "菜单里显示的名字，不能重复"
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "执行的命令",
+            "description": "按顺序执行，{player} 会替换为使用的玩家"
+          },
+          "trigger": {
+            "type": "string",
+            "title": "快捷指令",
+            "description": "可选，例如 主城，玩家发送 !主城 直接使用；留空则只能从菜单里选",
+            "default": ""
+          },
+          "as_player": {
+            "type": "boolean",
+            "title": "以玩家身份执行",
+            "description": "打开后用 execute as 让命令以该玩家为执行者、在玩家位置执行；命令仍由机器人发出",
+            "default": false
+          },
+          "cost": {
+            "type": "integer",
+            "title": "花费金币",
+            "description": "需要安装经济插件；填 0 免费",
+            "minimum": 0,
+            "default": 0
+          },
+          "cooldown_seconds": {
+            "type": "integer",
+            "title": "冷却秒数",
+            "description": "同一玩家两次使用的最短间隔；填 0 不限制",
+            "minimum": 0,
+            "default": 0
+          },
+          "admin_only": {
+            "type": "boolean",
+            "title": "仅管理员",
+            "description": "只有管理员名单里的玩家能看到和使用",
+            "default": false
+          },
+          "group": {
+            "type": "string",
+            "title": "分组",
+            "description": "可选；有分组时菜单先列出分组",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "title": "执行后提示",
+            "description": "留空则提示“已执行「显示名」”",
+            "default": ""
+          }
+        },
+        "required": [
+          "name",
+          "commands"
+        ],
+        "additionalProperties": false
+      },
+      "title": "菜单项",
+      "description": "至少一项，显示名和快捷指令不能重复",
+      "default": [
+        {
+          "name": "回主城",
+          "commands": [
+            "tp {player} 0 100 0"
+          ],
+          "trigger": "主城",
+          "as_player": false,
+          "cost": 0,
+          "cooldown_seconds": 30,
+          "admin_only": false,
+          "group": "传送",
+          "message": ""
+        },
+        {
+          "name": "领取面包",
+          "commands": [
+            "give {player} bread 8"
+          ],
+          "trigger": "",
+          "as_player": false,
+          "cost": 5,
+          "cooldown_seconds": 300,
+          "admin_only": false,
+          "group": "福利",
+          "message": ""
+        },
+        {
+          "name": "设为白天",
+          "commands": [
+            "time set day"
+          ],
+          "trigger": "",
+          "as_player": false,
+          "cost": 0,
+          "cooldown_seconds": 0,
+          "admin_only": true,
+          "group": "管理",
+          "message": ""
+        }
+      ]
+    },
+    "help_takeover": {
+      "type": "boolean",
+      "title": "接管 !帮助",
+      "description": "打开后 !帮助 也列出本服命令；装了欢迎插件时两边都会回复，请只开一边",
+      "default": false
+    },
+    "help_plugins": {
+      "type": "object",
+      "properties": {
+        "signin": {
+          "type": "boolean",
+          "title": "每日签到",
+          "default": false
+        },
+        "economy": {
+          "type": "boolean",
+          "title": "经济",
+          "default": false
+        },
+        "shop": {
+          "type": "boolean",
+          "title": "积分商店",
+          "default": false
+        },
+        "homes": {
+          "type": "boolean",
+          "title": "个人传送点",
+          "default": false
+        },
+        "tpa": {
+          "type": "boolean",
+          "title": "玩家互传",
+          "default": false
+        },
+        "online_time": {
+          "type": "boolean",
+          "title": "在线时长",
+          "default": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "title": "帮助里列出的其他插件",
+      "description": "勾选本服已安装的官方插件，!指令 会列出它们的命令",
+      "default": {
+        "signin": false,
+        "economy": false,
+        "shop": false,
+        "homes": false,
+        "tpa": false,
+        "online_time": false
+      }
+    },
+    "help_extra": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "帮助附加行",
+      "description": "原样加在帮助末尾，例如其他插件的命令或联系方式",
+      "default": []
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

@@ -1,0 +1,53 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.menu",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 4
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [
+      "plugin.neomega.economy.pay",
+      "plugin.neomega.economy.balance"
+    ],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !菜单、快捷指令、!指令 命令和菜单回复",
+      "operation:framework.command.execute": "执行服主为菜单项设置的命令并回复玩家",
+      "players:list": "确认发命令的玩家身份",
+      "service:plugin.neomega.economy.pay": "安装了经济插件时，为收费菜单项扣除金币",
+      "service:plugin.neomega.economy.balance": "确认收费菜单项前显示玩家余额和货币名"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.economy",
+      "major": 2,
+      "min_version": "2.0.0",
+      "optional": true
+    }
+  ],
+  "exports": []
+}
