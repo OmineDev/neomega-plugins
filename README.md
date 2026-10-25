@@ -12,9 +12,11 @@ OmineDev 审核维护的 neomega 业务插件。社区通过 Pull Request 贡献
 | 定时命令 | `neomega.timed-commands` | [plugins/timed-commands](plugins/timed-commands/README.md) |
 | 欢迎与公告 | `neomega.welcome` | [plugins/welcome](plugins/welcome/README.md) |
 | 兑换码 | `neomega.redeem-codes` | [plugins/redeem-codes](plugins/redeem-codes/README.md) |
+| 服务器守卫 | `neomega.guard` | [plugins/guard](plugins/guard/README.md) |
+| 自定义菜单 | `neomega.menu` | [plugins/menu](plugins/menu/README.md) |
 | Fatalder 云导入 | `fatalder.cloud-import` | [plugins/fatalder-cloud-import](plugins/fatalder-cloud-import/README.md) |
 
-玩法插件各自独立，不依赖其他插件。写新插件时以 [plugins/daily-signin](plugins/daily-signin/) 为范本：一次处理只做一次存储提交，同时写入状态、游戏命令、回复和事件确认。`plugins/` 下其余 `neomega.*` 前置服务正在重新设计，暂不收录到目录。
+玩法插件可以独立安装；用到金币的功能会自动带上经济插件。写新插件时以 [plugins/daily-signin](plugins/daily-signin/) 为范本：一次处理只做一次存储提交，同时写入状态、游戏命令、回复和事件确认。`plugins/` 下其余 `neomega.*` 前置服务正在重新设计，暂不收录到目录。
 
 从本仓库 Releases 获取固定版本 ZIP 与 SHA256SUMS，经校验后通过现有 `runtime-admin.py install` / `update` 安装；版本不会自动升级。镜像必须提供相同版本与相同 SHA-256。公开制品不包含服务器配置、密钥或运行数据。
 
