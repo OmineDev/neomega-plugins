@@ -4,6 +4,10 @@
 传送命令、回复和事件确认一起写入，要么全部生效，要么全部不生效。
 设家需要先读玩家位置，这一步在打开存储之前完成，读不到就只回复、只确认。
 回家冷却只记在内存里，重启后清空。
+
+位置查询报的是眼睛的高度，家记的是脚的位置（y 减去 1.62）。1.0.0 存的是眼睛
+高度且没有标记：读到没有 feet 标记的家时按旧数据换算并打上标记，下次设家或删家
+时随记录写回；带标记的家不会再换算。
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -17,6 +21,8 @@ from neomega_runtime.managed import IPCRejected
 DEFAULT_HOME = '家'
 MAX_NAME_LENGTH = 16
 DIMENSIONS = {0: 'overworld', 1: 'nether', 2: 'the_end'}
+# 位置查询（querytarget）报的是玩家眼睛的高度，脚下比它低 1.62 格。
+EYE_HEIGHT = 1.62
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,20 @@ def deadline() -> str:
 
 def player_key(player) -> str:
     return 'player:' + (player['uuid'] or 'xuid-' + player['xuid'])
+
+
+def feet_y(eye_y) -> float:
+    """眼睛高度换成脚的高度，保留一位小数；先舍到 3 位消掉浮点误差。"""
+    return round(round(float(eye_y) - EYE_HEIGHT, 3), 1)
+
+
+def load_homes(tx, key) -> dict:
+    """读出玩家的家；1.0.0 存的眼睛高度在这里换成脚的高度并打上标记。"""
+    homes = tx.get(key, {})
+    for name, home in homes.items():
+        if not home.get('feet'):
+            homes[name] = {**home, 'y': feet_y(home['y']), 'feet': True}
+    return homes
 
 
 def home_list(homes) -> str:
@@ -86,14 +106,15 @@ class Homes(Plugin):
             return await self.answer(ctx, command, '你所在的维度不能设家。')
 
         tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
-        homes = tx.get(key, {})
+        homes = load_homes(tx, key)
         if name not in homes and len(homes) >= ctx.config.max_homes:
             self.reply(ctx, tx, player, f'你已经有 {len(homes)} 个家（上限 {ctx.config.max_homes} 个）：'
                                         f'{home_list(homes)}。发送 !删家 <名字> 删掉一个再设。')
             return await tx.save()
         replaced = name in homes
-        homes[name] = {'dimension': entity['dimension'],
-                       **{axis: round(float(entity['position'][axis]), 1) for axis in 'xyz'}}
+        position = entity['position']
+        homes[name] = {'dimension': entity['dimension'], 'x': round(float(position['x']), 1),
+                       'y': feet_y(position['y']), 'z': round(float(position['z']), 1), 'feet': True}
         tx.set(key, homes)
         self.reply(ctx, tx, player, f'已更新「{name}」的位置。' if replaced else f'已设置家「{name}」。')
         await tx.save()
@@ -102,7 +123,7 @@ class Homes(Plugin):
         player, key = command.player, player_key(command.player)
         name = command.args[0] if command.args else DEFAULT_HOME
         tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
-        homes = tx.get(key, {})
+        homes = load_homes(tx, key)
         home = homes.get(name)
         now = self.clock()
         wait = self.last_home.get(key, -math.inf) + ctx.config.cooldown_seconds - now
@@ -127,7 +148,7 @@ class Homes(Plugin):
         player, key = command.player, player_key(command.player)
         name = command.args[0]
         tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
-        homes = tx.get(key, {})
+        homes = load_homes(tx, key)
         if name not in homes:
             text = (f'没有叫「{name}」的家，已有的家：{home_list(homes)}。' if homes else '你还没有设家。')
         else:
@@ -143,7 +164,7 @@ class Homes(Plugin):
     async def list_homes(self, ctx, command):
         player, key = command.player, player_key(command.player)
         tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
-        homes = tx.get(key, {})
+        homes = load_homes(tx, key)
         text = (f'你的家（{len(homes)}/{ctx.config.max_homes}）：{home_list(homes)}。' if homes
                 else '你还没有设家，发送 !设家 把当前位置记为家。')
         self.reply(ctx, tx, player, text)

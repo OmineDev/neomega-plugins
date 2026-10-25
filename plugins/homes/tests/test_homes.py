@@ -50,8 +50,9 @@ class FakeHost:
 
 
 def at(x, y, z, dimension=0):
+    """位置查询结果；参数是脚的坐标，查询报的 y 是眼睛高度（脚 + 1.62）。"""
     return {'complete': True, 'entities': [
-        {'uniqueId': '-1', 'dimension': dimension, 'position': {'x': x, 'y': y, 'z': z}}]}
+        {'uniqueId': '-1', 'dimension': dimension, 'position': {'x': x, 'y': y + 1.62, 'z': z}}]}
 
 
 class HomesTests(unittest.IsolatedAsyncioTestCase):
@@ -79,17 +80,45 @@ class HomesTests(unittest.IsolatedAsyncioTestCase):
         self.ctx.positions.sample.assert_awaited_with(target='players', name='玩家', limit=1)
         self.assertEqual(len(self.host.commits), 1)
         self.assertEqual(self.host.values['player:u1'],
-                         {'家': {'dimension': 0, 'x': 1.5, 'y': 64.0, 'z': -3.5}})
+                         {'家': {'dimension': 0, 'x': 1.5, 'y': 64.0, 'z': -3.5, 'feet': True}})
         self.assertIn('已设置家「家」', self.host.reply())
         self.ctx.positions.sample.return_value = at(10, 70, 20, dimension=1)
         await self.say('!sethome 矿洞')
-        self.assertEqual(self.host.values['player:u1']['矿洞'], {'dimension': 1, 'x': 10.0, 'y': 70.0, 'z': 20.0})
+        self.assertEqual(self.host.values['player:u1']['矿洞'], {'dimension': 1, 'x': 10.0, 'y': 70.0, 'z': 20.0, 'feet': True})
+
+    async def test_home_uses_feet_not_eye_height(self):
+        # 实服 85005130：站在 y=200 的方块面上，querytarget 报 y=201.62001037597656。
+        self.ctx.positions.sample.return_value = {'complete': True, 'entities': [
+            {'uniqueId': '-1', 'dimension': 0, 'position': {'x': 1001.3, 'y': 201.62001037597656, 'z': 1003.7}}]}
+        await self.say('!设家')
+        self.assertEqual(self.host.values['player:u1']['家']['y'], 200.0)
+        await self.say('!回家')
+        self.assertEqual(self.host.teleports(), ['execute in overworld run tp @a[name="玩家"] 1001.3 200.0 1003.7'])
+
+    async def test_homes_saved_by_1_0_0_are_lowered_once(self):
+        # 1.0.0 把眼睛高度原样存下（脚 200 存成 201.6），没有 feet 标记。
+        self.host.values['player:u1'] = {'旧': {'dimension': 0, 'x': 1.5, 'y': 201.6, 'z': -3.5},
+                                         '低': {'dimension': 1, 'x': 0.0, 'y': -10.4, 'z': 0.0}}
+        await self.say('!回家 旧')
+        self.assertEqual(self.host.teleports(), ['execute in overworld run tp @a[name="玩家"] 1.5 200.0 -3.5'])
+        self.assertEqual(self.host.commits[-1]['mutations'], [])
+        self.now += 100
+        await self.say('!设家 新')
+        self.assertEqual(self.host.values['player:u1'], {
+            '旧': {'dimension': 0, 'x': 1.5, 'y': 200.0, 'z': -3.5, 'feet': True},
+            '低': {'dimension': 1, 'x': 0.0, 'y': -12.0, 'z': 0.0, 'feet': True},
+            '新': {'dimension': 0, 'x': 1.5, 'y': 64.0, 'z': -3.5, 'feet': True}})
+        await self.say('!回家 旧')
+        self.assertEqual(self.host.teleports(), ['execute in overworld run tp @a[name="玩家"] 1.5 200.0 -3.5'])
+        await self.say('!删家 新')
+        self.assertEqual(self.host.values['player:u1']['旧']['y'], 200.0)
+        self.assertEqual(self.host.values['player:u1']['低']['y'], -12.0)
 
     async def test_same_name_overwrites(self):
         await self.say('!设家')
         self.ctx.positions.sample.return_value = at(5, 6, 7)
         await self.say('！设家 家')
-        self.assertEqual(self.host.values['player:u1'], {'家': {'dimension': 0, 'x': 5.0, 'y': 6.0, 'z': 7.0}})
+        self.assertEqual(self.host.values['player:u1'], {'家': {'dimension': 0, 'x': 5.0, 'y': 6.0, 'z': 7.0, 'feet': True}})
         self.assertIn('已更新「家」的位置', self.host.reply())
 
     async def test_limit_rejects_new_names_but_allows_overwrite(self):
