@@ -691,6 +691,72 @@
       }
     },
     {
+      "plugin_id": "neomega.redeem-codes",
+      "version": "1.0.0",
+      "name": "兑换码",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.redeem-codes-v1.0.0/neomega.redeem-codes-1.0.0.zip",
+      "sha256": "7ce6d371404cfcd6474fcf5707c7ac4dfe5cd4dc86b1375c39af5a55ab9daa8b",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.grant"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !兑换 命令",
+          "operation:framework.command.execute": "发放兑换码奖励并回复玩家",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.grant": "安装了经济插件时发放兑换码金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !兑换 命令",
+        "operation:framework.command.execute": "发放兑换码奖励并回复玩家",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.grant": "安装了经济插件时发放兑换码金币"
+      },
+      "description": "服主在设置里添加兑换码，玩家发送 !兑换 加兑换码领取物品等奖励，可限制总次数、每人次数和过期日期。装了经济插件时还能发金币。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "4ea3a65bbf52e80d8a4b629b0b0ed2fbd19f25cb4964c06be410098457077149",
+        "size": 4465
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "46b86b8f887b2dc552c7c92b2929c18dd5455381",
+        "path": "plugins/redeem-codes"
+      }
+    },
+    {
       "plugin_id": "neomega.shop",
       "version": "1.0.0",
       "name": "积分商店",
