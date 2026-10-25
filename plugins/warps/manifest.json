@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "id": "neomega.warps",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "host_api": {
     "major": 1,
     "min_minor": 4
