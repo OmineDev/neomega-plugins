@@ -461,6 +461,130 @@
       }
     },
     {
+      "plugin_id": "neomega.guard",
+      "version": "1.0.0",
+      "name": "服务器守卫",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.guard-v1.0.0/neomega.guard-1.0.0.zip",
+      "sha256": "66da9ea0336f24851b0a44d841355143076c1a4c366f8ba2368ef718065ccd54",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "统计玩家发言以发现刷屏，并接收管理员的 !守卫记录 命令",
+          "event:player.list_added": "在玩家进服时检查等级、昵称和在线人数",
+          "operation:framework.command.execute": "查询玩家等级，发送提示和标题，踢出违规玩家或执行设置的处罚命令",
+          "players:list": "统计在线人数，确认进服和发言的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "统计玩家发言以发现刷屏，并接收管理员的 !守卫记录 命令",
+        "event:player.list_added": "在玩家进服时检查等级、昵称和在线人数",
+        "operation:framework.command.execute": "查询玩家等级，发送提示和标题，踢出违规玩家或执行设置的处罚命令",
+        "players:list": "统计在线人数，确认进服和发言的玩家身份"
+      },
+      "description": "进服门槛（最低等级、昵称黑名单、人数上限）和聊天防刷屏。不满足条件时先告诉玩家原因再请出，刷屏先警告再处罚，每次处置都有记录。开箱即用，无需其他插件。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "4aef45341b96ec0314c5d34b4203f27f400e20818f97f080ca59c4630ca5c43d",
+        "size": 5757
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "46b86b8f887b2dc552c7c92b2929c18dd5455381",
+        "path": "plugins/guard"
+      }
+    },
+    {
+      "plugin_id": "neomega.guard",
+      "version": "1.0.1",
+      "name": "服务器守卫",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.guard-v1.0.1/neomega.guard-1.0.1.zip",
+      "sha256": "df4adde1e1f92e6a61c04c8f3dec3179a30bd1f49a41bea8613e6b99b0b82e3e",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "统计玩家发言以发现刷屏，并接收管理员的 !守卫记录 命令",
+          "event:player.list_added": "在玩家进服时检查等级、昵称和在线人数",
+          "operation:framework.command.execute": "查询玩家等级，发送提示和标题，踢出违规玩家或执行设置的处罚命令",
+          "players:list": "统计在线人数，确认进服和发言的玩家身份"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "统计玩家发言以发现刷屏，并接收管理员的 !守卫记录 命令",
+        "event:player.list_added": "在玩家进服时检查等级、昵称和在线人数",
+        "operation:framework.command.execute": "查询玩家等级，发送提示和标题，踢出违规玩家或执行设置的处罚命令",
+        "players:list": "统计在线人数，确认进服和发言的玩家身份"
+      },
+      "description": "进服门槛（最低等级、昵称黑名单、人数上限）和聊天防刷屏。不满足条件时先告诉玩家原因再请出，刷屏先警告再处罚，每次处置都有记录。开箱即用，无需其他插件。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "88a70aeda7b5a56f38f9383a42398f460dcc1d18037ac3aa84208f0b2fa76d53",
+        "size": 6037
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 2
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "b7017305a8a080035c8c4a991d2e73d4e75c33df",
+        "path": "plugins/guard"
+      }
+    },
+    {
       "plugin_id": "neomega.homes",
       "version": "1.0.0",
       "name": "个人传送点",
@@ -517,6 +641,75 @@
         "path": "plugins/homes"
       },
       "kind": "app"
+    },
+    {
+      "plugin_id": "neomega.menu",
+      "version": "1.0.0",
+      "name": "自定义菜单",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.menu-v1.0.0/neomega.menu-1.0.0.zip",
+      "sha256": "f0ddb4c1a6ea0616cb57cbc0eff2c2d57f2f794f8c7499720b6a8ce2db2ac4b0",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.pay",
+          "plugin.neomega.economy.balance"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !菜单、快捷指令、!指令 命令和菜单回复",
+          "operation:framework.command.execute": "执行服主为菜单项设置的命令并回复玩家",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.pay": "安装了经济插件时，为收费菜单项扣除金币",
+          "service:plugin.neomega.economy.balance": "确认收费菜单项前显示玩家余额和货币名"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !菜单、快捷指令、!指令 命令和菜单回复",
+        "operation:framework.command.execute": "执行服主为菜单项设置的命令并回复玩家",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.pay": "安装了经济插件时，为收费菜单项扣除金币",
+        "service:plugin.neomega.economy.balance": "确认收费菜单项前显示玩家余额和货币名"
+      },
+      "description": "服主配置菜单项，玩家发送 !菜单 按编号执行，或用快捷指令直接使用；可设花费金币、冷却、仅管理员和分组，并提供 !指令 列出本服命令。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "285caf6f3644904b0b2d671739216107f50366894c5f7e3fa566beeb02451dea",
+        "size": 6271
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "46b86b8f887b2dc552c7c92b2929c18dd5455381",
+        "path": "plugins/menu"
+      }
     },
     {
       "plugin_id": "neomega.online-time",
@@ -688,6 +881,72 @@
         "repository": "https://github.com/OmineDev/neomega-plugins",
         "ref": "0dc771eca701a202d5421de43c855a03baa08da8",
         "path": "plugins/players"
+      }
+    },
+    {
+      "plugin_id": "neomega.redeem-codes",
+      "version": "1.0.0",
+      "name": "兑换码",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.redeem-codes-v1.0.0/neomega.redeem-codes-1.0.0.zip",
+      "sha256": "7ce6d371404cfcd6474fcf5707c7ac4dfe5cd4dc86b1375c39af5a55ab9daa8b",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.grant"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !兑换 命令",
+          "operation:framework.command.execute": "发放兑换码奖励并回复玩家",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.grant": "安装了经济插件时发放兑换码金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !兑换 命令",
+        "operation:framework.command.execute": "发放兑换码奖励并回复玩家",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.grant": "安装了经济插件时发放兑换码金币"
+      },
+      "description": "服主在设置里添加兑换码，玩家发送 !兑换 加兑换码领取物品等奖励，可限制总次数、每人次数和过期日期。装了经济插件时还能发金币。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "4ea3a65bbf52e80d8a4b629b0b0ed2fbd19f25cb4964c06be410098457077149",
+        "size": 4465
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "46b86b8f887b2dc552c7c92b2929c18dd5455381",
+        "path": "plugins/redeem-codes"
       }
     },
     {
@@ -923,6 +1182,144 @@
         "path": "plugins/tpa"
       },
       "kind": "app"
+    },
+    {
+      "plugin_id": "neomega.warps",
+      "version": "1.0.0",
+      "name": "传送点与主城",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.warps-v1.0.0/neomega.warps-1.0.0.zip",
+      "sha256": "c9a79257d7d86c073730cfbf5d2407c2aaf70316ef4f755fd80039b0d7df111a",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.pay"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !传送点、!传送、!主城、!设重生点 等命令",
+          "operation:framework.command.execute": "把玩家传送到传送点或主城、设置重生点，并回复玩家",
+          "operation:framework.entities.query": "设传送点、设主城和设重生点时读取玩家当前的位置",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.pay": "设置了传送费并安装了经济插件时扣除金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !传送点、!传送、!主城、!设重生点 等命令",
+        "operation:framework.command.execute": "把玩家传送到传送点或主城、设置重生点，并回复玩家",
+        "operation:framework.entities.query": "设传送点、设主城和设重生点时读取玩家当前的位置",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.pay": "设置了传送费并安装了经济插件时扣除金币"
+      },
+      "description": "服主设置公共传送点和主城，玩家用 !传送点 查看、!传送 前往、!主城 回主城，还能用 !设重生点 把重生点设在脚下。可按次收金币（需经济插件）。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "9da62cb1b411fa949a60123e90a367960fb0cdfdbd43a14bc87c1f89fb11ce08",
+        "size": 3686
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "46b86b8f887b2dc552c7c92b2929c18dd5455381",
+        "path": "plugins/warps"
+      }
+    },
+    {
+      "plugin_id": "neomega.warps",
+      "version": "1.0.1",
+      "name": "传送点与主城",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.warps-v1.0.1/neomega.warps-1.0.1.zip",
+      "sha256": "b1808481bbfd0552c48f159061706d2ef31bb39bcb7b3bd23b4b49c906ef84af",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.pay"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !传送点、!传送、!主城、!设重生点 等命令",
+          "operation:framework.command.execute": "把玩家传送到传送点或主城、设置重生点，并回复玩家",
+          "operation:framework.entities.query": "设传送点、设主城和设重生点时读取玩家当前的位置",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.pay": "设置了传送费并安装了经济插件时扣除金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !传送点、!传送、!主城、!设重生点 等命令",
+        "operation:framework.command.execute": "把玩家传送到传送点或主城、设置重生点，并回复玩家",
+        "operation:framework.entities.query": "设传送点、设主城和设重生点时读取玩家当前的位置",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.pay": "设置了传送费并安装了经济插件时扣除金币"
+      },
+      "description": "服主设置公共传送点和主城，玩家用 !传送点 查看、!传送 前往、!主城 回主城，还能用 !设重生点 把重生点设在脚下。可按次收金币（需经济插件）。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "9da62cb1b411fa949a60123e90a367960fb0cdfdbd43a14bc87c1f89fb11ce08",
+        "size": 3686
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "a34321fdadc3679d6fa51b4bf46ed95df5dd2bbb",
+        "path": "plugins/warps"
+      }
     },
     {
       "plugin_id": "neomega.welcome",
