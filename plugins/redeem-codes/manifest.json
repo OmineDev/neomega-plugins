@@ -1,0 +1,51 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.redeem-codes",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 4
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [
+      "plugin.neomega.economy.grant"
+    ],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !兑换 命令",
+      "operation:framework.command.execute": "发放兑换码奖励并回复玩家",
+      "players:list": "确认发命令的玩家身份",
+      "service:plugin.neomega.economy.grant": "安装了经济插件时发放兑换码金币"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.economy",
+      "major": 2,
+      "min_version": "2.0.0",
+      "optional": true
+    }
+  ],
+  "exports": []
+}
