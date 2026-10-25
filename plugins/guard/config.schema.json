@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "管理员",
+      "description": "这些玩家不受任何检查，并且可以用 !守卫记录 查看处置记录；填玩家名，不区分大小写",
+      "default": []
+    },
+    "level_check": {
+      "type": "boolean",
+      "title": "启用最低等级",
+      "description": "玩家进服时检查经验等级，不够就请出",
+      "default": false
+    },
+    "min_level": {
+      "type": "integer",
+      "title": "最低等级",
+      "description": "玩家经验等级至少要达到多少级",
+      "minimum": 1,
+      "maximum": 24791,
+      "default": 10
+    },
+    "name_check": {
+      "type": "boolean",
+      "title": "启用昵称黑名单",
+      "description": "玩家名字含有下面的关键词或匹配正则时请出",
+      "default": false
+    },
+    "name_keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "昵称关键词",
+      "description": "名字里含有任意一个词就请出，不区分大小写",
+      "default": []
+    },
+    "name_patterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "昵称正则（高级）",
+      "description": "用正则表达式匹配名字，不区分大小写；不会写可以留空，只用关键词",
+      "default": []
+    },
+    "player_limit_check": {
+      "type": "boolean",
+      "title": "启用人数上限",
+      "description": "在线玩家（不含机器人）超过上限时，请出最新进服的玩家",
+      "default": false
+    },
+    "max_players": {
+      "type": "integer",
+      "title": "人数上限",
+      "description": "最多允许多少名玩家同时在线，不含机器人",
+      "minimum": 1,
+      "default": 20
+    },
+    "player_limit_exempt": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "人数上限白名单",
+      "description": "填玩家名或 UUID；这些玩家满员也能进，但仍计入在线人数",
+      "default": []
+    },
+    "spam_check": {
+      "type": "boolean",
+      "title": "启用防刷屏",
+      "description": "短时间内发太多消息或重复同一句话时，先警告，再犯就处罚",
+      "default": true
+    },
+    "spam_window_seconds": {
+      "type": "integer",
+      "title": "刷屏统计时间（秒）",
+      "description": "统计最近多少秒内的消息",
+      "minimum": 1,
+      "maximum": 300,
+      "default": 10
+    },
+    "spam_max_messages": {
+      "type": "integer",
+      "title": "最多消息条数",
+      "description": "统计时间内超过这么多条就算刷屏",
+      "minimum": 1,
+      "default": 6
+    },
+    "spam_repeat_limit": {
+      "type": "integer",
+      "title": "重复消息上限",
+      "description": "统计时间内同一句话发到这么多次就算刷屏；填 0 不检查重复",
+      "minimum": 0,
+      "default": 3
+    },
+    "spam_warnings": {
+      "type": "integer",
+      "title": "警告次数",
+      "description": "先警告几次，再犯才处罚；填 0 第一次就处罚",
+      "minimum": 0,
+      "maximum": 10,
+      "default": 1
+    },
+    "spam_forgive_minutes": {
+      "type": "integer",
+      "title": "警告有效期（分钟）",
+      "description": "这么久没有再刷屏，警告次数清零",
+      "minimum": 1,
+      "default": 10
+    },
+    "spam_punish_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "刷屏处罚命令",
+      "description": "处罚时改为执行这些命令，{player} 会替换为该玩家；留空则踢出",
+      "default": []
+    },
+    "kick_delay_seconds": {
+      "type": "integer",
+      "title": "踢出前等待（秒）",
+      "description": "先显示原因，等几秒再踢出，让玩家看清提示",
+      "minimum": 0,
+      "maximum": 30,
+      "default": 3
+    },
+    "level_message": {
+      "type": "string",
+      "title": "等级不足提示",
+      "description": "也作为踢出原因，{level} 会替换为最低等级",
+      "default": "需要达到 {level} 级才能进入本服务器，升级后再来吧。"
+    },
+    "name_message": {
+      "type": "string",
+      "title": "昵称违规提示",
+      "description": "也作为踢出原因",
+      "default": "你的名字含有本服务器不允许的内容，请改名后再来。"
+    },
+    "full_message": {
+      "type": "string",
+      "title": "人数已满提示",
+      "description": "也作为踢出原因，{max} 会替换为人数上限",
+      "default": "服务器人数已满（上限 {max} 人），请稍后再来。"
+    },
+    "spam_warning_message": {
+      "type": "string",
+      "title": "刷屏警告",
+      "description": "警告时私聊发送",
+      "default": "请不要刷屏，再犯会被处罚。"
+    },
+    "spam_punish_message": {
+      "type": "string",
+      "title": "刷屏处罚提示",
+      "description": "处罚时私聊发送；踢出时也作为踢出原因",
+      "default": "你因刷屏被请出服务器。"
+    },
+    "record_limit": {
+      "type": "integer",
+      "title": "保留处置记录条数",
+      "description": "只保留最近这么多条，旧的自动删除",
+      "minimum": 10,
+      "maximum": 500,
+      "default": 100
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
