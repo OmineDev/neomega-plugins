@@ -519,6 +519,75 @@
       "kind": "app"
     },
     {
+      "plugin_id": "neomega.menu",
+      "version": "1.0.0",
+      "name": "自定义菜单",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.menu-v1.0.0/neomega.menu-1.0.0.zip",
+      "sha256": "f0ddb4c1a6ea0616cb57cbc0eff2c2d57f2f794f8c7499720b6a8ce2db2ac4b0",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.pay",
+          "plugin.neomega.economy.balance"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !菜单、快捷指令、!指令 命令和菜单回复",
+          "operation:framework.command.execute": "执行服主为菜单项设置的命令并回复玩家",
+          "players:list": "确认发命令的玩家身份",
+          "service:plugin.neomega.economy.pay": "安装了经济插件时，为收费菜单项扣除金币",
+          "service:plugin.neomega.economy.balance": "确认收费菜单项前显示玩家余额和货币名"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !菜单、快捷指令、!指令 命令和菜单回复",
+        "operation:framework.command.execute": "执行服主为菜单项设置的命令并回复玩家",
+        "players:list": "确认发命令的玩家身份",
+        "service:plugin.neomega.economy.pay": "安装了经济插件时，为收费菜单项扣除金币",
+        "service:plugin.neomega.economy.balance": "确认收费菜单项前显示玩家余额和货币名"
+      },
+      "description": "服主配置菜单项，玩家发送 !菜单 按编号执行，或用快捷指令直接使用；可设花费金币、冷却、仅管理员和分组，并提供 !指令 列出本服命令。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "285caf6f3644904b0b2d671739216107f50366894c5f7e3fa566beeb02451dea",
+        "size": 6271
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "46b86b8f887b2dc552c7c92b2929c18dd5455381",
+        "path": "plugins/menu"
+      }
+    },
+    {
       "plugin_id": "neomega.online-time",
       "version": "1.0.0",
       "name": "在线时长",
