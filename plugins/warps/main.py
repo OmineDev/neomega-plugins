@@ -13,6 +13,7 @@
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+import hashlib
 import math
 import time
 
@@ -27,6 +28,8 @@ DIMENSION_NAMES = {0: '主世界', 1: '下界', 2: '末地'}
 MAX_NAME_LENGTH = 16
 MAX_DESCRIPTION_LENGTH = 32
 MAX_WARPS = 64
+# 位置查询（querytarget）报的是玩家眼睛的高度，脚下比它低 1.62 格。
+EYE_HEIGHT = 1.62
 ECONOMY_PAY = 'plugin.neomega.economy.pay'
 # 结果不明的扣款可以用同一个 request_id 安全重试；明确的业务拒绝不在其中。
 UNSETTLED = (ServiceWaitTimeout, ServiceUncertain, ServiceFailed)
@@ -99,6 +102,22 @@ def player_key(player) -> str:
 def coordinate(value) -> str:
     text = f'{float(value):.2f}'.rstrip('0').rstrip('.')
     return '0' if text == '-0' else text
+
+
+def feet(entity) -> dict:
+    """把位置查询结果换成脚的坐标；y 先去掉眼睛高度，再消掉浮点误差。"""
+    position = entity['position']
+    return {'x': float(position['x']), 'y': round(float(position['y']) - EYE_HEIGHT, 3),
+            'z': float(position['z'])}
+
+
+def charge_request_id(event_id: str) -> str:
+    """同一个事件得到同一个 request_id，不同事件不同。
+
+    event_id 形如 game:<64 位会话号>:<序号>，直接截到 64 字会把序号截掉，同一次
+    会话里的所有传送就共用一个 request_id，经济插件会当成重复扣款而不再扣钱。
+    """
+    return 'warp-' + hashlib.sha256(event_id.encode('utf-8')).hexdigest()[:48]
 
 
 def place_text(place) -> str:
@@ -241,7 +260,7 @@ class Warps(Plugin):
             return True, ''
         arguments = {'player_id': player_key(command.player).removeprefix('player:'), 'amount': cost,
                      'reason': ('传送到' + label)[:32],
-                     'request_id': ('warp-' + command.event.payload['event_id'])[:64]}
+                     'request_id': charge_request_id(command.event.payload['event_id'])}
         for retry in (False, True):
             try:
                 result = await ctx.services.call(ECONOMY_PAY, arguments, timeout=5)
@@ -276,7 +295,7 @@ class Warps(Plugin):
             self.reply(ctx, tx, player, f'设重生点还在冷却中，请 {math.ceil(wait)} 秒后再试。')
             return await tx.save()
         block = {'dimension': entity['dimension'],
-                 **{axis: math.floor(float(entity['position'][axis])) for axis in 'xyz'}}
+                 **{axis: math.floor(value) for axis, value in feet(entity).items()}}
         record['spawnpoint'] = now
         tx.set(key, record)
         tx.action(ctx.commands.prepare(
@@ -311,7 +330,7 @@ class Warps(Plugin):
         description = command.args[1] if len(command.args) > 1 else \
             stored.get(existing, {}).get('description', '')
         place = {'dimension': entity['dimension'],
-                 **{axis: round(float(entity['position'][axis]), 1) for axis in 'xyz'},
+                 **{axis: round(value, 1) for axis, value in feet(entity).items()},
                  'description': description}
         stored[existing or name] = place
         tx.set(WARPS, stored)
@@ -352,7 +371,7 @@ class Warps(Plugin):
             return
         tx = await ctx.storage.transaction(event=command.event.payload, keys=[CITY])
         place = {'dimension': entity['dimension'],
-                 **{axis: round(float(entity['position'][axis]), 1) for axis in 'xyz'}}
+                 **{axis: round(value, 1) for axis, value in feet(entity).items()}}
         tx.set(CITY, place)
         self.reply(ctx, tx, command.player, f'已把主城设在这里（{place_text(place)}）。')
         await tx.save()

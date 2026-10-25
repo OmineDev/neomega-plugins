@@ -15,7 +15,7 @@ from neomega_runtime.config_schema import check_config_schema, schema_for_config
 from neomega_runtime.managed import IPCRejected
 from neomega_runtime.operations import Operations
 from neomega_runtime.services import ServiceWaitTimeout
-from main import Settings, Warp, Warps
+from main import Settings, Warp, Warps, charge_request_id
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN = {'name': 'Admin', 'uuid': 'u-admin', 'xuid': '1'}
@@ -61,8 +61,9 @@ class FakeHost:
 
 
 def at(x, y, z, dimension=0):
+    """位置查询结果；参数是脚的坐标，查询报的 y 是眼睛高度（脚 + 1.62）。"""
     return {'complete': True, 'entities': [
-        {'uniqueId': '-1', 'dimension': dimension, 'position': {'x': x, 'y': y, 'z': z}}]}
+        {'uniqueId': '-1', 'dimension': dimension, 'position': {'x': x, 'y': y + 1.62, 'z': z}}]}
 
 
 class WarpsTests(unittest.IsolatedAsyncioTestCase):
@@ -299,6 +300,19 @@ class WarpsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('已把重生点设在这里（下界 -4 64 10）', self.host.reply())
         self.assertEqual(self.host.values['player:u1'], {'spawnpoint': self.now})
 
+    async def test_positions_use_feet_not_eye_height(self):
+        # 实服 85005130：站在 y=200 的方块面上，querytarget 报 y=201.62001037597656。
+        self.ctx.positions.sample.return_value = {'complete': True, 'entities': [
+            {'uniqueId': '-1', 'dimension': 0, 'position': {'x': 1001.3, 'y': 201.62001037597656, 'z': 1003.7}}]}
+        await self.say('!设重生点')
+        self.assertEqual(self.host.game_commands(),
+                         ['execute in overworld run spawnpoint @a[name="玩家"] 1001 200 1003'])
+        self.as_player(ADMIN)
+        await self.say('!设传送点 平台')
+        self.assertEqual(self.host.values['warps']['平台']['y'], 200.0)
+        await self.say('!设主城')
+        self.assertEqual(self.host.values['city']['y'], 200.0)
+
     async def test_spawnpoint_cooldown_is_separate_and_persistent(self):
         await self.say('!设重生点')
         await self.say('!传送 1')
@@ -332,9 +346,24 @@ class WarpsTests(unittest.IsolatedAsyncioTestCase):
         await self.say('!传送 出生点', event_id='evt-7')
         self.ctx.services.call.assert_awaited_once_with(
             'plugin.neomega.economy.pay',
-            {'player_id': 'u1', 'amount': 5, 'reason': '传送到出生点', 'request_id': 'warp-evt-7'}, timeout=5)
+            {'player_id': 'u1', 'amount': 5, 'reason': '传送到出生点', 'request_id': charge_request_id('evt-7')},
+            timeout=5)
         self.assertTrue(self.host.game_commands())
         self.assertIn('花费 5 金币，剩余 95 金币', self.host.reply())
+
+    async def test_each_teleport_in_one_session_gets_its_own_request_id(self):
+        # 实服的 event_id 是 game:<64 位会话号>:<序号>；截到 64 字会让同一会话的传送共用一个 ID，
+        # 经济插件把第二次当成重复扣款，金币不减照样传送。
+        self.charged(return_value={'balance': 95, 'duplicate': False, 'currency': '金币', 'pending': False})
+        session = 'd13361ff7a140ac2c7fd915377aaaa51c58fa124e9779506c143bb94c927d607'
+        await self.say('!传送 1', event_id=f'game:{session}:120')
+        self.now += 60
+        await self.say('!传送 1', event_id=f'game:{session}:121')
+        ids = [call.args[1]['request_id'] for call in self.ctx.services.call.await_args_list]
+        self.assertEqual(len(ids), 2)
+        self.assertNotEqual(ids[0], ids[1])
+        self.assertTrue(all(len(value) <= 64 for value in ids))
+        self.assertEqual(ids[0], charge_request_id(f'game:{session}:120'))
 
     async def test_insufficient_funds_does_not_teleport_or_start_cooldown(self):
         self.charged(side_effect=ServiceRejected('insufficient_funds'))
