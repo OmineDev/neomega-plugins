@@ -1,6 +1,6 @@
 # neomega-plugins
 
-OmineDev 审核维护的 neomega 业务插件。社区通过 Pull Request 贡献；维护者审核测试与权限用途后发布，各插件独立版本。Host、SDK 和安装管理由 [neomega-agent](https://github.com/OmineDev/neomega-agent) 维护，Fatalder Worker 与通用 API 保留在 Fatalder。
+OmineDev 审核维护的 neomega 业务插件。社区通过 Pull Request 贡献；维护者审核测试与权限用途后发布，各插件独立版本。Host、SDK 和安装管理由 [neomega-framework](https://github.com/OmineDev/neomega-framework) 维护，Fatalder Worker 与通用 API 保留在 Fatalder。
 
 | 插件 | ID | 源码与安装说明 |
 | --- | --- | --- |

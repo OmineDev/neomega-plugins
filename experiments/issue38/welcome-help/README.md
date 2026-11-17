@@ -8,10 +8,10 @@
 
 ## 离线复现
 
-Python 3.10+；`AGENT` 指向 neomega-agent checkout。在插件仓根目录执行：
+Python 3.10+；`AGENT` 指向 neomega-framework checkout。在插件仓根目录执行：
 
 ```sh
-export AGENT=/path/to/neomega-agent
+export AGENT=/path/to/neomega-framework
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$AGENT/sdk/python" python3 experiments/issue38/welcome-help/check_offline.py
 mkdir -p dist/tmp
 TMPDIR="$PWD/dist/tmp" GOCACHE="$PWD/dist/go-cache" GOWORK=off GOPROXY=off GOTOOLCHAIN=go1.26.0 go -C "$AGENT" build -o "$PWD/dist/neomega-plugin-check" ./cmd/neomega-plugin-check

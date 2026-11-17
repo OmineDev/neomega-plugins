@@ -8,7 +8,7 @@
 
 ## 离线复现
 
-从插件仓根目录运行，`AGENT` 指向对应 neomega-agent checkout：
+从插件仓根目录运行，`AGENT` 指向对应 neomega-framework checkout：
 
 ```sh
 mkdir -p dist

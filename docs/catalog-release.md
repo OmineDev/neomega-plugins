@@ -14,7 +14,7 @@ python3 tools/catalog-release.py \
 
 先将原始 ZIP 上传至 `OmineDev/neomega-plugins` 的 `<plugin_id>-v<version>` GitHub Release，工件名 `<plugin_id>-<version>.zip`。验证公开工件与索引哈希一致后，通过审核提交 `catalog/index.json`。客户端读取固定官方索引，不接受任意第三方目录。镜像根地址下保持 `<plugin_id>-v<version>/<plugin_id>-<version>.zip`，字节和哈希完全相同。
 
-更新目录只提供发现，新版本不会自动安装或启动。实际安装继续经过 neomega-agent 的 ZIP 私有文件限制和 Host 校验；离线安装和自动测试不证明实服业务成功。
+更新目录只提供发现，新版本不会自动安装或启动。实际安装继续经过 neomega-framework 的 ZIP 私有文件限制和 Host 校验；离线安装和自动测试不证明实服业务成功。
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_catalog_release.py

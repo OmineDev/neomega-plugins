@@ -13,7 +13,7 @@ import urllib.request
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--host', type=Path, required=True)
-p.add_argument('--agent', type=Path, required=True, help='neomega-agent checkout with scripts and sdk/python')
+p.add_argument('--framework', '--agent', dest='agent', type=Path, required=True, help='neomega-framework checkout with scripts and sdk/python')
 p.add_argument('package', type=Path)
 a = p.parse_args()
 with tempfile.TemporaryDirectory(prefix='plugin-host-', dir=os.environ.get('TMPDIR')) as folder:

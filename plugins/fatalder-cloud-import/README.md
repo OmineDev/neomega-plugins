@@ -75,7 +75,7 @@ PYTHONPATH=plugins/fatalder-cloud-import python3 -m unittest discover -s plugins
 
 最低 Host API 为 1.2，worker wire 仍为 1.0，state_version 保持 1。插件通过 `on_maintenance` 在同一业务锁内核对任务、租约、控制请求及所有状态写者，空闲时封闭新任务；busy 无损返回，release 按同一 token 解除。维护等待不停止后台任务，也不取消远端导入。
 
-使用运行中且支持维护协议的实例执行显式固定版本更新；先查看计划并确认候选版本、哈希与权限。未应用的配置或密钥必须先处理，停止状态不代表远端业务空闲。备份或验证失败发生在 Drain 前，激活失败需按宿主诊断处理，不能把已保存当作已生效。详细命令、备份及旧版本限制见 [安全更新合同](https://github.com/OmineDev/neomega-agent/blob/main/docs/runtime/plugin-updates.md)。本版本不提供世界回滚，不自动重放未知动作；自动测试不代表实服验收。
+使用运行中且支持维护协议的实例执行显式固定版本更新；先查看计划并确认候选版本、哈希与权限。未应用的配置或密钥必须先处理，停止状态不代表远端业务空闲。备份或验证失败发生在 Drain 前，激活失败需按宿主诊断处理，不能把已保存当作已生效。详细命令、备份及旧版本限制见 [安全更新合同](https://github.com/OmineDev/neomega-framework/blob/main/docs/runtime/plugin-updates.md)。本版本不提供世界回滚，不自动重放未知动作；自动测试不代表实服验收。
 
 
 ### 1.1.0：可信前置服务接口
