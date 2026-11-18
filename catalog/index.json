@@ -122,6 +122,94 @@
       "kind": "app"
     },
     {
+      "plugin_id": "neomega.back",
+      "version": "1.0.0",
+      "name": "死亡点返回",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.back-v1.0.0/neomega.back-1.0.0.zip",
+      "sha256": "fa744e0e9b91c127dda959a623f1cc81a4e15554901d37b1fc77b97af131412d",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "players": [
+          "list"
+        ],
+        "packet_observe_ids": [
+          9
+        ],
+        "services": [
+          "plugin.neomega.economy.pay"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !返回 和 !死亡点 命令",
+          "event:player.list_added": "玩家进服时更新在线玩家和实体映射缓存",
+          "event:player.list_removed": "玩家离服时清理在线玩家缓存和临时坐标",
+          "operation:framework.command.execute": "将玩家传送回死亡地点，并发送私聊提示和回复",
+          "operation:framework.entities.query": "定时采样在线玩家位置，并在收到死亡消息时读取死亡点坐标",
+          "players:list": "启动时初始化在线玩家缓存，并确认发命令的玩家身份",
+          "packet_observe:9": "监听 Text 数据包中的死亡翻译消息以识别玩家死亡事件",
+          "service:plugin.neomega.economy.pay": "设置了返回费用并安装了经济插件时扣除金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !返回 和 !死亡点 命令",
+        "event:player.list_added": "玩家进服时更新在线玩家和实体映射缓存",
+        "event:player.list_removed": "玩家离服时清理在线玩家缓存和临时坐标",
+        "operation:framework.command.execute": "将玩家传送回死亡地点，并发送私聊提示和回复",
+        "operation:framework.entities.query": "定时采样在线玩家位置，并在收到死亡消息时读取死亡点坐标",
+        "players:list": "启动时初始化在线玩家缓存，并确认发命令的玩家身份",
+        "packet_observe:9": "监听 Text 数据包中的死亡翻译消息以识别玩家死亡事件",
+        "service:plugin.neomega.economy.pay": "设置了返回费用并安装了经济插件时扣除金币"
+      },
+      "description": "自动记录玩家死亡前的位置，死亡后发送 !返回 即可回到死亡地点，也可发送 !死亡点 查看记录。支持跨维度、有效期、单次限制与冷却，装了经济插件时可按次扣费。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "e7dab7e938c53c5c81bdb91839cc8763c1a8c8f1559fe6a6f835c96b9ad6c9e2",
+        "size": 2628
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        },
+        {
+          "name": "leave",
+          "kind": "player.list_removed",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 5
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "667d7d6eea47c76770f1189c72d22b203b32c613",
+        "path": "plugins/back"
+      }
+    },
+    {
       "plugin_id": "neomega.daily-signin",
       "version": "1.0.0",
       "name": "每日签到",
@@ -1008,6 +1096,146 @@
       }
     },
     {
+      "plugin_id": "neomega.redpacket",
+      "version": "1.0.0",
+      "name": "口令红包",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.redpacket-v1.0.0/neomega.redpacket-1.0.0.zip",
+      "sha256": "1f93fdeefa73de02ee76fd57d7bbc1ad87f3b21948b916734edb5c72d04c5a09",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.pay",
+          "plugin.neomega.economy.grant"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !发红包、!抢、!红包 和管理员的 !系统红包 命令",
+          "event:player.list_added": "玩家进服时补发离线期间的红包过期退回通知，并提醒当前可抢的红包",
+          "operation:framework.command.execute": "发送全服红包播报、手气最佳公告和私聊回复",
+          "players:list": "确认发命令和进服玩家的身份，并判断退回时发包人是否在线",
+          "service:plugin.neomega.economy.pay": "玩家发红包时扣除对应的总金币",
+          "service:plugin.neomega.economy.grant": "玩家抢红包时发放金币，以及红包过期后退回剩余金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !发红包、!抢、!红包 和管理员的 !系统红包 命令",
+        "event:player.list_added": "玩家进服时补发离线期间的红包过期退回通知，并提醒当前可抢的红包",
+        "operation:framework.command.execute": "发送全服红包播报、手气最佳公告和私聊回复",
+        "players:list": "确认发命令和进服玩家的身份，并判断退回时发包人是否在线",
+        "service:plugin.neomega.economy.pay": "玩家发红包时扣除对应的总金币",
+        "service:plugin.neomega.economy.grant": "玩家抢红包时发放金币，以及红包过期后退回剩余金币"
+      },
+      "description": "玩家可用金币发拼手气红包或口令红包，全服发送 !抢 拼手气领金币并播报手气最佳，过期未领完自动退回。管理员可发系统红包。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "6104cd4c94ddae1127d70c2fd72543d00c7d3bff05def67b39d9238b182f63cc",
+        "size": 2618
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0"
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "667d7d6eea47c76770f1189c72d22b203b32c613",
+        "path": "plugins/redpacket"
+      }
+    },
+    {
+      "plugin_id": "neomega.reports",
+      "version": "1.0.0",
+      "name": "举报与留言",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.reports-v1.0.0/neomega.reports-1.0.0.zip",
+      "sha256": "324d652c6a290e7e8b86856b1d93c3e33a22bbceca94bf80864aeacd93635f61",
+      "permissions": {
+        "operations": [
+          "framework.command.execute",
+          "framework.entities.query"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !举报、!留言、!我的举报 与管理员查办命令",
+          "event:player.list_added": "玩家进服时自动投递离线处理通知，并在管理员进服时提醒待处理记录",
+          "operation:framework.command.execute": "私聊回复玩家、提醒管理员及送达离线处理通知",
+          "operation:framework.entities.query": "提交举报时采样举报人与在线被举报人的当前维度和坐标",
+          "players:list": "确认发命令与进服玩家身份，检查被举报人和管理员是否在线"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !举报、!留言、!我的举报 与管理员查办命令",
+        "event:player.list_added": "玩家进服时自动投递离线处理通知，并在管理员进服时提醒待处理记录",
+        "operation:framework.command.execute": "私聊回复玩家、提醒管理员及送达离线处理通知",
+        "operation:framework.entities.query": "提交举报时采样举报人与在线被举报人的当前维度和坐标",
+        "players:list": "确认发命令与进服玩家身份，检查被举报人和管理员是否在线"
+      },
+      "description": "玩家用 !举报 举报违规行为（自动附带位置坐标）或 !留言 反馈建议，用 !我的举报 查看进度；管理员实时或进服收到提醒，通过 !查举报 和 !处理举报 核实回复，不在线的提交人下次进服自动送达结果。开箱即用，无需其他插件。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "51365cf785d7a612d1bbb388b66ee714702f692f81042599857c83e74310b839",
+        "size": 3237
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 5
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "667d7d6eea47c76770f1189c72d22b203b32c613",
+        "path": "plugins/reports"
+      }
+    },
+    {
       "plugin_id": "neomega.shop",
       "version": "1.0.0",
       "name": "积分商店",
@@ -1185,6 +1413,79 @@
         "path": "plugins/timed-commands"
       },
       "kind": "app"
+    },
+    {
+      "plugin_id": "neomega.titles",
+      "version": "1.0.0",
+      "name": "称号与喇叭",
+      "url": "https://github.com/OmineDev/neomega-plugins/releases/download/neomega.titles-v1.0.0/neomega.titles-1.0.0.zip",
+      "sha256": "2b2e2641612d9eead88e0eacb111516b08c0d673f11c3e36a10e85fec4baa806",
+      "permissions": {
+        "operations": [
+          "framework.command.execute"
+        ],
+        "players": [
+          "list"
+        ],
+        "services": [
+          "plugin.neomega.economy.pay"
+        ],
+        "purposes": {
+          "event:chat.received": "接收玩家的 !称号、!买称号、!佩戴称号、!卸下称号、!喇叭 和管理员的 !发称号、!收称号 命令",
+          "event:player.list_added": "玩家进服时合并待生效的称号授予与收回，并按配置播报所佩戴称号",
+          "operation:framework.command.execute": "回复玩家提示、发送全服喇叭与进服播报，并播放喇叭提示音效",
+          "players:list": "确认发命令和进服的玩家身份，并在发收称号时解析在线目标玩家",
+          "service:plugin.neomega.economy.pay": "购买收费称号和发送收费喇叭时扣除金币"
+        }
+      },
+      "permission_purposes": {
+        "event:chat.received": "接收玩家的 !称号、!买称号、!佩戴称号、!卸下称号、!喇叭 和管理员的 !发称号、!收称号 命令",
+        "event:player.list_added": "玩家进服时合并待生效的称号授予与收回，并按配置播报所佩戴称号",
+        "operation:framework.command.execute": "回复玩家提示、发送全服喇叭与进服播报，并播放喇叭提示音效",
+        "players:list": "确认发命令和进服的玩家身份，并在发收称号时解析在线目标玩家",
+        "service:plugin.neomega.economy.pay": "购买收费称号和发送收费喇叭时扣除金币"
+      },
+      "description": "玩家可用 !称号 查看称号、!买称号 购买、!佩戴称号 与 !卸下称号 切换头衔，并用 !喇叭 发送全服广播（支持冷却、音效和过滤控制符）；管理员支持在线与离线发收称号，进服可播报佩戴头衔。",
+      "kind": "app",
+      "readme": {
+        "path": "README.md",
+        "sha256": "cb7c23559b47a5c273d275b8be2a764bfe0b0e50e223d4dfbc98cd77a272bf1e",
+        "size": 4198
+      },
+      "subscriptions": [
+        {
+          "name": "chat",
+          "kind": "chat.received",
+          "delivery": "durable"
+        },
+        {
+          "name": "join",
+          "kind": "player.list_added",
+          "delivery": "durable"
+        }
+      ],
+      "runtime": "python",
+      "host_api": {
+        "major": 1,
+        "min_minor": 4
+      },
+      "worker_protocol": {
+        "major": 1,
+        "min_minor": 0
+      },
+      "dependencies": [
+        {
+          "id": "neomega.economy",
+          "major": 2,
+          "min_version": "2.0.0",
+          "optional": true
+        }
+      ],
+      "source_provenance": {
+        "repository": "https://github.com/OmineDev/neomega-plugins",
+        "ref": "667d7d6eea47c76770f1189c72d22b203b32c613",
+        "path": "plugins/titles"
+      }
     },
     {
       "plugin_id": "neomega.tpa",
