@@ -188,6 +188,36 @@
           "type": "boolean",
           "title": "在线时长",
           "default": false
+        },
+        "back": {
+          "type": "boolean",
+          "title": "死亡点返回",
+          "default": false
+        },
+        "warps": {
+          "type": "boolean",
+          "title": "传送点与主城",
+          "default": false
+        },
+        "redeem_codes": {
+          "type": "boolean",
+          "title": "兑换码",
+          "default": false
+        },
+        "titles": {
+          "type": "boolean",
+          "title": "称号与喇叭",
+          "default": false
+        },
+        "reports": {
+          "type": "boolean",
+          "title": "举报与留言",
+          "default": false
+        },
+        "redpacket": {
+          "type": "boolean",
+          "title": "口令红包",
+          "default": false
         }
       },
       "required": [],
@@ -200,7 +230,13 @@
         "shop": false,
         "homes": false,
         "tpa": false,
-        "online_time": false
+        "online_time": false,
+        "back": false,
+        "warps": false,
+        "redeem_codes": false,
+        "titles": false,
+        "reports": false,
+        "redpacket": false
       }
     },
     "help_extra": {

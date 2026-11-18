@@ -8,7 +8,7 @@
 
 同一租赁服只安装一个本插件实例；该实例同时只占用一个导入槽。
 
-1. 在仓库根目录运行 `python3 plugins/fatalder-cloud-import/tools/package.py /your/output/cloud-import.zip`。
+1. 在仓库根目录运行 `python3 tools/package-plugin.py plugins/fatalder-cloud-import --output /your/output/cloud-import.zip`（既有白名单亦可继续用 `plugins/fatalder-cloud-import/tools/package.py`）。
 2. 使用 neomega 提供的管理脚本安装：`python3 runtime-admin.py --url "$TARGET_URL" --token-file "$TARGET_TOKEN_FILE" install importer /your/output/cloud-import.zip`。
 3. 运行 `python3 runtime-admin.py --url "$TARGET_URL" --token-file "$TARGET_TOKEN_FILE" configure importer`，按向导填写 HTTPS Worker 根地址、API Key、Worker 目标配置 ID、租赁服号与管理员 UUID 数组。
 4. 运行 `python3 runtime-admin.py --url "$TARGET_URL" --token-file "$TARGET_TOKEN_FILE" permissions importer`，审阅用途、申请与缺口，输入“同意”保存权限；在后续启动提问处回车，保持停止。再执行同一管理脚本的 `doctor importer`，检查通过后独立执行 `start importer`。如需宿主重启后自动加载，再明确执行 `enable importer`（该命令也会启动尚未运行的插件）。API Key 存在宿主管理的私有密钥文件，普通配置只保存 secret 引用；不把真实 Key 写进本目录或安装包。

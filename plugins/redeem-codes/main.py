@@ -98,8 +98,10 @@ class RedeemCodes(Plugin):
     config_type = Settings
 
     async def on_start(self, ctx: PluginContext):
-        # Host 逐个投递事件；锁让并发调用同样逐个处理，配合存储的 revision 校验不超发。
+        # 短锁只保护内存预留与本地提交；调用经济 RPC 时释放锁，避免阻塞 on_event。
         self.lock = asyncio.Lock()
+        self._pending_total: dict[str, int] = {}
+        self._pending_player: dict[tuple[str, str], int] = {}
         # 全角感叹号是中文输入法的默认输出，两个前缀都接受。
         self.routers = (ctx.chat, ChatRouter(prefix='！'))
         for router in self.routers:
@@ -107,20 +109,31 @@ class RedeemCodes(Plugin):
                 lambda command: self.redeem(ctx, command))
 
     async def on_event(self, ctx: PluginContext, event: Event):
-        async with self.lock:
-            if event.kind == 'chat.received':
-                try:
-                    for router in self.routers:
-                        if await router.dispatch(event):
-                            return
-                except (ValueError, PlayerNotFound, AmbiguousPlayer):
-                    # 引号不配对，或玩家已经下线：不回复，只确认事件。
-                    pass
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+        if event.kind == 'chat.received':
+            try:
+                for router in self.routers:
+                    if await router.dispatch(event):
+                        return
+            except (ValueError, PlayerNotFound, AmbiguousPlayer):
+                # 引号不配对，或玩家已经下线：不回复，只确认事件。
+                pass
+        await (await event.transaction(keys=[])).save()
 
     def today(self, ctx) -> date:
         offset = timedelta(hours=ctx.config.utc_offset_hours)
         return (datetime.now(timezone.utc) + offset).date()
+
+    def _release_reservation(self, key: str, pid: str) -> None:
+        total = self._pending_total.get(key, 0) - 1
+        if total > 0:
+            self._pending_total[key] = total
+        else:
+            self._pending_total.pop(key, None)
+        mine = self._pending_player.get((key, pid), 0) - 1
+        if mine > 0:
+            self._pending_player[(key, pid)] = mine
+        else:
+            self._pending_player.pop((key, pid), None)
 
     async def redeem(self, ctx, command):
         player = command.player
@@ -133,50 +146,113 @@ class RedeemCodes(Plugin):
         if entry.expires and self.today(ctx).isoformat() > entry.expires:
             return await self.answer(ctx, command, f'这个兑换码已经过期了（有效期到 {entry.expires}）。')
 
-        code_key, use_key = 'code:' + key, f'use:{key}:{player_id(player)}'
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[code_key, use_key])
-        used, mine = tx.get(code_key, 0), tx.get(use_key, 0)
-        limit = entry.per_player_uses
-        if limit and mine >= limit:
-            self.reply(ctx, tx, player, '你已经领过这个兑换码了。' if limit == 1
-                       else f'这个兑换码每人只能用 {limit} 次，你已经用完了。')
-            await tx.save()
-            return
-        if entry.total_uses and used >= entry.total_uses:
-            self.reply(ctx, tx, player, '这个兑换码已经被领完了。')
-            await tx.save()
-            return
-
-        mine += 1
-        tx.set(code_key, used + 1)
-        tx.set(use_key, mine)
-        lines = [entry.message or '兑换成功！']
-        if entry.coins:
-            lines += await self.grant(ctx, player, entry, key, mine)
-        if limit > 1 and mine < limit:
-            lines.append(f'这个兑换码你还能再用 {limit - mine} 次。')
-
         target = player_target(player['name'])
-        for index, line in enumerate(entry.commands):
-            tx.action(ctx.commands.prepare(line.strip().removeprefix('/').replace('{player}', target),
-                                           idempotency_key=f'{tx.commit_id}_reward_{index}',
-                                           deadline=deadline()))
-        self.reply(ctx, tx, player, '\n'.join(lines))
+        pid = player_id(player)
+        code_key, use_key = 'code:' + key, f'use:{key}:{pid}'
+        limit = entry.per_player_uses
+
+        if not entry.coins:
+            async with self.lock:
+                tx = await command.event.transaction(keys=[code_key, use_key])
+                used, mine = tx.get(code_key, 0), tx.get(use_key, 0)
+                pending_total = self._pending_total.get(key, 0)
+                pending_mine = self._pending_player.get((key, pid), 0)
+                if limit and mine + pending_mine >= limit:
+                    self.reply(ctx, tx, player, '你已经领过这个兑换码了。' if limit == 1
+                               else f'这个兑换码每人只能用 {limit} 次，你已经用完了。')
+                    await tx.save()
+                    return
+                if entry.total_uses and used + pending_total >= entry.total_uses:
+                    self.reply(ctx, tx, player, '这个兑换码已经被领完了。')
+                    await tx.save()
+                    return
+                mine += 1
+                tx.set(code_key, used + 1)
+                tx.set(use_key, mine)
+                lines = [entry.message or '兑换成功！']
+                if limit > 1 and mine < limit:
+                    lines.append(f'这个兑换码你还能再用 {limit - mine} 次。')
+                for index, line in enumerate(entry.commands):
+                    tx.action(ctx.commands.prepare(line.strip().removeprefix('/').replace('{player}', target),
+                                                   idempotency_key=f'{tx.commit_id}_reward_{index}',
+                                                   deadline=deadline()))
+                self.reply(ctx, tx, player, '\n'.join(lines))
+                try:
+                    await tx.save()
+                except CommitUncertain:
+                    # 事件确认和这次提交绑在一起，重启后要么已生效、要么重新投递，不会重复发放。
+                    ctx.log.warning('redeem commit uncertain player=%s code=%s commit_id=%s',
+                                    player['name'], key, tx.commit_id)
+                    await self.notify(ctx, player, '兑换结果暂时不确定，请稍等片刻看看是否收到奖励；没有收到请联系管理员。')
+                    raise
+            # 奖励命令由 Host 在提交后执行；日志供管理员核对和补发。
+            ctx.log.info('redeemed player=%s code=%s use=%d commit_id=%s', player['name'], key, mine, tx.commit_id)
+            return
+
+        async with self.lock:
+            snap = await ctx.storage.transaction(keys=[code_key, use_key])
+            used, mine = snap.get(code_key, 0), snap.get(use_key, 0)
+            pending_total = self._pending_total.get(key, 0)
+            pending_mine = self._pending_player.get((key, pid), 0)
+            if limit and mine + pending_mine >= limit:
+                tx = await command.event.transaction(keys=[])
+                self.reply(ctx, tx, player, '你已经领过这个兑换码了。' if limit == 1
+                           else f'这个兑换码每人只能用 {limit} 次，你已经用完了。')
+                await tx.save()
+                return
+            if entry.total_uses and used + pending_total >= entry.total_uses:
+                tx = await command.event.transaction(keys=[])
+                self.reply(ctx, tx, player, '这个兑换码已经被领完了。')
+                await tx.save()
+                return
+            self._pending_total[key] = pending_total + 1
+            self._pending_player[(key, pid)] = pending_mine + 1
+            reserved_mine = mine + pending_mine + 1
+
         try:
-            await tx.save()
-        except CommitUncertain:
-            # 事件确认和这次提交绑在一起，重启后要么已生效、要么重新投递，不会重复发放。
-            ctx.log.warning('redeem commit uncertain player=%s code=%s commit_id=%s',
-                            player['name'], key, tx.commit_id)
-            await self.notify(ctx, player, '兑换结果暂时不确定，请稍等片刻看看是否收到奖励；没有收到请联系管理员。')
-            raise
+            lines = [entry.message or '兑换成功！']
+            lines += await self.grant(ctx, player, entry, key, reserved_mine)
+            async with self.lock:
+                tx = await command.event.transaction(keys=[code_key, use_key])
+                used_now, mine_now = tx.get(code_key, 0), tx.get(use_key, 0)
+                if limit and mine_now >= limit:
+                    self.reply(ctx, tx, player, '你已经领过这个兑换码了。' if limit == 1
+                               else f'这个兑换码每人只能用 {limit} 次，你已经用完了。')
+                    await tx.save()
+                    return
+                if entry.total_uses and used_now >= entry.total_uses:
+                    self.reply(ctx, tx, player, '这个兑换码已经被领完了。')
+                    await tx.save()
+                    return
+                mine_now += 1
+                if limit > 1 and mine_now < limit:
+                    lines.append(f'这个兑换码你还能再用 {limit - mine_now} 次。')
+                tx.set(code_key, used_now + 1)
+                tx.set(use_key, mine_now)
+                for index, line in enumerate(entry.commands):
+                    tx.action(ctx.commands.prepare(line.strip().removeprefix('/').replace('{player}', target),
+                                                   idempotency_key=f'{tx.commit_id}_reward_{index}',
+                                                   deadline=deadline()))
+                self.reply(ctx, tx, player, '\n'.join(lines))
+                try:
+                    await tx.save()
+                except CommitUncertain:
+                    # 事件确认和这次提交绑在一起，重启后要么已生效、要么重新投递，不会重复发放。
+                    ctx.log.warning('redeem commit uncertain player=%s code=%s commit_id=%s',
+                                    player['name'], key, tx.commit_id)
+                    await self.notify(ctx, player, '兑换结果暂时不确定，请稍等片刻看看是否收到奖励；没有收到请联系管理员。')
+                    raise
+        finally:
+            async with self.lock:
+                self._release_reservation(key, pid)
         # 奖励命令由 Host 在提交后执行；日志供管理员核对和补发。
-        ctx.log.info('redeemed player=%s code=%s use=%d commit_id=%s', player['name'], key, mine, tx.commit_id)
+        ctx.log.info('redeemed player=%s code=%s use=%d commit_id=%s', player['name'], key, mine_now, tx.commit_id)
 
     async def answer(self, ctx, command, text):
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
-        self.reply(ctx, tx, command.player, text)
-        await tx.save()
+        async with self.lock:
+            tx = await command.event.transaction(keys=[])
+            self.reply(ctx, tx, command.player, text)
+            await tx.save()
 
     async def grant(self, ctx, player, entry, key, use) -> list[str]:
         arguments = {'player_id': player_id(player), 'amount': entry.coins,

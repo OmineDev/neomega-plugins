@@ -16,7 +16,8 @@ import time
 
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
                              PlayerNotFound, ServiceRejected)
-from neomega_runtime.managed import IPCRejected
+from neomega_runtime.http import ProtocolError
+from neomega_runtime.managed import IPCError, IPCRejected
 from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
 
 ECONOMY_PAY = 'plugin.neomega.economy.pay'
@@ -27,6 +28,7 @@ CATCH_UP_GAP = 1.0
 CATCH_UP_LIMIT = 60.0
 MAX_HORN_LENGTH = 200
 MAX_STORAGE_KEY_BYTES = 256
+MAX_BROADCAST_COMMAND_BYTES = 320
 
 
 @dataclass(frozen=True)
@@ -226,15 +228,59 @@ def apply_pending_ops(titles: list[TitleDef], record: dict, pending: dict) -> tu
     return changed, granted, revoked
 
 
+def _style_step(style: str, token: str) -> str:
+    if len(token) != 2 or token[0] != '§':
+        return style
+    code = token[1].lower()
+    if code == 'r':
+        return ''
+    if code in '0123456789abcdefghijmnpqstu':
+        return token + ''.join('§' + c for c in 'klo' if '§' + c in style.lower())
+    if code in 'klo' and token.lower() not in style.lower():
+        return style + token
+    return style
+
+
+def chunk_broadcast(text: str, max_command_bytes: int = MAX_BROADCAST_COMMAND_BYTES) -> list[str]:
+    """按 320 字节上限切分全服 tellraw，跨段保留当前 § 样式。"""
+    def fits(value: str) -> bool:
+        raw = json.dumps({'rawtext': [{'text': value}]}, ensure_ascii=False, separators=(',', ':'))
+        return len(('tellraw @a ' + raw).encode('utf-8')) <= max_command_bytes
+
+    chunks, chunk, prefix, style = [], '', '', ''
+    i = 0
+    while i < len(text):
+        end = i + (2 if text[i] == '§' and i + 1 < len(text) else 1)
+        token = text[i:end]
+        i = end
+        if not fits(prefix + chunk + token):
+            if chunk:
+                chunks.append(prefix + chunk)
+                chunk, prefix = '', style
+            if not fits(prefix + token):
+                raise ValueError('broadcast token exceeds command budget')
+        chunk += token
+        style = _style_step(style, token)
+    if chunk or not chunks:
+        chunks.append(prefix + chunk)
+    return chunks
+
+
 class Titles(Plugin):
     config_type = Settings
 
     def __init__(self):
         self.lock = asyncio.Lock()
+        self.bot_name = None
+        self._pending_buys: set[tuple[str, str]] = set()
+        self._pending_horns: set[str] = set()
         self.started = self.last_event = None
         self.caught_up = False
 
     async def on_start(self, ctx: PluginContext):
+        self.bot_name = None
+        self._pending_buys.clear()
+        self._pending_horns.clear()
         self.started = self.now()
         self.last_event = None
         self.caught_up = False
@@ -260,18 +306,27 @@ class Titles(Plugin):
 
     async def on_event(self, ctx: PluginContext, event: Event):
         self.watch_backlog()
+        try:
+            if event.kind == 'player.list_added' and await self.on_join(ctx, event):
+                return
+            if event.kind == 'chat.received':
+                for router in self.routers:
+                    if await router.dispatch(event):
+                        return
+        except (ValueError, PlayerNotFound, AmbiguousPlayer):
+            # 引号不配对、参数个数不对，或玩家已经下线：不拦截普通聊天，只确认事件。
+            pass
         async with self.lock:
-            try:
-                if event.kind == 'player.list_added' and await self.on_join(ctx, event):
-                    return
-                if event.kind == 'chat.received':
-                    for router in self.routers:
-                        if await router.dispatch(event):
-                            return
-            except (ValueError, PlayerNotFound, AmbiguousPlayer):
-                # 引号不配对、参数个数不对，或玩家已经下线：不拦截普通聊天，只确认事件。
-                pass
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await (await event.transaction(keys=[])).save()
+
+    async def bot(self, ctx) -> str | None:
+        try:
+            name = (await ctx.robot()).get('bot_name')
+        except (IPCError, ProtocolError, TimeoutError, ConnectionError, OSError):
+            return self.bot_name
+        if name:
+            self.bot_name = name
+        return self.bot_name
 
     def now(self) -> float:
         return time.monotonic()
@@ -313,75 +368,81 @@ class Titles(Plugin):
         if not isinstance(body, dict) or not isinstance(body.get('name'), str) or not body['name']:
             return False
         player = await self.resolve_online(ctx, body['name'], body.get('xuid'))
+        bot = await self.bot(ctx)
+        if bot and player['name'] == bot:
+            return False
         p_key = player_key(player)
         pend_key = pending_key(player['name'])
         keys = [p_key] if len(pend_key.encode('utf-8')) > MAX_STORAGE_KEY_BYTES else [p_key, pend_key]
-        tx = await ctx.storage.transaction(event=event.payload, keys=keys)
-        record = load_player_record(tx, p_key)
+        async with self.lock:
+            tx = await event.transaction(keys=keys)
+            record = load_player_record(tx, p_key)
 
-        if pend_key in keys:
-            pending = tx.get(pend_key)
-            if isinstance(pending, dict) and pending:
-                tx.delete(pend_key)
-                changed, granted, revoked = apply_pending_ops(ctx.config.titles, record, pending)
-                if changed:
-                    tx.set(p_key, record)
-                notices = []
-                if granted:
-                    notices.append(f'你上线后收到管理员授予的称号：{"、".join(granted)}，发送 !佩戴称号 <编号或名称> 即可佩戴。')
-                if revoked:
-                    notices.append(f'管理员收回了你的称号：{"、".join(revoked)}。')
-                if notices:
-                    self.reply(ctx, tx, player, '\n'.join(notices), tag='pending')
+            if pend_key in keys:
+                pending = tx.get(pend_key)
+                if isinstance(pending, dict) and pending:
+                    changed, granted, revoked = apply_pending_ops(ctx.config.titles, record, pending)
+                    notices = []
+                    if granted:
+                        notices.append(f'你上线后收到管理员授予的称号：{"、".join(granted)}，发送 !佩戴称号 <编号或名称> 即可佩戴。')
+                    if revoked:
+                        notices.append(f'管理员收回了你的称号：{"、".join(revoked)}。')
+                    if notices:
+                        # 先成功构造私聊提醒，再删除 pending_name；避免提醒准备失败时丢失待生效操作。
+                        self.reply(ctx, tx, player, '\n'.join(notices), tag='pending')
+                    tx.delete(pend_key)
+                    if changed:
+                        tx.set(p_key, record)
 
-        live = self.caught_up and event.payload.get('session', ctx.operations.session) == ctx.operations.session
-        if ctx.config.join_broadcast and live:
-            equipped_id = record['equipped']
-            equipped = (find_title_by_id(ctx.config.titles, equipped_id)
-                        if equipped_id and equipped_id in record['owned'] else None)
-            if equipped is not None:
-                self.broadcast(ctx, tx, f'{equipped.display}§r §f{player["name"]} §e加入了服务器', tag='join')
+            live = self.caught_up and event.payload.get('session', ctx.operations.session) == ctx.operations.session
+            if ctx.config.join_broadcast and live:
+                equipped_id = record['equipped']
+                equipped = (find_title_by_id(ctx.config.titles, equipped_id)
+                            if equipped_id and equipped_id in record['owned'] else None)
+                if equipped is not None:
+                    self.broadcast(ctx, tx, f'{equipped.display}§r §f{player["name"]} §e加入了服务器', tag='join')
 
-        await tx.save()
+            await tx.save()
         return True
 
     # ---- 玩家命令 ----
 
     async def list_titles(self, ctx, command):
         player, p_key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[p_key])
-        record = load_player_record(tx, p_key)
-        owned = set(record['owned'])
-        equipped_id = record['equipped']
+        async with self.lock:
+            tx = await command.event.transaction(keys=[p_key])
+            record = load_player_record(tx, p_key)
+            owned = set(record['owned'])
+            equipped_id = record['equipped']
 
-        lines = []
-        if not ctx.config.titles:
-            lines.append('服务器还没有配置任何称号。')
-        else:
-            lines.append('称号列表：')
-            for index, title in enumerate(ctx.config.titles, 1):
-                if equipped_id == title.id and title.id in owned:
-                    status = '§a[佩戴中]§r'
-                elif title.id in owned:
-                    status = '§a[已拥有]§r'
-                else:
-                    status = '§7[未拥有]§r'
-                if title.purchasable:
-                    acquire = f'{title.price} 金币' if title.price > 0 else '免费购买'
-                else:
-                    acquire = '管理员发放'
-                desc = f' - {title.description}' if title.description else ''
-                lines.append(f'{index}. {title.display}§r {title.name} ({title.id}) | {acquire} | {status}{desc}')
+            lines = []
+            if not ctx.config.titles:
+                lines.append('服务器还没有配置任何称号。')
+            else:
+                lines.append('称号列表：')
+                for index, title in enumerate(ctx.config.titles, 1):
+                    if equipped_id == title.id and title.id in owned:
+                        status = '§a[佩戴中]§r'
+                    elif title.id in owned:
+                        status = '§a[已拥有]§r'
+                    else:
+                        status = '§7[未拥有]§r'
+                    if title.purchasable:
+                        acquire = f'{title.price} 金币' if title.price > 0 else '免费购买'
+                    else:
+                        acquire = '管理员发放'
+                    desc = f' - {title.description}' if title.description else ''
+                    lines.append(f'{index}. {title.display}§r {title.name} ({title.id}) | {acquire} | {status}{desc}')
 
-        help_cmds = ['!买称号 <编号或名称>', '!佩戴称号 <编号或名称>', '!卸下称号']
-        if ctx.config.horn_enabled:
-            help_cmds.append('!喇叭 <内容>')
-        lines.append('可用指令：' + '、'.join(help_cmds))
-        if self.is_admin(ctx, player):
-            lines.append('管理员指令：!发称号 <玩家名> <编号或名称>、!收称号 <玩家名> <编号或名称>')
+            help_cmds = ['!买称号 <编号或名称>', '!佩戴称号 <编号或名称>', '!卸下称号']
+            if ctx.config.horn_enabled:
+                help_cmds.append('!喇叭 <内容>')
+            lines.append('可用指令：' + '、'.join(help_cmds))
+            if self.is_admin(ctx, player):
+                lines.append('管理员指令：!发称号 <玩家名> <编号或名称>、!收称号 <玩家名> <编号或名称>')
 
-        self.reply(ctx, tx, player, '\n'.join(lines))
-        await tx.save()
+            self.reply(ctx, tx, player, '\n'.join(lines))
+            await tx.save()
 
     async def buy_title(self, ctx, command):
         query = ' '.join(command.args).strip()
@@ -394,43 +455,75 @@ class Titles(Plugin):
             return await self.answer(ctx, command, f'称号「{title.name}」不可购买，仅限管理员发放。')
 
         player, p_key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[p_key])
-        record = load_player_record(tx, p_key)
-        if title.id in record['owned']:
-            self.reply(ctx, tx, player, f'你已经拥有称号「{title.name}」了。')
-            return await tx.save()
-
+        pid = player_id(player)
         paid_note = ''
-        if title.price > 0:
+        if title.price == 0:
+            async with self.lock:
+                tx = await command.event.transaction(keys=[p_key])
+                record = load_player_record(tx, p_key)
+                if title.id in record['owned']:
+                    self.reply(ctx, tx, player, f'你已经拥有称号「{title.name}」了。')
+                    return await tx.save()
+                record['owned'].append(title.id)
+                current_valid = (find_title_by_id(ctx.config.titles, record['equipped']) is not None
+                                 and record['equipped'] in record['owned'])
+                if not current_valid:
+                    record['equipped'] = title.id
+                    equip_note = '已自动为你佩戴。'
+                else:
+                    equip_note = f'发送 !佩戴称号 {title.id} 即可切换佩戴。'
+                tx.set(p_key, record)
+                self.reply(ctx, tx, player, f'成功购买称号「{title.name}」（{title.display}§r），{equip_note}')
+                await tx.save()
+            return
+
+        buy_key = (pid, title.id)
+        async with self.lock:
+            snap = await ctx.storage.transaction(keys=[p_key])
+            record = load_player_record(snap, p_key)
+            if title.id in record['owned']:
+                tx = await command.event.transaction(keys=[])
+                self.reply(ctx, tx, player, f'你已经拥有称号「{title.name}」了。')
+                return await tx.save()
+            if buy_key in self._pending_buys:
+                tx = await command.event.transaction(keys=[])
+                self.reply(ctx, tx, player, '这笔称号购买正在处理中，请稍候。')
+                return await tx.save()
+            self._pending_buys.add(buy_key)
+
+        try:
             request_id = charge_request_id('buy', command.event.payload['event_id'])
             status, payload = await self.charge_economy(
                 ctx, player, title.price, ('购买称号 ' + title.name)[:32], request_id)
             if status == 'not_installed':
-                self.reply(ctx, tx, player, '服务器未开启经济系统，暂时无法购买收费称号。')
-                return await tx.save()
+                return await self.answer(ctx, command, '服务器未开启经济系统，暂时无法购买收费称号。')
             if status == 'insufficient_funds':
-                self.reply(ctx, tx, player, f'金币不足，购买「{title.name}」需要 {title.price} 金币。')
-                return await tx.save()
+                return await self.answer(ctx, command, f'金币不足，购买「{title.name}」需要 {title.price} 金币。')
             if status == 'unsettled':
-                self.reply(ctx, tx, player, '扣款结果暂时不确定，这次没有发放称号。可以用 !流水 查看，没有扣款可以再试一次。')
-                return await tx.save()
+                return await self.answer(ctx, command, '扣款结果暂时不确定，这次没有发放称号。可以用 !流水 查看，没有扣款可以再试一次。')
             if status == 'rejected':
-                self.reply(ctx, tx, player, '扣款失败，未能购买该称号。')
-                return await tx.save()
+                return await self.answer(ctx, command, '扣款失败，未能购买该称号。')
             coin = payload.get('currency', '金币')
             paid_note = f'花费 {title.price} {coin}，剩余 {payload["balance"]} {coin}。'
 
-        record['owned'].append(title.id)
-        current_valid = (find_title_by_id(ctx.config.titles, record['equipped']) is not None
-                         and record['equipped'] in record['owned'])
-        if not current_valid:
-            record['equipped'] = title.id
-            equip_note = '已自动为你佩戴。'
-        else:
-            equip_note = f'发送 !佩戴称号 {title.id} 即可切换佩戴。'
-        tx.set(p_key, record)
-        self.reply(ctx, tx, player, f'成功购买称号「{title.name}」（{title.display}§r），{equip_note}{paid_note}')
-        await tx.save()
+            async with self.lock:
+                tx = await command.event.transaction(keys=[p_key])
+                record = load_player_record(tx, p_key)
+                if title.id not in record['owned']:
+                    record['owned'].append(title.id)
+                current_valid = (find_title_by_id(ctx.config.titles, record['equipped']) is not None
+                                 and record['equipped'] in record['owned'])
+                if not current_valid:
+                    record['equipped'] = title.id
+                    equip_note = '已自动为你佩戴。'
+                else:
+                    equip_note = f'发送 !佩戴称号 {title.id} 即可切换佩戴。'
+                tx.set(p_key, record)
+                self.reply(ctx, tx, player, f'成功购买称号「{title.name}」（{title.display}§r），{equip_note}{paid_note}')
+                await tx.save()
+        finally:
+            async with self.lock:
+                self._pending_buys.discard(buy_key)
 
     async def equip_title(self, ctx, command):
         query = ' '.join(command.args).strip()
@@ -441,32 +534,34 @@ class Titles(Plugin):
             return await self.answer(ctx, command, f'没有找到称号「{query}」，发送 !称号 查看全部称号。')
 
         player, p_key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[p_key])
-        record = load_player_record(tx, p_key)
-        if title.id not in record['owned']:
-            hint = f'可发送 !买称号 {title.id} 购买。' if title.purchasable else '仅限管理员发放。'
-            self.reply(ctx, tx, player, f'你还没有拥有称号「{title.name}」，{hint}')
-            return await tx.save()
-        if record['equipped'] == title.id:
-            self.reply(ctx, tx, player, f'你已经在佩戴称号「{title.name}」（{title.display}§r）了。')
-            return await tx.save()
+        async with self.lock:
+            tx = await command.event.transaction(keys=[p_key])
+            record = load_player_record(tx, p_key)
+            if title.id not in record['owned']:
+                hint = f'可发送 !买称号 {title.id} 购买。' if title.purchasable else '仅限管理员发放。'
+                self.reply(ctx, tx, player, f'你还没有拥有称号「{title.name}」，{hint}')
+                return await tx.save()
+            if record['equipped'] == title.id:
+                self.reply(ctx, tx, player, f'你已经在佩戴称号「{title.name}」（{title.display}§r）了。')
+                return await tx.save()
 
-        record['equipped'] = title.id
-        tx.set(p_key, record)
-        self.reply(ctx, tx, player, f'已佩戴称号「{title.name}」（{title.display}§r）。')
-        await tx.save()
+            record['equipped'] = title.id
+            tx.set(p_key, record)
+            self.reply(ctx, tx, player, f'已佩戴称号「{title.name}」（{title.display}§r）。')
+            await tx.save()
 
     async def unequip_title(self, ctx, command):
         player, p_key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[p_key])
-        record = load_player_record(tx, p_key)
-        if not record['equipped']:
-            self.reply(ctx, tx, player, '你当前没有佩戴任何称号。')
-            return await tx.save()
-        record['equipped'] = None
-        tx.set(p_key, record)
-        self.reply(ctx, tx, player, '已卸下当前佩戴的称号。')
-        await tx.save()
+        async with self.lock:
+            tx = await command.event.transaction(keys=[p_key])
+            record = load_player_record(tx, p_key)
+            if not record['equipped']:
+                self.reply(ctx, tx, player, '你当前没有佩戴任何称号。')
+                return await tx.save()
+            record['equipped'] = None
+            tx.set(p_key, record)
+            self.reply(ctx, tx, player, '已卸下当前佩戴的称号。')
+            await tx.save()
 
     async def horn(self, ctx, command):
         if not ctx.config.horn_enabled:
@@ -480,54 +575,69 @@ class Titles(Plugin):
             return await self.answer(ctx, command, f'喇叭内容太长了，最多 {MAX_HORN_LENGTH} 个字。')
 
         player, p_key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[p_key])
-        record = load_player_record(tx, p_key)
-        now, cooldown = self.clock(), ctx.config.horn_cooldown_seconds
-        wait = min(record.get('horn_at', -math.inf) + cooldown - now, cooldown)
-        if wait > 0:
-            self.reply(ctx, tx, player, f'喇叭还在冷却中，请 {math.ceil(wait)} 秒后再试。')
-            return await tx.save()
-
-        paid_note = ''
+        pid = player_id(player)
         cost = ctx.config.horn_cost
-        if cost > 0:
-            request_id = charge_request_id('horn', command.event.payload['event_id'])
-            status, payload = await self.charge_economy(ctx, player, cost, '全服喇叭', request_id)
-            if status == 'insufficient_funds':
-                self.reply(ctx, tx, player, f'金币不足，发送一次喇叭需要 {cost} 金币。')
-                return await tx.save()
-            if status == 'unsettled':
-                self.reply(ctx, tx, player, '扣款结果暂时不确定，这次没有发送喇叭。可以用 !流水 查看，没有扣款可以再试一次。')
-                return await tx.save()
-            if status == 'rejected':
-                self.reply(ctx, tx, player, '扣款失败，这次没有发送喇叭。')
-                return await tx.save()
-            if status == 'paid':
-                coin = payload.get('currency', '金币')
-                paid_note = f'花费 {cost} {coin}，剩余 {payload["balance"]} {coin}。'
-            # status == 'not_installed'：未装经济插件时视作免费。
 
-        record['horn_at'] = now
-        tx.set(p_key, record)
-        equipped_id = record['equipped']
-        equipped = (find_title_by_id(ctx.config.titles, equipped_id)
-                    if equipped_id and equipped_id in record['owned'] else None)
-        if equipped is not None:
-            message = f'§e[喇叭] {equipped.display}§r §f{player["name"]}§e: §f{cleaned}'
-        else:
-            message = f'§e[喇叭] §f{player["name"]}§e: §f{cleaned}'
-        self.broadcast(ctx, tx, message, tag='horn')
-        if ctx.config.horn_sound:
-            tx.action(ctx.commands.prepare(
-                'execute as @a at @s run playsound random.orb @s',
-                idempotency_key=tx.commit_id + '_sound',
-                deadline=deadline(),
-            ))
-        if paid_note:
-            self.reply(ctx, tx, player, f'已发送全服喇叭，{paid_note}')
-        else:
-            self.reply(ctx, tx, player, '已发送全服喇叭。')
-        await tx.save()
+        async with self.lock:
+            snap = await ctx.storage.transaction(keys=[p_key])
+            record = load_player_record(snap, p_key)
+            now, cooldown = self.clock(), ctx.config.horn_cooldown_seconds
+            wait = min(record.get('horn_at', -math.inf) + cooldown - now, cooldown)
+            if wait > 0:
+                tx = await command.event.transaction(keys=[])
+                self.reply(ctx, tx, player, f'喇叭还在冷却中，请 {math.ceil(wait)} 秒后再试。')
+                return await tx.save()
+            if cost > 0 and pid in self._pending_horns:
+                tx = await command.event.transaction(keys=[])
+                self.reply(ctx, tx, player, '上一条喇叭正在扣款处理中，请稍候。')
+                return await tx.save()
+            if cost > 0:
+                self._pending_horns.add(pid)
+
+        try:
+            paid_note = ''
+            if cost > 0:
+                request_id = charge_request_id('horn', command.event.payload['event_id'])
+                status, payload = await self.charge_economy(ctx, player, cost, '全服喇叭', request_id)
+                if status == 'insufficient_funds':
+                    return await self.answer(ctx, command, f'金币不足，发送一次喇叭需要 {cost} 金币。')
+                if status == 'unsettled':
+                    return await self.answer(ctx, command, '扣款结果暂时不确定，这次没有发送喇叭。可以用 !流水 查看，没有扣款可以再试一次。')
+                if status == 'rejected':
+                    return await self.answer(ctx, command, '扣款失败，这次没有发送喇叭。')
+                if status == 'paid':
+                    coin = payload.get('currency', '金币')
+                    paid_note = f'花费 {cost} {coin}，剩余 {payload["balance"]} {coin}。'
+                # status == 'not_installed'：未装经济插件时视作免费。
+
+            async with self.lock:
+                tx = await command.event.transaction(keys=[p_key])
+                record = load_player_record(tx, p_key)
+                record['horn_at'] = self.clock()
+                tx.set(p_key, record)
+                equipped_id = record['equipped']
+                equipped = (find_title_by_id(ctx.config.titles, equipped_id)
+                            if equipped_id and equipped_id in record['owned'] else None)
+                if equipped is not None:
+                    message = f'§e[喇叭] {equipped.display}§r §f{player["name"]}§e: §f{cleaned}'
+                else:
+                    message = f'§e[喇叭] §f{player["name"]}§e: §f{cleaned}'
+                self.broadcast(ctx, tx, message, tag='horn')
+                if ctx.config.horn_sound:
+                    tx.action(ctx.commands.prepare(
+                        'execute as @a at @s run playsound random.orb @s',
+                        idempotency_key=tx.commit_id + '_sound',
+                        deadline=deadline(),
+                    ))
+                if paid_note:
+                    self.reply(ctx, tx, player, f'已发送全服喇叭，{paid_note}')
+                else:
+                    self.reply(ctx, tx, player, '已发送全服喇叭。')
+                await tx.save()
+        finally:
+            if cost > 0:
+                async with self.lock:
+                    self._pending_horns.discard(pid)
 
     # ---- 管理员命令 ----
 
@@ -548,64 +658,73 @@ class Titles(Plugin):
         if title is None:
             return await self.answer(ctx, command, f'没有找到称号「{query}」，发送 !称号 查看全部称号。')
 
-        try:
-            target = await ctx.resolve_player(name=target_name)
-        except AmbiguousPlayer:
+        players = await ctx.players()
+        bot = await self.bot(ctx)
+        candidates = [p for p in players if not (bot and p['name'] == bot)]
+        matches = [p for p in candidates if p['name'] == target_name]
+        if not matches:
+            folded = target_name.casefold()
+            matches = [p for p in candidates if p['name'].casefold() == folded]
+        if len(matches) > 1:
             return await self.answer(ctx, command, f'当前有多名名为「{target_name}」的在线玩家，无法通过名字操作。')
-        except PlayerNotFound:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[pend_key])
-            pending = tx.get(pend_key)
-            pending = dict(pending) if isinstance(pending, dict) else {}
-            pending[title.id] = 'grant' if grant else 'revoke'
-            tx.set(pend_key, pending)
-            if grant:
-                text = f'{target_name} 当前不在线，已记录发放称号「{title.name}」（{title.display}§r），将在其下次进服时自动生效。'
-            else:
-                text = f'{target_name} 当前不在线，已记录收回称号「{title.name}」，将在其下次进服时自动生效。'
-            self.reply(ctx, tx, command.player, text)
-            return await tx.save()
 
+        if not matches:
+            async with self.lock:
+                tx = await command.event.transaction(keys=[pend_key])
+                pending = tx.get(pend_key)
+                pending = dict(pending) if isinstance(pending, dict) else {}
+                pending[title.id] = 'grant' if grant else 'revoke'
+                tx.set(pend_key, pending)
+                if grant:
+                    text = f'{target_name} 当前不在线，已记录发放称号「{title.name}」（{title.display}§r），将在其下次进服时自动生效。'
+                else:
+                    text = f'{target_name} 当前不在线，已记录收回称号「{title.name}」，将在其下次进服时自动生效。'
+                self.reply(ctx, tx, command.player, text)
+                return await tx.save()
+
+        target = matches[0]
         target_p_key = player_key(target)
         target_pend_key = pending_key(target['name'])
         keys = ([target_p_key, target_pend_key]
                 if len(target_pend_key.encode('utf-8')) <= MAX_STORAGE_KEY_BYTES else [target_p_key])
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=keys)
-        record = load_player_record(tx, target_p_key)
-        pending_changed = False
-        if target_pend_key in keys:
-            pending = tx.get(target_pend_key)
-            if isinstance(pending, dict) and pending:
-                tx.delete(target_pend_key)
-                pending_changed, _, _ = apply_pending_ops(ctx.config.titles, record, pending)
+        async with self.lock:
+            tx = await command.event.transaction(keys=keys)
+            record = load_player_record(tx, target_p_key)
+            pending_changed = False
+            if target_pend_key in keys:
+                pending = tx.get(target_pend_key)
+                if isinstance(pending, dict) and pending:
+                    tx.delete(target_pend_key)
+                    pending_changed, _, _ = apply_pending_ops(ctx.config.titles, record, pending)
 
-        notify_target = None
-        if grant:
-            if title.id in record['owned']:
-                if pending_changed:
+            notify_target = None
+            if grant:
+                if title.id in record['owned']:
+                    if pending_changed:
+                        tx.set(target_p_key, record)
+                    admin_text = f'{target["name"]} 已经拥有称号「{title.name}」了。'
+                else:
+                    record['owned'].append(title.id)
                     tx.set(target_p_key, record)
-                admin_text = f'{target["name"]} 已经拥有称号「{title.name}」了。'
+                    admin_text = f'已向在线玩家 {target["name"]} 发放称号「{title.name}」（{title.display}§r）。'
+                    notify_target = f'管理员授予了你称号「{title.name}」（{title.display}§r），发送 !佩戴称号 {title.id} 即可佩戴。'
             else:
-                record['owned'].append(title.id)
-                tx.set(target_p_key, record)
-                admin_text = f'已向在线玩家 {target["name"]} 发放称号「{title.name}」（{title.display}§r）。'
-                notify_target = f'管理员授予了你称号「{title.name}」（{title.display}§r），发送 !佩戴称号 {title.id} 即可佩戴。'
-        else:
-            if title.id not in record['owned']:
-                if pending_changed:
+                if title.id not in record['owned']:
+                    if pending_changed:
+                        tx.set(target_p_key, record)
+                    admin_text = f'{target["name"]} 还没有拥有称号「{title.name}」。'
+                else:
+                    record['owned'] = [item for item in record['owned'] if item != title.id]
+                    if record['equipped'] == title.id:
+                        record['equipped'] = None
                     tx.set(target_p_key, record)
-                admin_text = f'{target["name"]} 还没有拥有称号「{title.name}」。'
-            else:
-                record['owned'] = [item for item in record['owned'] if item != title.id]
-                if record['equipped'] == title.id:
-                    record['equipped'] = None
-                tx.set(target_p_key, record)
-                admin_text = f'已收回在线玩家 {target["name"]} 的称号「{title.name}」。'
-                notify_target = f'管理员收回了你的称号「{title.name}」。'
+                    admin_text = f'已收回在线玩家 {target["name"]} 的称号「{title.name}」。'
+                    notify_target = f'管理员收回了你的称号「{title.name}」。'
 
-        self.reply(ctx, tx, command.player, admin_text)
-        if notify_target and player_id(target) != player_id(command.player):
-            self.reply(ctx, tx, target, notify_target, tag='target')
-        await tx.save()
+            self.reply(ctx, tx, command.player, admin_text)
+            if notify_target and player_id(target) != player_id(command.player):
+                self.reply(ctx, tx, target, notify_target, tag='target')
+            await tx.save()
 
     # ---- 公用 ----
 
@@ -636,9 +755,10 @@ class Titles(Plugin):
         return 'unsettled', None
 
     async def answer(self, ctx, command, text: str):
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
-        self.reply(ctx, tx, command.player, text)
-        await tx.save()
+        async with self.lock:
+            tx = await command.event.transaction(keys=[])
+            self.reply(ctx, tx, command.player, text)
+            await tx.save()
 
     def reply(self, ctx, tx, player, text: str, *, tag: str = 'reply'):
         plan = ctx.notifications.prepare(
@@ -651,12 +771,15 @@ class Titles(Plugin):
             tx.action(part.intent)
 
     def broadcast(self, ctx, tx, text: str, *, tag: str):
-        rawtext = json.dumps({'rawtext': [{'text': text}]}, ensure_ascii=False, separators=(',', ':'))
-        tx.action(ctx.commands.prepare(
-            'tellraw @a ' + rawtext,
-            idempotency_key=f'{tx.commit_id}_{tag}',
-            deadline=deadline(),
-        ))
+        chunks = chunk_broadcast(text)
+        for index, chunk in enumerate(chunks):
+            rawtext = json.dumps({'rawtext': [{'text': chunk}]}, ensure_ascii=False, separators=(',', ':'))
+            suffix = '' if len(chunks) == 1 else f'_{index}'
+            tx.action(ctx.commands.prepare(
+                'tellraw @a ' + rawtext,
+                idempotency_key=f'{tx.commit_id}_{tag}{suffix}',
+                deadline=deadline(),
+            ))
 
 
 if __name__ == '__main__':

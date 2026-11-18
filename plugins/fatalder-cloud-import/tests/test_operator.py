@@ -29,7 +29,7 @@ class Storage:
     def __init__(self):
         self.values, self.receipts, self.actions = {}, {}, []
         self.lost_reply = False
-    async def transaction(self, commit_id=None):
+    async def transaction(self, commit_id=None, keys=None):
         return Transaction(self, commit_id)
     async def receipt(self, commit_id):
         return self.receipts.get(commit_id)

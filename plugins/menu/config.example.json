@@ -55,7 +55,13 @@
     "shop": false,
     "homes": false,
     "tpa": false,
-    "online_time": false
+    "online_time": false,
+    "back": false,
+    "warps": false,
+    "redeem_codes": false,
+    "titles": false,
+    "reports": false,
+    "redpacket": false
   },
   "help_extra": []
 }

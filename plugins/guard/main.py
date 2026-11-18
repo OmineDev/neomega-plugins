@@ -21,7 +21,7 @@ from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginC
 from neomega_runtime.command_queries import CommandQueries
 from neomega_runtime.game import CommandResult
 from neomega_runtime.http import ProtocolError
-from neomega_runtime.managed import IPCRejected
+from neomega_runtime.managed import IPCError, IPCRejected
 from neomega_runtime.operations import OperationWaitTimeout
 from neomega_runtime.storage import CommitUncertain
 
@@ -65,7 +65,7 @@ class Settings:
     spam_max_messages: int = field(default=6, metadata={
         'title': '最多消息条数', 'description': '统计时间内超过这么多条就算刷屏', 'minimum': 1})
     spam_repeat_limit: int = field(default=3, metadata={
-        'title': '重复消息上限', 'description': '统计时间内同一句话发到这么多次就算刷屏；填 0 不检查重复', 'minimum': 0})
+        'title': '重复消息上限', 'description': '统计时间内同一句话发到这么多次就算刷屏；填 0 不检查重复（开启时至少填 2）', 'minimum': 0})
     spam_warnings: int = field(default=1, metadata={
         'title': '警告次数', 'description': '先警告几次，再犯才处罚；填 0 第一次就处罚', 'minimum': 0, 'maximum': 10})
     spam_forgive_minutes: int = field(default=10, metadata={
@@ -101,6 +101,8 @@ class Settings:
                     self.spam_warning_message, self.spam_punish_message)
         if any(not text.strip() for text in messages):
             raise ValueError('messages must not be empty')
+        if self.spam_repeat_limit == 1:
+            raise ValueError('spam_repeat_limit must be 0 or at least 2')
 
 
 def deadline() -> str:
@@ -170,7 +172,7 @@ class Guard(Plugin):
             # 名字不能用作选择器、引号不配对，或玩家已经下线：不处置，只确认事件。
             pass
         async with self.lock:
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await (await event.transaction(keys=[])).save()
 
     def now(self) -> float:
         return time.monotonic()
@@ -242,7 +244,7 @@ class Guard(Plugin):
         if verdict is None:
             return False
         rule, message, detail = verdict
-        await self.dispose(ctx, event.payload, player, rule, 'kick', message, detail)
+        await self.dispose(ctx, event, player, rule, 'kick', message, detail)
         return True
 
     def track(self, roster, player):
@@ -286,7 +288,8 @@ class Guard(Plugin):
         if not config.level_check:
             return None
         # lm 是最低经验等级选择器：能选中说明等级够了。
-        selector = player_target(player['name'])[:-1] + f',lm={config.min_level}]'
+        target = player_target(player['name'])
+        selector = target[:-1] + f',lm={config.min_level}]'
         intent = ctx.command_queries.testfor(selector, idempotency_key=uuid4().hex, deadline=deadline())
         try:
             receipt = await ctx.operations.execute(intent, timeout=WAIT)
@@ -298,8 +301,20 @@ class Guard(Plugin):
         if CommandQueries.parse_testfor(receipt).known or CommandResult(receipt).is_success:
             return None
         if below_level(receipt):
-            return ('level', config.level_message.replace('{level}', str(config.min_level)),
-                    f'等级低于 {config.min_level} 级')
+            # 玩家刚进服时可能还没生成实体；先确认实体确实在场，再判定等级不足，避免误踢。
+            presence_intent = ctx.command_queries.testfor(target, idempotency_key=uuid4().hex, deadline=deadline())
+            try:
+                presence = await ctx.operations.execute(presence_intent, timeout=WAIT)
+            except (OperationWaitTimeout, IPCRejected) as error:
+                ctx.log.warning('level check presence unavailable, %s allowed: %s',
+                                player['name'], type(error).__name__)
+                return None
+            if CommandQueries.parse_testfor(presence).known or CommandResult(presence).is_success:
+                return ('level', config.level_message.replace('{level}', str(config.min_level)),
+                        f'等级低于 {config.min_level} 级')
+            ctx.log.warning('level check inconclusive (entity absent), %s allowed: %s',
+                            player['name'], presence['state'])
+            return None
         ctx.log.warning('level check inconclusive, %s allowed: %s', player['name'], receipt['state'])
         return None
 
@@ -344,8 +359,8 @@ class Guard(Plugin):
         else:
             return False
 
+        self.messages.pop(name, None)   # 违规后（包括人已下线时）清空计数，下一次违规再重计
         player = await self.resolve(ctx, name, body.get('xuid'))
-        del self.messages[name]   # 违规后重新计数，下一次违规要再刷一轮
         strikes = self.strikes.setdefault(name, deque())
         strikes.append(now)
         if len(strikes) <= config.spam_warnings:
@@ -354,7 +369,7 @@ class Guard(Plugin):
         else:
             del self.strikes[name]
             action, message = ('punish' if config.spam_punish_commands else 'kick'), config.spam_punish_message
-        await self.dispose(ctx, event.payload, player, 'spam', action, message, detail)
+        await self.dispose(ctx, event, player, 'spam', action, message, detail)
         return True
 
     def forget(self, config, now):
@@ -368,12 +383,12 @@ class Guard(Plugin):
 
     # ---- 处置与记录 ----
 
-    async def dispose(self, ctx, event_payload, player, rule, action, message, detail):
+    async def dispose(self, ctx, event, player, rule, action, message, detail):
         config, name = ctx.config, player['name']
         target = player_target(name)
         delay = config.kick_delay_seconds
         async with self.lock:
-            tx = await ctx.storage.transaction(event=event_payload, keys=[RECORDS])
+            tx = await event.transaction(keys=[RECORDS])
             records = tx.get(RECORDS, [])
             records.append({'at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                             'player': name, 'uuid': player['uuid'], 'rule': rule,
@@ -408,17 +423,18 @@ class Guard(Plugin):
                 tx = await ctx.storage.transaction(keys=[])
                 tx.action(self.kick_intent(ctx, name, message, commit_id))
                 await tx.save()
-            except (CommitUncertain, IPCRejected) as error:
+            except (IPCError, ProtocolError, TimeoutError, ValueError) as error:
                 # 没有事件可以重投；玩家下次进服或再刷屏时会重新检查。
                 ctx.log.warning('kick not committed: %s', type(error).__name__)
 
     async def show(self, ctx, command):
         name = command.player['name']
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[RECORDS])
+            tx = await command.event.transaction(keys=[RECORDS])
             if not listed(ctx.config.admins, command.player):
                 text = '只有管理员可以查看处置记录。'
-            elif command.args and not (command.args[0].isdigit() and 1 <= int(command.args[0]) <= 20):
+            elif command.args and not (
+                    command.args[0].isascii() and command.args[0].isdigit() and 1 <= int(command.args[0]) <= 20):
                 text = '条数请填 1 到 20 之间的数字，例如 !守卫记录 10'
             else:
                 count = int(command.args[0]) if command.args else 5

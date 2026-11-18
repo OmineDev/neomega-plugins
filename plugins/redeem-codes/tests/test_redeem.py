@@ -5,13 +5,14 @@ from datetime import date
 import json
 import logging
 from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from neomega_runtime import Event, PluginContext
 from neomega_runtime.config import load_config
-from neomega_runtime.config_schema import schema_for_config
+from neomega_runtime.config_schema import check_config_schema, schema_for_config
 from neomega_runtime.managed import IPCRejected
 from neomega_runtime.operations import Operations
 from neomega_runtime.services import ServiceWaitTimeout
@@ -162,15 +163,25 @@ class RedeemTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.values, {'code:vip2026': 1, 'use:vip2026:u-玩家': 1})
 
     async def test_foreign_write_between_read_and_commit_is_rejected_whole(self):
-        # Another commit lands while the coin grant is in flight: the snapshot is stale.
-        async def grant(*args, **kwargs):
-            self.host.revision += 1
-            return {'balance': 50, 'duplicate': False}
-        self.ctx.services.call = AsyncMock(side_effect=grant)
+        # An unrelated commit during grant does not cause a false conflict; a conflict at commit time
+        # rejects the whole transaction and redelivery dedupes on the same request_id.
+        orig_call = self.host.call
+        bumped = False
+
+        async def conflict_once(method, payload, timeout=None):
+            nonlocal bumped
+            if method == 'events.commit' and not bumped:
+                bumped = True
+                self.host.revision += 1
+            return await orig_call(method, payload, timeout=timeout)
+
+        self.host.call = conflict_once
+        self.ctx.services.call = AsyncMock(return_value={'balance': 50, 'duplicate': False})
         with self.assertRaises(IPCRejected):
             await self.plugin.on_event(self.ctx, self.event('!兑换 COINS'))
         self.assertEqual((self.host.values, self.host.commits), ({}, []))
         # Redelivery evaluates again from fresh state; economy dedupes on the same request_id.
+        self.host.call = orig_call
         self.ctx.services.call = AsyncMock(return_value={'balance': 50, 'duplicate': True})
         await self.say('!兑换 COINS')
         self.assertEqual(self.host.values['code:coins'], 1)
@@ -239,9 +250,77 @@ class RedeemTests(unittest.IsolatedAsyncioTestCase):
         Settings(codes=[Code('新年-快乐_2026', coins=1, expires='2026-12-31')])
 
     def test_static_schema_and_example_match_settings(self):
-        self.assertEqual(json.loads((ROOT / 'config.schema.json').read_text()), schema_for_config(Settings))
+        schema = json.loads((ROOT / 'config.schema.json').read_text())
+        check_config_schema(schema)
+        self.assertEqual(schema, schema_for_config(Settings))
         example = load_config(Settings, ROOT / 'config.example.json')
         self.assertEqual(example.codes[0].code, 'XINSHOU2026')
+        manifest = json.loads((ROOT / 'manifest.json').read_text())
+        self.assertIn('event:chat.received', manifest['permissions']['purposes'])
+        self.assertIn('service:plugin.neomega.economy.grant', manifest['permissions']['purposes'])
+
+    async def test_player_target_validated_before_grant_and_lock_released_during_rpc(self):
+        self.ctx.services.call = AsyncMock(return_value={'balance': 50, 'duplicate': False})
+        await self.plugin.on_event(self.ctx, self.event('!兑换 COINS', name='bad"name', token='dbad'))
+        self.ctx.services.call.assert_not_awaited()
+
+        self.plugin, self.ctx = await self.start(Settings(codes=[
+            Code('ONE', ['give {player} stick 1'], coins=10, total_uses=1),
+        ]))
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_grant(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return {'balance': 10, 'duplicate': False}
+
+        self.ctx.services.call = AsyncMock(side_effect=slow_grant)
+        first = asyncio.create_task(self.plugin.on_event(self.ctx, self.event('!兑换 ONE', name='甲', token='d1')))
+        await entered.wait()
+        # Same-code concurrent redemption is atomically blocked without waiting on slow RPC,
+        # and unrelated chat events also complete immediately without blocking on self.lock.
+        await self.plugin.on_event(self.ctx, self.event('!兑换 ONE', name='乙', token='d2'))
+        self.assertEqual(self.host.reply(), '这个兑换码已经被领完了。')
+        await self.plugin.on_event(self.ctx, self.event('你好', name='丙', token='d3'))
+        self.assertEqual(self.host.commits[-1]['delivery_token'], 'd3')
+        release.set()
+        await first
+        self.assertEqual(self.ctx.services.call.await_count, 1)
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': '玩家', 'xuid': 'x-玩家', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('redeem-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await RedeemCodes().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':

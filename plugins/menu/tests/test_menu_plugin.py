@@ -6,11 +6,15 @@ import asyncio
 import copy
 import json
 import logging
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from neomega_runtime import Event, PluginContext, ServiceRejected
+from neomega_runtime.config import load_config
+from neomega_runtime.config_schema import check_config_schema, schema_for_config
 from neomega_runtime.managed import IPCRejected
 from neomega_runtime.operations import Operations
 from neomega_runtime.services import ServiceUncertain, ServiceWaitTimeout
@@ -360,6 +364,93 @@ class MenuTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 Settings(**options)
         Settings(items=[Item('a', ['say a'], trigger='帮助')])  # 不接管时 !帮助 可以给菜单项用
+
+    def test_schema_example_and_purposes_match_settings(self):
+        root = Path(__file__).resolve().parents[1]
+        schema = json.loads((root / 'config.schema.json').read_text())
+        check_config_schema(schema)
+        self.assertEqual(schema, schema_for_config(Settings))
+        loaded = load_config(Settings, root / 'config.example.json')
+        self.assertEqual(loaded, Settings())
+        manifest = json.loads((root / 'manifest.json').read_text())
+        purposes = manifest['permissions']['purposes']
+        self.assertIn('event:chat.received', purposes)
+        self.assertIn('operation:framework.command.execute', purposes)
+
+    async def test_help_plugins_includes_new_catalog_apps(self):
+        await self.start(Settings(items=ITEMS, help_plugins=HelpPlugins(
+            back=True, warps=True, redeem_codes=True, titles=True, reports=True, redpacket=True)))
+        await self.chat('!指令')
+        text = self.host.last_reply()
+        for expected in ('!返回', '!传送点', '!兑换', '!称号', '!举报', '!发红包'):
+            self.assertIn(expected, text)
+
+    async def test_cooldown_rechecked_under_lock_after_confirm_and_spawn_guarded(self):
+        self.outcomes[BALANCE] = [{'balance': 50, 'currency': '金币'}]
+        paid = Item('限时面包', ['give {player} bread 8'], cost=5, cooldown_seconds=30)
+        await self.start(Settings(items=[paid]))
+        await self.say('!菜单')
+        await self.say('1')
+        # Simulate cooldown recorded while player was confirming.
+        self.host.values['cooldown:u1'] = {'限时面包': int(self.clock) + 25}
+        await self.say('1')
+        await asyncio.gather(*self.tasks)
+        self.tasks.clear()
+        self.assertEqual(self.pays(), [])
+        self.assertIn('还要等 25 秒', self.host.sent[-1])
+
+        # Unknown ServiceRejected and invalid player_target must not escape spawned task.
+        self.outcomes[BALANCE] = [{'balance': 50, 'currency': '金币'}]
+        self.outcomes[PAY] = [ServiceRejected('unexpected_reason')]
+        self.host.values.clear()
+        with self.assertLogs('menu-plugin-test', 'WARNING'):
+            await self.chat('!菜单', '1', '1')
+        self.assertEqual(self.host.sent[-1], '扣款失败，请稍后再试。')
+
+        self.ctx.resolve_player = AsyncMock(return_value={'name': 'bad"name', 'uuid': 'u2', 'xuid': '43'})
+        with self.assertLogs('menu-plugin-test', 'WARNING'):
+            await self.chat('!菜单', '1', '1')
+        self.assertEqual(self.pays(), [{'player_id': 'u1', 'amount': 5, 'reason': '限时面包',
+                                        'request_id': self.pays()[0]['request_id']}])
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': '玩家', 'xuid': '42', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+            {'kind': 'chat.received', 'payload': {'player': '玩家', 'xuid': '42', 'message': '!主城'},
+             'subscription_id': 'chat', 'event_id': 'ev2', 'delivery_token': 'dt2'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('menu-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            if method == 'players.list':
+                return {'session': 's1', 'players': [dict(PLAYER)]}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await Menu().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1', 'ev2'])
+        self.assertEqual(host.game_commands(), ['tp @a[name="玩家"] 0 100 0'])
 
 
 if __name__ == '__main__':

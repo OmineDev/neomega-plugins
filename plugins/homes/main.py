@@ -85,7 +85,7 @@ class Homes(Plugin):
             except (ValueError, PlayerNotFound, AmbiguousPlayer):
                 # 引号不配对、参数个数不对，或玩家已经下线：不回复，只确认事件。
                 pass
-        await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+        await (await event.transaction(keys=[])).save()
 
     def clock(self) -> float:
         return time.monotonic()
@@ -93,7 +93,9 @@ class Homes(Plugin):
     async def set_home(self, ctx, command):
         player, key = command.player, player_key(command.player)
         name = command.args[0] if command.args else DEFAULT_HOME
-        if not 1 <= len(name) <= MAX_NAME_LENGTH:
+        if not name.strip():
+            return await self.answer(ctx, command, '家的名字不能为空。')
+        if len(name) > MAX_NAME_LENGTH:
             return await self.answer(ctx, command, f'家的名字最长 {MAX_NAME_LENGTH} 个字。')
         try:
             sample = await ctx.positions.sample(target='players', name=player['name'], limit=1)
@@ -105,7 +107,7 @@ class Homes(Plugin):
         if entity['dimension'] not in DIMENSIONS:
             return await self.answer(ctx, command, '你所在的维度不能设家。')
 
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         homes = load_homes(tx, key)
         if name not in homes and len(homes) >= ctx.config.max_homes:
             self.reply(ctx, tx, player, f'你已经有 {len(homes)} 个家（上限 {ctx.config.max_homes} 个）：'
@@ -122,14 +124,17 @@ class Homes(Plugin):
     async def go_home(self, ctx, command):
         player, key = command.player, player_key(command.player)
         name = command.args[0] if command.args else DEFAULT_HOME
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         homes = load_homes(tx, key)
         home = homes.get(name)
         now = self.clock()
         wait = self.last_home.get(key, -math.inf) + ctx.config.cooldown_seconds - now
+        teleported = False
         if home is None:
             text = (f'你还没有叫「{name}」的家，已有的家：{home_list(homes)}。' if homes
                     else '你还没有设家，发送 !设家 把当前位置记为家。')
+        elif home.get('dimension') not in DIMENSIONS:
+            text = '这个家所在的维度不受支持，无法传送。'
         elif wait > 0:
             text = f'回家还在冷却中，请 {math.ceil(wait)} 秒后再试。'
         else:
@@ -139,15 +144,16 @@ class Homes(Plugin):
                 f'execute in {DIMENSIONS[home["dimension"]]} run tp {target} {where}',
                 idempotency_key=tx.commit_id + '_tp', deadline=deadline()))
             text = f'已传送到「{name}」。'
+            teleported = True
         self.reply(ctx, tx, player, text)
         await tx.save()
-        if home is not None and wait <= 0:
+        if teleported:
             self.last_home[key] = now
 
     async def delete_home(self, ctx, command):
         player, key = command.player, player_key(command.player)
         name = command.args[0]
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         homes = load_homes(tx, key)
         if name not in homes:
             text = (f'没有叫「{name}」的家，已有的家：{home_list(homes)}。' if homes else '你还没有设家。')
@@ -163,7 +169,7 @@ class Homes(Plugin):
 
     async def list_homes(self, ctx, command):
         player, key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         homes = load_homes(tx, key)
         text = (f'你的家（{len(homes)}/{ctx.config.max_homes}）：{home_list(homes)}。' if homes
                 else '你还没有设家，发送 !设家 把当前位置记为家。')
@@ -171,7 +177,7 @@ class Homes(Plugin):
         await tx.save()
 
     async def answer(self, ctx, command, text):
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+        tx = await command.event.transaction(keys=[])
         self.reply(ctx, tx, command.player, text)
         await tx.save()
 

@@ -21,8 +21,8 @@ import unicodedata
 import uuid
 
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
-                             PlayerNotFound, ServiceRejected, player_target)
-from neomega_runtime.managed import IPCRejected
+                             PlayerNotFound, ProtocolError, ServiceRejected, player_target)
+from neomega_runtime.managed import IPCError, IPCRejected
 from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
 from neomega_runtime.storage import CommitUncertain
 import neomega_menu as menu
@@ -77,6 +77,12 @@ class HelpPlugins:
     homes: bool = field(default=False, metadata={'title': '个人传送点'})
     tpa: bool = field(default=False, metadata={'title': '玩家互传'})
     online_time: bool = field(default=False, metadata={'title': '在线时长'})
+    back: bool = field(default=False, metadata={'title': '死亡点返回'})
+    warps: bool = field(default=False, metadata={'title': '传送点与主城'})
+    redeem_codes: bool = field(default=False, metadata={'title': '兑换码'})
+    titles: bool = field(default=False, metadata={'title': '称号与喇叭'})
+    reports: bool = field(default=False, metadata={'title': '举报与留言'})
+    redpacket: bool = field(default=False, metadata={'title': '口令红包'})
 
 
 # 官方插件的玩家命令，和各插件 README 一致；服主在 help_plugins 里勾选本服装了的。
@@ -89,6 +95,16 @@ KNOWN_COMMANDS = {
     'tpa': ('!tpa 玩家 — 请求传送到对方身边', '!tpahere 玩家 — 请求把对方拉过来',
             '!同意 / !拒绝 — 回应传送请求'),
     'online_time': ('!在线时长 — 查看在线时长', '!在线排行 — 查看在线时长排行'),
+    'back': ('!返回 — 传送回上次死亡地点', '!死亡点 — 查看上次死亡位置与剩余有效期'),
+    'warps': ('!传送点 — 查看公共传送点', '!传送 编号或名称 — 前往传送点',
+              '!主城 — 传送到主城', '!设重生点 — 把重生点设在当前位置'),
+    'redeem_codes': ('!兑换 兑换码 — 使用兑换码领取奖励',),
+    'titles': ('!称号 — 查看称号与指令', '!买称号 编号或名称 — 购买称号',
+               '!佩戴称号 编号或名称 — 佩戴称号', '!卸下称号 — 卸下称号', '!喇叭 内容 — 发送全服喇叭'),
+    'reports': ('!举报 玩家 原因 — 举报违规玩家', '!留言 内容 — 给管理员留言',
+                '!我的举报 — 查看提交进度与回复'),
+    'redpacket': ('!发红包 总金币 份数 [口令] — 发出拼手气或口令红包',
+                  '!抢 [口令或编号] — 领取红包', '!红包 — 查看当前可抢红包'),
 }
 
 
@@ -191,7 +207,7 @@ class Menu(Plugin):
             except (ValueError, PlayerNotFound, AmbiguousPlayer):
                 # 引号不配对、参数太多，或玩家已经下线：不回复，只确认事件。
                 pass
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await (await event.transaction(keys=[])).save()
 
     def now(self) -> float:
         return time.time()
@@ -203,31 +219,41 @@ class Menu(Plugin):
         admin = self.is_admin(ctx, player)
         return [item for item in ctx.config.items if admin or not item.admin_only]
 
+    def _spawn(self, ctx, coroutine, player):
+        async def guarded():
+            try:
+                await coroutine
+            except (IPCError, ServiceRejected, ProtocolError, TimeoutError, ValueError) as exc:
+                ctx.log.warning('menu background flow failed player=%s error=%s',
+                                player.get('name', '?'), exc)
+        return ctx.spawn(guarded())
+
     # ---- 聊天命令 ----
 
     async def open(self, ctx, command):
-        await (await ctx.storage.transaction(event=command.event.payload, keys=[])).save()
-        ctx.spawn(self.browse(ctx, command.player, command.args[0] if command.args else None))
+        await (await command.event.transaction(keys=[])).save()
+        self._spawn(ctx, self.browse(ctx, command.player, command.args[0] if command.args else None),
+                    command.player)
 
     async def help(self, ctx, command):
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+        tx = await command.event.transaction(keys=[])
         self.reply(ctx, tx, command.player['name'], self.help_text(ctx, command.player))
         await tx.save()
 
     async def shortcut(self, ctx, command, item):
         player = command.player
         if item.admin_only and not self.is_admin(ctx, player):
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+            tx = await command.event.transaction(keys=[])
             self.reply(ctx, tx, player['name'], f'「{item.name}」只有管理员可以使用。')
             await tx.save()
             return
         if item.cost:
             # 收费项目要等玩家确认，先确认事件，再在后台流程里扣款执行。
-            await (await ctx.storage.transaction(event=command.event.payload, keys=[])).save()
-            ctx.spawn(self.use(ctx, player, item))
+            await (await command.event.transaction(keys=[])).save()
+            self._spawn(ctx, self.use(ctx, player, item), player)
             return
         key = cooldown_key(player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         wait = self.cooldown_left(tx.get(key, {}), item)
         if wait:
             self.reply(ctx, tx, player['name'], f'「{item.name}」还要等 {wait} 秒才能再用。')
@@ -302,7 +328,7 @@ class Menu(Plugin):
                 page = (page + (1 if word in NEXT_WORDS else -1)) % pages
                 error = ''
                 continue
-            if text.isdigit() and 1 <= int(text) <= len(options):
+            if text.isascii() and text.isdigit() and 1 <= int(text) <= len(options):
                 return int(text) - 1
             attempts += 1
             error = f'没有这个选项，请输入 1-{len(options)} 之间的编号。'
@@ -311,6 +337,7 @@ class Menu(Plugin):
 
     async def use(self, ctx, player, item):
         """菜单选中或收费快捷指令：检查冷却，收费项目确认并扣款，然后执行。"""
+        player_target(player['name'])
         key = cooldown_key(player)
         wait = self.cooldown_left(await ctx.storage.get(key, {}), item)
         if wait:
@@ -324,6 +351,11 @@ class Menu(Plugin):
                 return
             have = '' if balance is None else f'（你有 {balance} {coin}）'
             if not await menu.confirm(ctx, player, f'「{item.name}」需要 {item.cost} {coin}{have}，确认吗？'):
+                return
+            async with self.lock:
+                wait = self.cooldown_left(await ctx.storage.get(key, {}), item)
+            if wait:
+                await menu.say(ctx, player, f'「{item.name}」还要等 {wait} 秒才能再用。')
                 return
             arguments = {'player_id': player_id(player), 'amount': item.cost,
                          'reason': item.name[:32], 'request_id': uuid.uuid4().hex}
@@ -339,7 +371,10 @@ class Menu(Plugin):
                     await menu.say(ctx, player, UNCERTAIN_CHARGE)
                     return
                 if error.code != 'insufficient_funds':
-                    raise
+                    ctx.log.warning('menu charge rejected player=%s item=%s code=%s',
+                                    player['name'], item.name, error.code)
+                    await menu.say(ctx, player, '扣款失败，请稍后再试。')
+                    return
                 _, balance, coin = await self.wallet(ctx, player)
                 await menu.say(ctx, player, f'{coin}不足，需要 {item.cost} {coin}。' if balance is None
                                else f'{coin}不足，需要 {item.cost} {coin}，你现在有 {balance} {coin}。')
@@ -350,18 +385,31 @@ class Menu(Plugin):
             # duplicate=True 表示这笔扣款之前已经成功，同样执行。
             coin, request_id = result.get('currency', coin), arguments['request_id']
             done = f'已执行「{item.name}」，花费 {item.cost} {coin}，剩余 {result["balance"]} {coin}。'
+        wait_on_commit = 0
         async with self.lock:
             tx = await ctx.storage.transaction(keys=[key])
-            self.execute(ctx, tx, player, item, done)
-            try:
-                await tx.save()
-                return
-            except CommitUncertain:
-                # 收费项目已经扣款，不退款；日志里的 request_id 对应经济插件流水，供管理员核对。
-                ctx.log.warning('menu execution uncertain player=%s item=%s request_id=%s',
-                                player['name'], item.name, request_id)
-        await menu.say(ctx, player, '执行结果不确定，请联系管理员。' if request_id
-                       else '执行结果不确定，请稍后查看效果再决定是否重试。')
+            if not item.cost:
+                wait_on_commit = self.cooldown_left(tx.get(key, {}), item)
+            if not wait_on_commit:
+                self.execute(ctx, tx, player, item, done)
+                try:
+                    await tx.save()
+                    return
+                except CommitUncertain:
+                    # 收费项目已经扣款，不退款；日志里的 request_id 对应经济插件流水，供管理员核对。
+                    ctx.log.warning('menu execution uncertain player=%s item=%s request_id=%s',
+                                    player['name'], item.name, request_id)
+                    request_id_uncertain = True
+                else:
+                    request_id_uncertain = False
+            else:
+                request_id_uncertain = False
+        if wait_on_commit:
+            await menu.say(ctx, player, f'「{item.name}」还要等 {wait_on_commit} 秒才能再用。')
+            return
+        if request_id_uncertain:
+            await menu.say(ctx, player, '执行结果不确定，请联系管理员。' if request_id
+                           else '执行结果不确定，请稍后查看效果再决定是否重试。')
 
     # ---- 执行、冷却与经济 ----
 

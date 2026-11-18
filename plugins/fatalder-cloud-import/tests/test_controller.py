@@ -2,15 +2,22 @@ import asyncio
 import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import timedelta
+import json
+import logging
 from pathlib import Path
 import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
-from fatalder_plugin.controller import Controller, now, expired
+from neomega_runtime import Event, PluginContext
+from neomega_runtime.operations import Operations
+
+from fatalder_plugin.controller import Controller, chunk_tellraw, now, expired
 from fatalder_plugin.client import WorkerClient
+from fatalder_plugin.durable import barrier
+from main import CloudImport
 
 
 class Store:
@@ -520,3 +527,175 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         await self.c.read_events('job')
         self.c.request.assert_not_called()
         self.assertEqual(self.c.state['cursor'],4)
+
+    async def test_sealed_or_barriered_handle_defers_ack_on_real_event(self):
+        self.c.state = dict(job_id='job', phase='succeeded')
+        self.assertEqual((await self.c.maintenance(dict(operation='seal', token='a')))['status'], 'sealed')
+        peer = SimpleNamespace(call=AsyncMock(return_value={}))
+        ev_ctx = PluginContext(SimpleNamespace(peer=peer, log=logging.getLogger('fatalder-test')), self.temp.name)
+        ev = Event(ev_ctx, {'kind': 'chat.received', 'payload': {'player': 'Admin', 'message': '!导入 状态'},
+                            'subscription_id': 'chat', 'event_id': 'e1', 'delivery_token': 'dt1'})
+        await self.c.handle(ev)
+        self.assertTrue(ev.ack_handled)
+        self.assertTrue(ev._deferred)
+        self.assertFalse(ev._acked)
+        peer.call.assert_not_awaited()
+
+        await self.c.maintenance(dict(operation='release', token='a'))
+        barrier(self.ctx).write_text(json.dumps({'commit_id': 'c1'}))
+        ev2 = Event(ev_ctx, {'kind': 'chat.received', 'payload': {'player': 'Admin', 'message': '!导入 状态'},
+                             'subscription_id': 'chat', 'event_id': 'e2', 'delivery_token': 'dt2'})
+        await self.c.handle(ev2)
+        self.assertTrue(ev2._deferred)
+        self.assertFalse(ev2._acked)
+
+    async def test_xuid_mismatch_and_word_boundary_rejected(self):
+        self.ctx.players = AsyncMock(return_value=[{'name': 'Admin', 'uuid': 'admin', 'xuid': '111'}])
+        # No word boundary after !导入 -> acked without executing command
+        ev_word = SimpleNamespace(kind='chat.received',
+                                  payload={'payload': {'message': '!导入测试 状态', 'player': 'Admin', 'xuid': '111'}},
+                                  ack=AsyncMock())
+        await self.c.handle(ev_word)
+        ev_word.ack.assert_awaited_once()
+        self.c.tell.assert_not_called()
+
+        # XUID mismatch -> acked without executing command
+        ev_xuid = SimpleNamespace(kind='chat.received',
+                                  payload={'payload': {'message': '!导入 状态', 'player': 'Admin', 'xuid': '999'}},
+                                  ack=AsyncMock())
+        await self.c.handle(ev_xuid)
+        ev_xuid.ack.assert_awaited_once()
+        self.c.tell.assert_not_called()
+
+    async def test_tell_chunks_long_messages_within_320_bytes(self):
+        actions = []
+
+        class CmdStore:
+            def __init__(self):
+                self.values = {}
+            async def transaction(self, commit_id=None, keys=None):
+                async def save():
+                    return {}
+                return SimpleNamespace(set=lambda k, v: None,
+                                       action=lambda intent: actions.append(intent),
+                                       save=save)
+
+        ctx = SimpleNamespace(
+            storage=CmdStore(),
+            data_dir=self.temp.name,
+            commands=SimpleNamespace(prepare=lambda cmd, **kw: {'cmd': cmd, **kw}),
+            config=self.ctx.config,
+        )
+        ctrl = Controller(ctx, self.client, self.operator)
+        await ctrl.tell('Admin', '甲' * 150)
+        self.assertGreater(len(actions), 1)
+        for act in actions:
+            self.assertLessEqual(len(act['cmd'].encode('utf-8')), 320)
+        self.assertEqual(len(chunk_tellraw('@a[name="Admin"]', '甲' * 150)), len(actions))
+
+    async def test_prepare_releases_lock_during_upload_and_http(self):
+        self.c.state = {}
+        root = self.c.files_root()
+        (root / 'house.bdx').write_bytes(b'building')
+        ref = dict(object_id='obj', sha256='sha256:' + 'a' * 64, size_bytes=8, display_name='house.bdx')
+        upload_entered, upload_release = threading.Event(), threading.Event()
+        http_entered, http_release = asyncio.Event(), asyncio.Event()
+
+        def slow_upload(_):
+            upload_entered.set()
+            upload_release.wait(5)
+            return ref
+
+        async def slow_prepare(method, path, body):
+            self.assertFalse(self.c.lock.locked())
+            http_entered.set()
+            await http_release.wait()
+            return dict(job_id='j', quote=dict(quote_id='q', amount=10, currency='unit', units=1,
+                                               expires_at=(now() + timedelta(seconds=30)).isoformat()))
+
+        self.client.upload = slow_upload
+        self.c.request.side_effect = slow_prepare
+        task = asyncio.create_task(self.c.command('Admin', ['house.bdx', '1', '64', '2', 'overworld']))
+        await asyncio.to_thread(upload_entered.wait, 5)
+        self.assertFalse(self.c.lock.locked())
+        self.assertEqual((await self.c.maintenance(dict(operation='seal', token='a')))['status'], 'busy')
+        upload_release.set()
+
+        await http_entered.wait()
+        self.assertFalse(self.c.lock.locked())
+        self.assertEqual((await self.c.maintenance(dict(operation='seal', token='a')))['status'], 'busy')
+        http_release.set()
+        await task
+        self.assertEqual(self.c.state['phase'], 'quoted')
+
+    async def test_on_maintenance_token_fallback(self):
+        plugin = CloudImport()
+        res = await plugin.on_maintenance(self.ctx, {'operation': 'seal', 'token': 'tok-1'})
+        self.assertEqual(res, {'status': 'unsupported', 'token': 'tok-1'})
+        res2 = await self.c.maintenance({'operation': 'unknown', 'token': 'tok-2'})
+        self.assertEqual(res2, {'status': 'unsupported', 'token': 'tok-2'})
+
+    async def test_serve_ack_lifecycle(self):
+        commits = []
+        state = {'revision': 0, 'values': {}}
+
+        async def call(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            if method == 'state.get':
+                keys = payload.get('keys')
+                vals = state['values'] if keys is None else {k: state['values'][k] for k in keys if k in state['values']}
+                return {'revision': state['revision'], 'values': copy.deepcopy(vals), 'session': 's1'}
+            if method in ('state.commit', 'events.commit'):
+                state['revision'] += 1
+                commits.append(payload)
+                return {'commit_id': payload['commit_id'], 'revision': state['revision'],
+                        'duplicate': False, 'operation_ids': []}
+            if method == 'players.list':
+                return {'session': 's1', 'players': []}
+            if method == 'events.ack':
+                commits.append({'delivery_token': payload['delivery_token'], 'ack_only': True})
+                return {}
+            raise AssertionError(f'unexpected call {method}')
+
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': 'Steve', 'xuid': '2', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('fatalder-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                config = {
+                    'worker_url': 'https://worker.example.com',
+                    'api_key': 'secret:fatalder_api_key',
+                    'target_server_id': 'example',
+                    'rental_server_code': '123456',
+                    'admin_uuids': ['00000000-0000-4000-8000-000000000001'],
+                }
+                await self.callbacks['on_validate'](self.peer, {'config': config})
+                await self.callbacks['on_activate'](self.peer, {'config': config})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        peer = SimpleNamespace(call=call)
+        config = {
+            'worker_url': 'https://worker.example.com',
+            'api_key': 'secret:fatalder_api_key',
+            'target_server_id': 'example',
+            'rental_server_code': '123456',
+            'admin_uuids': ['00000000-0000-4000-8000-000000000001'],
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            (Path(tmp) / 'config.json').write_text(json.dumps(config))
+            await CloudImport().serve(peer, data_dir=tmp)
+        self.assertEqual([c['delivery_token'] for c in commits], ['dt1'])

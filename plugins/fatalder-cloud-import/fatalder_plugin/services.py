@@ -4,7 +4,7 @@ import json
 import secrets
 
 from neomega_runtime.services import ServiceRejected, service
-from .controller import TERMINAL, expired
+from .controller import MAX_SERVICE_HISTORY, TERMINAL, expired, history_key
 from .durable import barrier
 
 
@@ -52,9 +52,8 @@ class ServiceAdapter:
             state = self.controller.state
             record = state.get('service', {})
             identity = hashlib.sha256((call.installation_id + '\0' + key).encode()).hexdigest()
-            history = dict(state.get('service_history', {}))
-            if identity in history:
-                old = history[identity]
+            old = await self.controller.get_service_history(identity)
+            if old is not None:
                 if old['fingerprint'] != digest:
                     raise ServiceRejected('request_key_conflict')
                 return old['result']
@@ -62,19 +61,37 @@ class ServiceAdapter:
                 if record['fingerprint'] != digest:
                     raise ServiceRejected('request_key_conflict')
                 return self.public(state)
-            if state and (state.get('phase') not in TERMINAL or state.get('lease')
-                          or state.get('recovery_required') or self.controller.unresolved_controls() or self.controller.active_controls
-                          or any(not task.done() for task in self.controller.control_tasks)):
+            if (self.controller.preparing
+                    or (state and (state.get('phase') not in TERMINAL or state.get('lease')
+                                   or state.get('recovery_required') or self.controller.unresolved_controls()
+                                   or self.controller.active_controls
+                                   or any(not task.done() for task in self.controller.control_tasks)))):
                 raise ServiceRejected('import_slot_occupied')
+            ids = list(state.get('service_history_ids', []))
+            archive_extra = {}
             if record:
                 old_id = hashlib.sha256((record['owner'] + '\0' + record['request_key']).encode()).hexdigest()
-                history[old_id] = dict(fingerprint=record['fingerprint'], result=self.public(state))
-            if len(history) >= 256:
+                archive_extra[history_key(old_id)] = dict(fingerprint=record['fingerprint'], result=self.public(state))
+                if old_id not in ids:
+                    ids.append(old_id)
+            if len(ids) >= MAX_SERVICE_HISTORY:
                 raise ServiceRejected('retained_request_limit')
-            record = dict(owner=call.installation_id, request_key=key, fingerprint=digest,
-                          confirmation_key=secrets.token_hex(16))
-            # No chat command or invented player: preparation is a shared primitive.
-            await self.controller.prepare_import(None, [source, *map(str, xyz), dimension], record, history)
+            new_record = dict(owner=call.installation_id, request_key=key, fingerprint=digest,
+                              confirmation_key=secrets.token_hex(16))
+
+        # 慢速上传与 /v2/jobs/prepare 在 lock 外执行，避免阻塞维护检查与状态观测。
+        try:
+            await self.controller.prepare_import(
+                None, [source, *map(str, xyz), dimension],
+                new_record, archive_extra=archive_extra, history_ids=ids,
+            )
+        except ValueError as exc:
+            if str(exc) == 'import slot occupied':
+                raise ServiceRejected('import_slot_occupied') from None
+            if str(exc) == 'retained service request limit':
+                raise ServiceRejected('retained_request_limit') from None
+            raise
+        async with self.controller.lock:
             return self.public(self.controller.state)
 
     @service('status', with_context=True)
@@ -85,9 +102,9 @@ class ServiceAdapter:
             if not isinstance(key, str):
                 raise ServiceRejected('invalid_request_key')
             identity = hashlib.sha256((call.installation_id + '\0' + key).encode()).hexdigest()
-            history = self.controller.state.get('service_history', {})
-            if identity in history:
-                result = history[identity]['result']
+            historical = await self.controller.get_service_history(identity)
+            if historical is not None:
+                result = historical['result']
             else:
                 result = self.public(self.owned(args, call))
             if 'control_id' in args:
@@ -122,7 +139,7 @@ class ServiceAdapter:
             key = args.get('request_key')
             if isinstance(key, str):
                 identity = hashlib.sha256((call.installation_id + '\0' + key).encode()).hexdigest()
-                historical = self.controller.state.get('service_history', {}).get(identity)
+                historical = await self.controller.get_service_history(identity)
                 if historical is not None:
                     result = historical['result']
                     if args.get('job_id') != result.get('job_id'):

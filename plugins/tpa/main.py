@@ -9,7 +9,8 @@ import math
 import time
 
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
-                             PlayerNotFound, player_target)
+                             PlayerNotFound, ProtocolError, player_target)
+from neomega_runtime.managed import IPCError
 
 GO, BRING = 'go', 'bring'   # 发起人去对方身边 / 把对方拉到发起人身边
 
@@ -28,10 +29,16 @@ def deadline() -> str:
 
 
 def match(names, query):
-    """完全相同的名字优先，否则取唯一的不区分大小写前缀匹配；返回匹配到的名字列表。"""
+    """完全相同的名字优先（含不区分大小写精确匹配），否则取前缀匹配；空查询返回空列表。"""
+    if not query:
+        return []
     if query in names:
         return [query]
-    return [name for name in names if name.casefold().startswith(query.casefold())]
+    folded = query.casefold()
+    exact = [name for name in names if name.casefold() == folded]
+    if exact:
+        return exact
+    return [name for name in names if name.casefold().startswith(folded)]
 
 
 class Tpa(Plugin):
@@ -41,6 +48,7 @@ class Tpa(Plugin):
         # 被请求人 -> {发起人: (类型, 过期时间)}，字典顺序即发起顺序，最后一条最新。
         self.requests: dict[str, dict[str, tuple[str, float]]] = {}
         self.last_sent: dict[str, float] = {}
+        self.bot_name: str | None = None
         # 全角感叹号是中文输入法的默认输出，两个前缀都接受。
         self.routers = (ctx.chat, ChatRouter(prefix='！'))
         for router in self.routers:
@@ -60,13 +68,27 @@ class Tpa(Plugin):
     async def on_event(self, ctx: PluginContext, event: Event):
         if event.kind == 'chat.received':
             try:
+                bot = await self.bot(ctx)
+                payload = event.payload.get('payload')
+                if isinstance(payload, dict) and bot and payload.get('player') == bot:
+                    await (await event.transaction(keys=[])).save()
+                    return
                 for router in self.routers:
                     if await router.dispatch(event):
                         return
             except (ValueError, PlayerNotFound, AmbiguousPlayer):
                 # 引号不配对、参数个数不对，或玩家已经下线：不回复，只确认事件。
                 pass
-        await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+        await (await event.transaction(keys=[])).save()
+
+    async def bot(self, ctx) -> str | None:
+        try:
+            name = (await ctx.robot()).get('bot_name')
+        except (IPCError, ProtocolError, TimeoutError, ConnectionError, OSError):
+            return self.bot_name
+        if name:
+            self.bot_name = name
+        return self.bot_name
 
     def now(self) -> float:
         return time.monotonic()
@@ -84,9 +106,10 @@ class Tpa(Plugin):
 
     async def ask(self, ctx, command, kind):
         me = command.player['name']
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+        bot = await self.bot(ctx)
+        tx = await command.event.transaction(keys=[])
         wait = self.last_sent.get(me, -math.inf) + ctx.config.cooldown_seconds - self.now()
-        names = [player['name'] for player in await ctx.players()] if wait <= 0 else []
+        names = [player['name'] for player in await ctx.players() if player['name'] != bot] if wait <= 0 else []
         found = match(names, command.args[0])
         if wait > 0:
             self.reply(ctx, tx, me, f'请求太频繁了，请 {math.ceil(wait)} 秒后再试。')
@@ -115,9 +138,11 @@ class Tpa(Plugin):
 
     async def answer(self, ctx, command, accept):
         me = command.player['name']
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+        bot = await self.bot(ctx)
+        tx = await command.event.transaction(keys=[])
         requests = self.pending(me)
         found = match(list(requests), command.args[0]) if command.args else list(requests)[-1:]
+        remove_sender = None
         if not found:
             self.reply(ctx, tx, me, f'没有来自“{command.args[0]}”的传送请求。' if command.args
                        else '你没有待处理的传送请求。')
@@ -125,20 +150,27 @@ class Tpa(Plugin):
             self.reply(ctx, tx, me, f'有多位玩家的请求匹配“{command.args[0]}”：{"、".join(found)}，请输入更完整的名字。')
         else:
             sender = found[0]
-            kind, _ = requests.pop(sender)
-            online = [player['name'] for player in await ctx.players()]
+            kind, _ = requests[sender]
+            online = [player['name'] for player in await ctx.players() if player['name'] != bot]
             if sender not in online:
                 self.reply(ctx, tx, me, f'{sender} 已经下线，这条请求已失效。')
+                remove_sender = sender
             elif not accept:
                 self.reply(ctx, tx, me, f'已拒绝 {sender} 的传送请求。')
                 self.reply(ctx, tx, sender, f'{me} 拒绝了你的传送请求。', 'notify')
+                remove_sender = sender
             else:
                 mover, place = (sender, me) if kind == GO else (me, sender)
                 tx.action(ctx.commands.prepare(f'tp {player_target(mover)} {player_target(place)}',
                                                idempotency_key=tx.commit_id + '_tp', deadline=deadline()))
                 self.reply(ctx, tx, me, f'已同意 {sender} 的传送请求。')
                 self.reply(ctx, tx, sender, f'{me} 同意了你的传送请求。', 'notify')
+                remove_sender = sender
         await tx.save()
+        if remove_sender is not None:
+            requests.pop(remove_sender, None)
+            if not requests:
+                self.requests.pop(me, None)
 
     def reply(self, ctx, tx, name, text, tag='reply'):
         plan = ctx.notifications.prepare(name, text, idempotency_key=f'{tx.commit_id}_{tag}',

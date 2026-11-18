@@ -87,7 +87,7 @@ class Settings:
 
 def valid_name(name: str) -> bool:
     # 纯数字留给编号，首尾空格和控制字符容易看错。
-    return (1 <= len(name) <= MAX_NAME_LENGTH and not name.isdigit()
+    return (1 <= len(name) <= MAX_NAME_LENGTH and not (name.isascii() and name.isdigit())
             and name.isprintable() and name.strip() == name)
 
 
@@ -126,7 +126,7 @@ def place_text(place) -> str:
 
 def find(warps, query):
     """按编号（从 1 开始）或不区分大小写的名称找传送点。"""
-    if query.isdigit():
+    if query.isascii() and query.isdigit():
         index = int(query) - 1
         return warps[index] if 0 <= index < len(warps) else None
     return next((warp for warp in warps if warp[0].casefold() == query.casefold()), None)
@@ -168,7 +168,7 @@ class Warps(Plugin):
             except (ValueError, PlayerNotFound, AmbiguousPlayer):
                 # 引号不配对、参数个数不对，或玩家已经下线：不回复，只确认事件。
                 pass
-        await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+        await (await event.transaction(keys=[])).save()
 
     def clock(self) -> float:
         # 冷却跨重启保存，所以用墙上时间而不是 monotonic。
@@ -196,7 +196,7 @@ class Warps(Plugin):
     # ---- 玩家命令 ----
 
     async def list_warps(self, ctx, command):
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[WARPS])
+        tx = await command.event.transaction(keys=[WARPS])
         warps = self.all_warps(ctx, tx)
         if not warps:
             text = '还没有公共传送点。'
@@ -214,41 +214,40 @@ class Warps(Plugin):
         if not command.args:
             return await self.list_warps(ctx, command)
         query = command.args[0]
-        tx = await ctx.storage.transaction(event=command.event.payload,
-                                           keys=[WARPS, player_key(command.player)])
-        found = find(self.all_warps(ctx, tx), query)
+        snap = await ctx.storage.transaction(keys=[WARPS, player_key(command.player)])
+        found = find(self.all_warps(ctx, snap), query)
         if found is None:
-            self.reply(ctx, tx, command.player, f'没有找到传送点「{query}」，发送 !传送点 查看全部。')
-            return await tx.save()
-        await self.teleport(ctx, tx, command, found[1], found[0], f'「{found[0]}」')
+            return await self.answer(ctx, command, f'没有找到传送点「{query}」，发送 !传送点 查看全部。')
+        await self.teleport(ctx, snap, command, found[1], found[0], f'「{found[0]}」')
 
     async def go_city(self, ctx, command):
-        tx = await ctx.storage.transaction(event=command.event.payload,
-                                           keys=[CITY, player_key(command.player)])
-        place = self.city(ctx, tx)
+        snap = await ctx.storage.transaction(keys=[CITY, player_key(command.player)])
+        place = self.city(ctx, snap)
         if place is None:
-            self.reply(ctx, tx, command.player, '服务器还没有设置主城。')
-            return await tx.save()
-        await self.teleport(ctx, tx, command, place, '主城', '主城')
+            return await self.answer(ctx, command, '服务器还没有设置主城。')
+        await self.teleport(ctx, snap, command, place, '主城', '主城')
 
-    async def teleport(self, ctx, tx, command, place, label, where):
+    async def teleport(self, ctx, snap, command, place, label, where):
         player, key = command.player, player_key(command.player)
-        record = tx.get(key, {})
+        record = snap.get(key, {})
         now, cooldown = self.clock(), ctx.config.teleport_cooldown_seconds
         # 时钟被调回时也不会比一次冷却更久。
         wait = min(record.get('teleport', -math.inf) + cooldown - now, cooldown)
         if wait > 0:
-            self.reply(ctx, tx, player, f'传送还在冷却中，请 {math.ceil(wait)} 秒后再试。')
-            return await tx.save()
+            return await self.answer(ctx, command, f'传送还在冷却中，请 {math.ceil(wait)} 秒后再试。')
+        if place.get('dimension') not in DIMENSIONS:
+            return await self.answer(ctx, command, '这个传送点所在的维度不受支持，无法传送。')
+        target = player_target(player['name'])
         paid, note = await self.charge(ctx, command, label)
         if not paid:
-            self.reply(ctx, tx, player, note)
-            return await tx.save()
-        record['teleport'] = now
+            return await self.answer(ctx, command, note)
+        tx = await command.event.transaction(keys=[key])
+        record = tx.get(key, {})
+        record['teleport'] = self.clock()
         tx.set(key, record)
         coordinates = ' '.join(coordinate(place[axis]) for axis in 'xyz')
         tx.action(ctx.commands.prepare(
-            f'execute in {DIMENSIONS[place["dimension"]]} run tp {player_target(player["name"])} {coordinates}',
+            f'execute in {DIMENSIONS[place["dimension"]]} run tp {target} {coordinates}',
             idempotency_key=tx.commit_id + '_tp', deadline=deadline()))
         self.reply(ctx, tx, player, f'已传送到{where}。' + note)
         await tx.save()
@@ -287,7 +286,7 @@ class Warps(Plugin):
         if entity is None:
             return
         player, key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         record = tx.get(key, {})
         now, cooldown = self.clock(), ctx.config.spawnpoint_cooldown_seconds
         wait = min(record.get('spawnpoint', -math.inf) + cooldown - now, cooldown)
@@ -321,10 +320,10 @@ class Warps(Plugin):
         entity = await self.locate(ctx, command)
         if entity is None:
             return
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[WARPS])
+        tx = await command.event.transaction(keys=[WARPS])
         stored = tx.get(WARPS, {})
         existing = next((key for key in stored if key.casefold() == name.casefold()), None)
-        if existing is None and len(ctx.config.warps) + len(stored) >= MAX_WARPS:
+        if existing is None and len(self.all_warps(ctx, tx)) >= MAX_WARPS:
             self.reply(ctx, tx, command.player, f'传送点已经有 {MAX_WARPS} 个了，先用 !删传送点 删掉一些。')
             return await tx.save()
         description = command.args[1] if len(command.args) > 1 else \
@@ -343,10 +342,10 @@ class Warps(Plugin):
         if not self.is_admin(ctx, command.player):
             return await self.answer(ctx, command, '只有管理员可以删除传送点。')
         query = command.args[0]
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[WARPS])
+        tx = await command.event.transaction(keys=[WARPS])
         stored = tx.get(WARPS, {})
         # 按名称删时先找游戏里设的，被同名预设遮住的旧传送点也能删掉。
-        found = None if query.isdigit() else next(
+        found = None if (query.isascii() and query.isdigit()) else next(
             ((key, stored[key], False) for key in stored if key.casefold() == query.casefold()), None)
         found = found or find(self.all_warps(ctx, tx), query)
         if found is None:
@@ -369,7 +368,7 @@ class Warps(Plugin):
         entity = await self.locate(ctx, command)
         if entity is None:
             return
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[CITY])
+        tx = await command.event.transaction(keys=[CITY])
         place = {'dimension': entity['dimension'],
                  **{axis: round(value, 1) for axis, value in feet(entity).items()}}
         tx.set(CITY, place)
@@ -379,7 +378,7 @@ class Warps(Plugin):
     async def delete_city(self, ctx, command):
         if not self.is_admin(ctx, command.player):
             return await self.answer(ctx, command, '只有管理员可以清除主城。')
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[CITY])
+        tx = await command.event.transaction(keys=[CITY])
         fallback = '现在使用插件设置里的主城坐标。' if ctx.config.city_enabled else '现在没有主城。'
         if tx.get(CITY) is None:
             text = '游戏里没有设置过主城，' + fallback
@@ -407,7 +406,7 @@ class Warps(Plugin):
         return entity
 
     async def answer(self, ctx, command, text):
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+        tx = await command.event.transaction(keys=[])
         self.reply(ctx, tx, command.player, text)
         await tx.save()
 

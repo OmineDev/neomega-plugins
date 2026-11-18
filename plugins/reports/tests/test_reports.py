@@ -1,4 +1,5 @@
 """Drive the plugin through the real SDK storage against an in-memory Host."""
+import asyncio
 import copy
 import dataclasses
 import json
@@ -7,7 +8,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from neomega_runtime import Event, PluginContext, ProtocolError
 from neomega_runtime.config import load_config
@@ -15,9 +16,10 @@ from neomega_runtime.config_errors import ConfigError
 from neomega_runtime.config_schema import check_config_schema, schema_for_config
 from neomega_runtime.managed import IPCRejected
 from neomega_runtime.operations import Operations
-from main import Reports, Settings
+from main import MAX_INBOX_ITEMS, Reports, Settings
 
 ROOT = Path(__file__).resolve().parents[1]
+ROBOT = {'name': '机器人', 'uuid': 'u-bot', 'xuid': '0'}
 ADMIN = {'name': 'Admin', 'uuid': 'u-admin', 'xuid': '1'}
 ADMIN2 = {'name': 'Mod', 'uuid': 'u-mod', 'xuid': '2'}
 STEVE = {'name': 'Steve', 'uuid': 'u-steve', 'xuid': '3'}
@@ -26,14 +28,17 @@ BOB = {'name': 'Bob', 'uuid': 'u-bob', 'xuid': '5'}
 
 
 class FakeHost:
-    """players.list and state.get / state.commit / events.commit with global revision CAS."""
+    """players.list, robot.status and state.get / state.commit / events.commit with global revision CAS."""
     def __init__(self):
         self.values, self.revision, self.commits = {}, 0, []
         self.online = [dict(ADMIN), dict(STEVE), dict(ALEX)]
+        self.bot_name = ROBOT['name']
 
     async def call(self, method, payload, timeout=None):
         if method == 'players.list':
             return {'session': 's1', 'players': copy.deepcopy(self.online)}
+        if method == 'robot.status':
+            return {'session': 's1', 'in_game': True, 'bot_name': self.bot_name, 'player_count': len(self.online)}
         if method == 'state.get':
             keys = payload.get('keys')
             values = self.values if keys is None else {k: self.values[k] for k in keys if k in self.values}
@@ -61,7 +66,12 @@ class FakeHost:
         return ''.join(texts)
 
     def board(self):
-        return self.values.get('board', {'next_id': 1, 'records': []})
+        if 'board' in self.values:
+            return self.values['board']
+        index = self.values.get('index', {'next_id': 1, 'entries': []})
+        records = [self.values[f'report:{row[0]}'] for row in index.get('entries', [])
+                   if f'report:{row[0]}' in self.values]
+        return {'next_id': index.get('next_id', 1), 'records': records}
 
 
 def pos_sample(*rows):
@@ -511,6 +521,134 @@ class ConfigTests(unittest.TestCase):
                       {'allow_feedback': 'yes'}, {'unknown': 1}):
             with self.subTest(value=value), self.assertRaises(ConfigError):
                 self.load(value)
+
+
+class ReportsScaleAndMigrationTests(ReportsTests):
+    async def test_legacy_board_migrates_seamlessly_and_deletes_board(self):
+        legacy_records = [
+            {
+                'id': i,
+                'kind': 'report' if i % 2 else 'feedback',
+                'status': 'resolved' if i <= 20 else 'open',
+                'reporter': 'Steve',
+                'reporter_pid': '' if i == 1 else 'u-steve',
+                'target': 'Alex' if i % 2 else '',
+                'reason': f'旧版记录 {i}',
+                'created_at': '2026-10-01T12:00:00+08:00',
+                'reporter_pos': None,
+                'target_pos': None,
+                **({'reply': '已处理', 'resolved_by': 'Admin', 'resolved_at': '2026-10-01T13:00:00+08:00'}
+                   if i <= 20 else {}),
+            }
+            for i in range(1, 121)
+        ]
+        self.host.values['board'] = {'next_id': 121, 'records': legacy_records}
+        self.ctx = await self.start(Settings(admins=['admin', 'mod']))
+        self.mono += 5.0
+
+        self.assertNotIn('board', self.host.values)
+        self.assertIn('index', self.host.values)
+        self.assertEqual(len(self.host.board()['records']), 120)
+
+        await self.say(STEVE, '!我的举报')
+        self.assertIn('#120 ', self.host.told('Steve'))
+        await self.say(ADMIN, '!查举报 1')
+        self.assertIn('共 100 条', self.host.told('Admin'))
+        await self.say(ADMIN, '!处理举报 120 迁移后处理')
+        self.assertIn('已处理 #120', self.host.told('Admin'))
+
+    async def test_1000_max_length_records_never_exceed_256kib(self):
+        self.configure(cooldown_seconds=0, max_records=1000, notify_admins_on_submit=False)
+        big_reason = '举' * 200
+        # Seed 999 records directly and add #1000 and #1001 through the real command flow.
+        entries = []
+        for i in range(1, 1000):
+            rec = {
+                'id': i,
+                'kind': 'report',
+                'status': 'resolved' if i == 1 else 'open',
+                'reporter': 'Steve',
+                'reporter_pid': 'u-steve',
+                'target': 'Alex',
+                'reason': big_reason,
+                'created_at': '2026-10-01T12:00:00+08:00',
+                'reporter_pos': {'dimension': 0, 'x': 10.5, 'y': 64.0, 'z': -20.25},
+                'target_pos': {'dimension': 1, 'x': 100.0, 'y': 70.0, 'z': 50.0},
+            }
+            self.host.values[f'report:{i}'] = rec
+            entries.append([i, 'r', 'x' if i == 1 else 'o', 'u-steve'])
+        self.host.values['index'] = {'next_id': 1000, 'entries': entries}
+
+        await self.say(STEVE, f'!举报 Alex {big_reason}')
+        await self.say(STEVE, f'!举报 Alex {big_reason}')
+        # Record #1 (resolved) was evicted and its report:1 key deleted.
+        self.assertNotIn('report:1', self.host.values)
+        self.assertIn('report:1001', self.host.values)
+        self.assertEqual(len(self.host.values['index']['entries']), 1000)
+        for commit in self.host.commits:
+            raw = json.dumps(commit, ensure_ascii=False, separators=(',', ':'))
+            self.assertLess(len(raw.encode('utf-8')), 256 << 10)
+
+        await self.say(ADMIN, '!查举报 1')
+        self.assertIn('#1001 [待处理]', self.host.told('Admin'))
+        await self.say(ADMIN, '!处理举报 1001 ' + '回' * 200)
+        self.assertIn('已处理 #1001', self.host.told('Admin'))
+
+    async def test_inbox_capped_robot_skipped_and_non_ascii_digits_rejected(self):
+        self.configure(cooldown_seconds=0)
+        for i in range(1, MAX_INBOX_ITEMS + 6):
+            await self.say(STEVE, f'!留言 意见{i}')
+        self.host.online = [dict(ADMIN)]
+        for i in range(1, MAX_INBOX_ITEMS + 6):
+            await self.say(ADMIN, f'!处理举报 {i} 回复{i}')
+        self.assertEqual(len(self.host.values['inbox:u-steve']), MAX_INBOX_ITEMS)
+        self.assertEqual(self.host.values['inbox:u-steve'][0]['id'], 6)
+
+        # Robot join is skipped even if its name were listed in admins or had inbox.
+        self.configure(admins=['admin', 'mod', '机器人'])
+        self.host.values['inbox:u-bot'] = [{'id': 99, 'kind': 'feedback', 'reply': 'x', 'resolved_by': 'Admin'}]
+        await self.join(ROBOT)
+        self.assert_only_acknowledged()
+        self.assertIn('inbox:u-bot', self.host.values)
+
+        await self.say(ADMIN, '!查举报 ²')
+        self.assertIn('大于 0 的整数', self.host.told('Admin'))
+        await self.say(ADMIN, '!处理举报 ² 回复')
+        self.assertIn('正整数', self.host.told('Admin'))
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': 'Steve', 'xuid': '3', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('reports-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await Reports().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':

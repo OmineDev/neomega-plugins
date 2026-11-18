@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
-                             PlayerNotFound, ServiceRejected, player_target)
+                             PlayerNotFound, ProtocolError, ServiceRejected, player_target)
+from neomega_runtime.managed import IPCError
 from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
 from neomega_runtime.storage import CommitUncertain
 import neomega_menu as menu
@@ -40,9 +41,11 @@ class Settings:
     def __post_init__(self):
         if not self.items:
             raise ValueError('shop needs at least one item')
-        if len({item.name for item in self.items}) != len(self.items):
+        if any(not item.name.strip() for item in self.items):
+            raise ValueError('item names must not be empty')
+        if len({item.name.strip() for item in self.items}) != len(self.items):
             raise ValueError('item names must be unique')
-        if any(not command.strip() for item in self.items for command in item.commands):
+        if any(not item.commands or any(not command.strip() for command in item.commands) for item in self.items):
             raise ValueError('delivery commands must not be empty')
 
 
@@ -78,11 +81,20 @@ class Shop(Plugin):
             except (ValueError, PlayerNotFound, AmbiguousPlayer):
                 # 引号不配对，或玩家已经下线：不回复，只确认事件。
                 pass
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await (await event.transaction(keys=[])).save()
+
+    def _spawn(self, ctx, coroutine, player):
+        async def guarded():
+            try:
+                await coroutine
+            except (IPCError, ServiceRejected, ProtocolError, TimeoutError, ValueError) as exc:
+                ctx.log.warning('shop background flow failed player=%s error=%s',
+                                player.get('name', '?'), exc)
+        return ctx.spawn(guarded())
 
     async def open(self, ctx, command):
-        await (await ctx.storage.transaction(event=command.event.payload, keys=[])).save()
-        ctx.spawn(self.browse(ctx, command.player))
+        await (await command.event.transaction(keys=[])).save()
+        self._spawn(ctx, self.browse(ctx, command.player), command.player)
 
     async def browse(self, ctx, player):
         items, account = ctx.config.items, player_id(player)
@@ -95,10 +107,14 @@ class Shop(Plugin):
         if not await menu.confirm(ctx, player, f'购买「{item.name}」需要 {item.price} {coin}，确认吗？'):
             return
 
+        player_target(player['name'])
         arguments = {'player_id': account, 'amount': item.price,
                      'reason': ('购买 ' + item.name)[:32], 'request_id': uuid.uuid4().hex}
         try:
             result = await self.charge(ctx, arguments)
+        except IPCError:
+            await menu.say(ctx, player, '扣款失败，请确认经济插件已启用。')
+            return
         except ServiceRejected as error:
             if error.code == 'player_offline':
                 return  # 玩家在确认后下线，没有扣款。
@@ -106,7 +122,10 @@ class Shop(Plugin):
                 await menu.say(ctx, player, '扣款结果暂时不确定，请用 !流水 查看；没有扣款可以重新购买。')
                 return
             if error.code != 'insufficient_funds':
-                raise
+                ctx.log.warning('shop charge rejected player=%s item=%s code=%s',
+                                player['name'], item.name, error.code)
+                await menu.say(ctx, player, '扣款失败，请稍后再试。')
+                return
             balance, coin = await self.wallet(ctx, account)
             await menu.say(ctx, player, f'{coin}不足。' if balance is None
                            else f'{coin}不足，需要 {item.price} {coin}，你现在有 {balance} {coin}。')
@@ -134,7 +153,7 @@ class Shop(Plugin):
         """当前余额和货币名；查不到时余额为 None。经济插件 2.0.0 不返回货币名。"""
         try:
             result = await ctx.services.call(ECONOMY + 'balance', {'player_id': account}, timeout=5)
-        except (ServiceRejected, *UNSETTLED):
+        except (IPCError, ServiceRejected, *UNSETTLED):
             return None, '金币'
         return result['balance'], result.get('currency', '金币')
 

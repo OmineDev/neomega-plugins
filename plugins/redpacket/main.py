@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import random
+import re
 import time
 
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
@@ -30,6 +31,7 @@ ECONOMY_GRANT = 'plugin.neomega.economy.grant'
 UNSETTLED = (ServiceWaitTimeout, ServiceUncertain, ServiceFailed)
 
 MAX_PASSCODE_LENGTH = 24
+MAX_BROADCAST_COMMAND_BYTES = 320
 SWEEP_INTERVAL_SECONDS = 60
 FINISHED_RETENTION_SECONDS = 3600
 MAX_FINISHED_KEEP = 20
@@ -74,6 +76,14 @@ def parse_positive_int(text: str) -> int | None:
         return None
     value = int(text)
     return value if value >= 1 else None
+
+
+def strip_formatting(text: str) -> str:
+    """清除控制字符和 Minecraft § 格式代码，防止伪造口令或广播样式。"""
+    cleaned = re.sub(r'[\x00-\x1f\x7f]+', '', text)
+    while '§' in cleaned:
+        cleaned = re.sub(r'§.?', '', cleaned)
+    return cleaned.strip()
 
 
 def valid_passcode(text: str) -> bool:
@@ -122,8 +132,12 @@ def refund_request_id(pkt_id: int) -> str:
     return 'rp-refund-' + hashlib.sha256(str(pkt_id).encode('utf-8')).hexdigest()[:40]
 
 
+def find_claim(pkt: dict, pid: str) -> dict | None:
+    return next((claim for claim in pkt['claims'] if claim['player_id'] == pid), None)
+
+
 def has_claimed(pkt: dict, pid: str) -> bool:
-    return any(claim['player_id'] == pid for claim in pkt['claims'])
+    return find_claim(pkt, pid) is not None
 
 
 def is_active(pkt: dict, now: float) -> bool:
@@ -164,16 +178,57 @@ def broadcast_command(text: str) -> str:
     return 'tellraw @a ' + json.dumps({'rawtext': [{'text': text}]}, ensure_ascii=False, separators=(',', ':'))
 
 
+def _style_step(style: str, token: str) -> str:
+    if len(token) != 2 or token[0] != '§':
+        return style
+    code = token[1].lower()
+    if code == 'r':
+        return ''
+    if code in '0123456789abcdefghijmnpqstu':
+        return token + ''.join('§' + c for c in 'klo' if '§' + c in style.lower())
+    if code in 'klo' and token.lower() not in style.lower():
+        return style + token
+    return style
+
+
+def chunk_broadcast(text: str, max_command_bytes: int = MAX_BROADCAST_COMMAND_BYTES) -> list[str]:
+    """按 320 字节上限切分全服 tellraw，跨段保留当前 § 样式。"""
+    def fits(value: str) -> bool:
+        return len(broadcast_command(value).encode('utf-8')) <= max_command_bytes
+
+    chunks, chunk, prefix, style = [], '', '', ''
+    i = 0
+    while i < len(text):
+        end = i + (2 if text[i] == '§' and i + 1 < len(text) else 1)
+        token = text[i:end]
+        i = end
+        if not fits(prefix + chunk + token):
+            if chunk:
+                chunks.append(prefix + chunk)
+                chunk, prefix = '', style
+            if not fits(prefix + token):
+                raise ValueError('broadcast token exceeds command budget')
+        chunk += token
+        style = _style_step(style, token)
+    if chunk or not chunks:
+        chunks.append(prefix + chunk)
+    return chunks
+
+
 def find_packet_for_grab(items: list[dict], query: str | None, pid: str, now: float):
     if query is None:
         open_active = [pkt for pkt in items if is_active(pkt, now) and not pkt['passcode']]
         if len(open_active) == 1:
             pkt = open_active[0]
-            if has_claimed(pkt, pid):
+            claim = find_claim(pkt, pid)
+            if claim is not None:
+                if claim.get('unsure'):
+                    return 'retry', pkt
                 return 'msg', f'你已经抢过 #{pkt["id"]} 号红包了。'
             return 'ok', pkt
         if len(open_active) > 1:
             return 'msg', '当前有多个无口令红包，请发送 !抢 <编号>，或发 !红包 查看。'
+        # 如果自己有未确认（unsure）的唯一无口令满员红包，仍提示查看列表或按编号重试
         if any(is_active(pkt, now) and pkt['passcode'] for pkt in items):
             return 'msg', '当前没有无口令红包，请发送 !抢 <口令>，或发 !红包 查看列表。'
         return 'msg', '当前没有可抢的红包。'
@@ -185,7 +240,10 @@ def find_packet_for_grab(items: list[dict], query: str | None, pid: str, now: fl
             return 'msg', f'没有找到 #{query} 号红包。'
         if pkt['passcode']:
             return 'msg', f'#{pkt["id"]} 号是口令红包，请发送 !抢 <口令> 领取。'
-        if has_claimed(pkt, pid):
+        claim = find_claim(pkt, pid)
+        if claim is not None:
+            if claim.get('unsure') and pkt['expires_at'] > now:
+                return 'retry', pkt
             return 'msg', f'你已经抢过 #{pkt["id"]} 号红包了。'
         if len(pkt['claims']) >= pkt['count']:
             return 'msg', f'来晚一步，#{pkt["id"]} 号红包已经被抢完了！'
@@ -199,6 +257,10 @@ def find_packet_for_grab(items: list[dict], query: str | None, pid: str, now: fl
     claimable = [pkt for pkt in matches if is_active(pkt, now) and not has_claimed(pkt, pid)]
     if claimable:
         return 'ok', claimable[0]
+    retryable = [pkt for pkt in matches if pkt['expires_at'] > now
+                 and (c := find_claim(pkt, pid)) is not None and c.get('unsure')]
+    if retryable:
+        return 'retry', retryable[0]
     if any(is_active(pkt, now) and has_claimed(pkt, pid) for pkt in matches):
         return 'msg', '你已经抢过这个红包了。'
     exhausted = [pkt for pkt in matches if len(pkt['claims']) >= pkt['count']]
@@ -250,8 +312,7 @@ class RedPacket(Plugin):
             # 引号不配对、参数数量不对，或玩家已经下线：不回复，只确认事件。
             pass
         async with self.lock:
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
-            event.defer_ack()
+            await (await event.transaction(keys=[])).save()
 
     def clock(self) -> float:
         return time.time()
@@ -302,9 +363,9 @@ class RedPacket(Plugin):
             return None, '总金币不能少于份数（每人至少 1 金币）。'
         passcode = ''
         if len(args) == 3:
-            raw = args[2].strip()
+            raw = strip_formatting(args[2])
             if not raw:
-                return None, '口令不能为空，如果不设口令请省略第三个参数。'
+                return None, '口令不能为空或只包含格式控制符，如果不设口令请省略第三个参数。'
             if not valid_passcode(raw):
                 return None, f'口令不能是纯数字，且长度不能超过 {MAX_PASSCODE_LENGTH} 个字符。'
             passcode = raw
@@ -387,7 +448,7 @@ class RedPacket(Plugin):
         player = command.player
         player_target(player['name'])
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[PACKETS])
+            tx = await command.event.transaction(keys=[PACKETS])
             packets = tx.get(PACKETS, {'next_id': 1, 'items': []})
             now = self.clock()
             active_count = sum(1 for pkt in packets['items'] if is_active(pkt, now))
@@ -395,14 +456,12 @@ class RedPacket(Plugin):
                 self.reply(ctx, tx, player,
                            f'当前活跃红包已达上限（{ctx.config.max_active_packets} 个），请等已有红包抢完或过期后再发。')
                 await tx.save()
-                command.event.defer_ack()
                 return
             ok, result, err_text = await self.charge_sender(
                 ctx, command.event.payload['event_id'], player, total, bool(passcode))
             if not ok:
                 self.reply(ctx, tx, player, err_text)
                 await tx.save()
-                command.event.defer_ack()
                 return
             pkt = self.create_packet(ctx, packets, player, total=total, count=count,
                                      passcode=passcode, is_system=False, now=now)
@@ -412,14 +471,13 @@ class RedPacket(Plugin):
                        f'已发出 #{pkt["id"]} 号红包（{total} {coin}，{count} 份），现有 {result["balance"]} {coin}。')
             self.broadcast(ctx, tx, self.build_create_broadcast(pkt, coin), tag='broadcast')
             await tx.save()
-            command.event.defer_ack()
 
     async def grab_packet(self, ctx: PluginContext, command):
         if len(command.args) > 1:
             return await self.answer(ctx, command, '用法：!抢 [口令或编号]')
         query = None
         if len(command.args) == 1:
-            query = command.args[0].strip()
+            query = strip_formatting(command.args[0])
             if not query:
                 return await self.answer(ctx, command, '请输入正确的口令或红包编号，或直接发送 !抢。')
 
@@ -427,47 +485,103 @@ class RedPacket(Plugin):
         player_target(player['name'])
         pid = player_id(player)
         async with self.lock:
-            packets = await ctx.storage.get(PACKETS, {'next_id': 1, 'items': []})
+            snap_tx = await ctx.storage.transaction(keys=[PACKETS])
+            packets = snap_tx.get(PACKETS, {'next_id': 1, 'items': []})
             now = self.clock()
             status, target = find_packet_for_grab(packets['items'], query, pid, now)
-            if status != 'ok':
-                tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+            if status == 'msg':
+                tx = await command.event.transaction(keys=[])
                 self.reply(ctx, tx, player, target)
                 await tx.save()
-                command.event.defer_ack()
                 return
 
-            pkt_id = target['id']
-            amount = target['shares'][len(target['claims'])]
-            arguments = {
-                'player_id': pid,
-                'amount': amount,
-                'reason': '抢口令红包' if target['passcode'] else '抢红包',
-                'request_id': grab_request_id(pkt_id, pid),
-            }
-            try:
-                result = await self.call_economy(ctx, ECONOMY_GRANT, arguments)
-            except IPCRejected:
-                err_text = '经济服务当前不可用，领取失败，请稍后再试。'
-            except ServiceRejected as error:
-                err_text = GRANT_UNSURE if error.code == 'unavailable' else '发放红包金币失败，请稍后再试。'
-            except UNSETTLED:
+            pkt = target
+            pkt_id = pkt['id']
+            passcode_used = bool(pkt['passcode'])
+            if status == 'retry':
+                claim = find_claim(pkt, pid)
+                amount = claim['amount']
+                req_id = claim['request_id']
+                was_already_unsure = True
+            else:
+                amount = pkt['shares'][len(pkt['claims'])]
+                req_id = grab_request_id(pkt_id, pid)
+                was_already_unsure = False
+                # 先在存储中原子占位（带 request_id），防止 GRANT_UNSURE 或并发抢夺重复分配同一份金额。
+                pkt['claims'].append({
+                    'player_id': pid,
+                    'name': player['name'],
+                    'amount': amount,
+                    'pending': True,
+                    'unsure': True,
+                    'request_id': req_id,
+                })
+                snap_tx.set(PACKETS, packets)
+                await snap_tx.save()
+
+        arguments = {
+            'player_id': pid,
+            'amount': amount,
+            'reason': '抢口令红包' if passcode_used else '抢红包',
+            'request_id': req_id,
+        }
+        outcome_kind = 'ok'
+        result = None
+        err_text = None
+        try:
+            result = await self.call_economy(ctx, ECONOMY_GRANT, arguments)
+        except IPCRejected:
+            outcome_kind = 'definite_reject'
+            err_text = '经济服务当前不可用，领取失败，请稍后再试。'
+        except ServiceRejected as error:
+            if error.code == 'unavailable':
+                outcome_kind = 'unsure'
                 err_text = GRANT_UNSURE
             else:
-                err_text = None
+                outcome_kind = 'definite_reject'
+                err_text = '发放红包金币失败，请稍后再试。'
+        except UNSETTLED:
+            outcome_kind = 'unsure'
+            err_text = GRANT_UNSURE
 
-            if err_text is not None:
-                tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+        async with self.lock:
+            tx = await command.event.transaction(keys=[PACKETS])
+            packets = tx.get(PACKETS, {'next_id': 1, 'items': []})
+            pkt = next((item for item in packets['items'] if item['id'] == pkt_id), None)
+
+            if outcome_kind == 'definite_reject':
+                if not was_already_unsure and pkt is not None:
+                    pkt['claims'] = [c for c in pkt['claims'] if c.get('request_id') != req_id]
+                    tx.set(PACKETS, packets)
                 self.reply(ctx, tx, player, err_text)
                 await tx.save()
-                command.event.defer_ack()
                 return
 
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[PACKETS])
-            packets = tx.get(PACKETS, {'next_id': 1, 'items': []})
-            pkt = next(item for item in packets['items'] if item['id'] == pkt_id)
-            pkt['claims'].append({'player_id': pid, 'name': player['name'], 'amount': amount})
-            tx.set(PACKETS, packets)
+            if outcome_kind == 'unsure':
+                if pkt is not None and len(pkt['claims']) == pkt['count'] and not pkt.get('finish_broadcasted'):
+                    pkt['finish_broadcasted'] = True
+                    tx.set(PACKETS, packets)
+                    best = max(pkt['claims'], key=lambda claim: claim['amount'])
+                    sender_label = '系统' if pkt['is_system'] else pkt['sender_name']
+                    finish_text = (f'[红包] {sender_label} 的 #{pkt_id} 号红包（{pkt["total"]} 金币，共 {pkt["count"]} 份）'
+                                   f'已被抢完！手气最佳：{best["name"]}（{best["amount"]} 金币）！')
+                    self.broadcast(ctx, tx, finish_text, tag='finish')
+                self.reply(ctx, tx, player, err_text)
+                await tx.save()
+                return
+
+            if pkt is not None:
+                confirmed = {'player_id': pid, 'name': player['name'], 'amount': amount}
+                if result.get('pending'):
+                    confirmed['pending'] = True
+                replaced = False
+                for index, claim in enumerate(pkt['claims']):
+                    if claim.get('request_id') == req_id or claim.get('player_id') == pid:
+                        pkt['claims'][index] = confirmed
+                        replaced = True
+                        break
+                if not replaced:
+                    pkt['claims'].append(confirmed)
 
             coin = result.get('currency', '金币')
             if result.get('pending'):
@@ -476,19 +590,22 @@ class RedPacket(Plugin):
                 reply_text = f'恭喜你抢到了 #{pkt_id} 号红包，获得 {amount} {coin}，现有 {result["balance"]} {coin}。'
             self.reply(ctx, tx, player, reply_text)
 
-            if len(pkt['claims']) == pkt['count']:
+            if pkt is not None and len(pkt['claims']) == pkt['count'] and not pkt.get('finish_broadcasted'):
+                pkt['finish_broadcasted'] = True
                 best = max(pkt['claims'], key=lambda claim: claim['amount'])
                 sender_label = '系统' if pkt['is_system'] else pkt['sender_name']
                 finish_text = (f'[红包] {sender_label} 的 #{pkt_id} 号红包（{pkt["total"]} {coin}，共 {pkt["count"]} 份）'
                                f'已被抢完！手气最佳：{best["name"]}（{best["amount"]} {coin}）！')
                 self.broadcast(ctx, tx, finish_text, tag='finish')
+
+            if pkt is not None:
+                tx.set(PACKETS, packets)
             await tx.save()
-            command.event.defer_ack()
 
     async def list_packets(self, ctx: PluginContext, command):
         pid = player_id(command.player)
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[PACKETS])
+            tx = await command.event.transaction(keys=[PACKETS])
             packets = tx.get(PACKETS, {'next_id': 1, 'items': []})
             now = self.clock()
             active = [pkt for pkt in packets['items'] if is_active(pkt, now)]
@@ -510,7 +627,6 @@ class RedPacket(Plugin):
                 text = '\n'.join(lines)
             self.reply(ctx, tx, command.player, text)
             await tx.save()
-            command.event.defer_ack()
 
     async def system_packet(self, ctx: PluginContext, command):
         if not self.is_admin(ctx, command.player):
@@ -522,7 +638,7 @@ class RedPacket(Plugin):
         player = command.player
         player_target(player['name'])
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[PACKETS])
+            tx = await command.event.transaction(keys=[PACKETS])
             packets = tx.get(PACKETS, {'next_id': 1, 'items': []})
             now = self.clock()
             active_count = sum(1 for pkt in packets['items'] if is_active(pkt, now))
@@ -530,7 +646,6 @@ class RedPacket(Plugin):
                 self.reply(ctx, tx, player,
                            f'当前活跃红包已达上限（{ctx.config.max_active_packets} 个），请等已有红包抢完或过期后再发。')
                 await tx.save()
-                command.event.defer_ack()
                 return
             pkt = self.create_packet(ctx, packets, player, total=total, count=count,
                                      passcode=passcode, is_system=True, now=now)
@@ -538,7 +653,6 @@ class RedPacket(Plugin):
             self.reply(ctx, tx, player, f'已发出 #{pkt["id"]} 号系统红包（{total} 金币，{count} 份）。')
             self.broadcast(ctx, tx, self.build_create_broadcast(pkt, '金币'), tag='broadcast')
             await tx.save()
-            command.event.defer_ack()
 
     # ---- 进服通知与过期退回 ----
 
@@ -548,14 +662,9 @@ class RedPacket(Plugin):
         pid = player_id(player)
         is_live = self.caught_up and event.payload.get('session', ctx.operations.session) == ctx.operations.session
         async with self.lock:
-            tx = await ctx.storage.transaction(event=event.payload, keys=[PACKETS, REFUND_NOTICES])
+            tx = await event.transaction(keys=[PACKETS, REFUND_NOTICES])
             notices = tx.get(REFUND_NOTICES, {})
-            mine = notices.pop(pid, None)
-            if mine is not None:
-                if notices:
-                    tx.set(REFUND_NOTICES, notices)
-                else:
-                    tx.delete(REFUND_NOTICES)
+            mine = notices.get(pid)
 
             lines = []
             if mine:
@@ -563,18 +672,14 @@ class RedPacket(Plugin):
                     coin = entry.get('currency', '金币')
                     lines.append(f'你发出的 #{entry["id"]} 号红包已过期，剩余 {entry["amount"]} {coin}已退回账户。')
 
+            next_reminded = None
             if is_live:
                 packets = tx.get(PACKETS, {'next_id': 1, 'items': []})
                 now = self.clock()
                 claimable = [pkt for pkt in packets['items'] if is_active(pkt, now) and not has_claimed(pkt, pid)]
                 seen_ids = self.reminded_joins.get(pid, set())
                 fresh = [pkt for pkt in claimable if pkt['id'] not in seen_ids]
-                if claimable:
-                    self.reminded_joins[pid] = {pkt['id'] for pkt in claimable}
-                else:
-                    self.reminded_joins.pop(pid, None)
-                if len(self.reminded_joins) > 1000:
-                    self.reminded_joins.clear()
+                next_reminded = {pkt['id'] for pkt in claimable}
                 if fresh:
                     if len(fresh) == 1 and not fresh[0]['passcode']:
                         pkt = fresh[0]
@@ -582,13 +687,28 @@ class RedPacket(Plugin):
                     else:
                         lines.append(f'当前有 {len(fresh)} 个可抢红包，发送 !红包 查看详情。')
 
+            reply_ok = True
             if lines:
                 try:
                     self.reply(ctx, tx, player, '\n'.join(lines))
                 except ValueError:
-                    pass
+                    reply_ok = False
+
+            if reply_ok:
+                if mine is not None:
+                    notices.pop(pid, None)
+                    if notices:
+                        tx.set(REFUND_NOTICES, notices)
+                    else:
+                        tx.delete(REFUND_NOTICES)
+                if next_reminded is not None:
+                    if next_reminded:
+                        if len(self.reminded_joins) > 1000:
+                            self.reminded_joins.clear()
+                        self.reminded_joins[pid] = next_reminded
+                    else:
+                        self.reminded_joins.pop(pid, None)
             await tx.save()
-            event.defer_ack()
             return True
 
     async def online_map(self, ctx: PluginContext) -> dict[str, str]:
@@ -611,37 +731,41 @@ class RedPacket(Plugin):
             if not items:
                 return
 
-            refunded_list = []
+            candidates = []
             for pkt in items:
                 if (pkt['expires_at'] <= now and not pkt['refunded']
                         and not pkt['is_system'] and len(pkt['claims']) < pkt['count']):
                     remaining = sum(pkt['shares'][len(pkt['claims']):])
-                    if remaining <= 0:
-                        refunded_list.append((pkt['id'], 0, None))
-                        continue
-                    arguments = {
-                        'player_id': pkt['sender_id'],
-                        'amount': remaining,
-                        'reason': '红包过期退回',
-                        'request_id': refund_request_id(pkt['id']),
-                    }
-                    try:
-                        result = await self.call_economy(ctx, ECONOMY_GRANT, arguments)
-                    except (IPCRejected, ServiceRejected, *UNSETTLED) as error:
-                        ctx.log.warning('redpacket refund failed id=%s: %s', pkt['id'], type(error).__name__)
-                        continue
-                    refunded_list.append((pkt['id'], remaining, result))
+                    candidates.append((pkt['id'], pkt['sender_id'], remaining))
 
-            refunded_ids = {pkt_id for pkt_id, _, _ in refunded_list}
             simulated = [
-                {**pkt, 'refunded': True} if pkt['id'] in refunded_ids else pkt
+                {**pkt, 'refunded': True} if any(cid == pkt['id'] for cid, _, _ in candidates) else pkt
                 for pkt in items
             ]
-            pruned_preview = prune_items(simulated, now)
-            if not refunded_ids and len(pruned_preview) == len(items):
+            if not candidates and len(prune_items(simulated, now)) == len(items):
                 return
 
-            online_by_id = await self.online_map(ctx) if any(r is not None for _, _, r in refunded_list) else {}
+        refunded_list = []
+        for pkt_id, sender_id, remaining in candidates:
+            if remaining <= 0:
+                refunded_list.append((pkt_id, 0, None))
+                continue
+            arguments = {
+                'player_id': sender_id,
+                'amount': remaining,
+                'reason': '红包过期退回',
+                'request_id': refund_request_id(pkt_id),
+            }
+            try:
+                result = await self.call_economy(ctx, ECONOMY_GRANT, arguments)
+            except (IPCRejected, ServiceRejected, *UNSETTLED) as error:
+                ctx.log.warning('redpacket refund failed id=%s: %s', pkt_id, type(error).__name__)
+                continue
+            refunded_list.append((pkt_id, remaining, result))
+
+        online_by_id = await self.online_map(ctx) if any(r is not None for _, _, r in refunded_list) else {}
+
+        async with self.lock:
             try:
                 tx = await ctx.storage.transaction(keys=[PACKETS, REFUND_NOTICES])
                 packets = tx.get(PACKETS, {'next_id': 1, 'items': []})
@@ -651,7 +775,7 @@ class RedPacket(Plugin):
                 by_id = {pkt['id']: pkt for pkt in packets['items']}
                 for pkt_id, remaining, result in refunded_list:
                     pkt = by_id.get(pkt_id)
-                    if pkt is None:
+                    if pkt is None or pkt.get('refunded'):
                         continue
                     pkt['refunded'] = True
                     if result is None:
@@ -676,7 +800,8 @@ class RedPacket(Plugin):
                         entries.append({'id': pkt_id, 'amount': remaining, 'currency': coin})
                         notices[sender_pid] = entries[-MAX_REFUND_NOTICES:]
 
-                packets['items'] = prune_items(packets['items'], now)
+                commit_now = self.clock()
+                packets['items'] = prune_items(packets['items'], commit_now)
                 tx.set(PACKETS, packets)
                 if notices:
                     tx.set(REFUND_NOTICES, notices)
@@ -690,10 +815,9 @@ class RedPacket(Plugin):
 
     async def answer(self, ctx: PluginContext, command, text: str):
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+            tx = await command.event.transaction(keys=[])
             self.reply(ctx, tx, command.player, text)
             await tx.save()
-            command.event.defer_ack()
 
     def reply(self, ctx: PluginContext, tx, player: dict, text: str, *, tag: str = 'reply'):
         self.reply_name(ctx, tx, player['name'], text, tag=tag)
@@ -705,8 +829,11 @@ class RedPacket(Plugin):
             tx.action(part.intent)
 
     def broadcast(self, ctx: PluginContext, tx, text: str, *, tag: str = 'broadcast'):
-        tx.action(ctx.commands.prepare(broadcast_command(text),
-                                       idempotency_key=f'{tx.commit_id}_{tag}', deadline=deadline()))
+        chunks = chunk_broadcast(text)
+        for index, chunk in enumerate(chunks):
+            suffix = '' if len(chunks) == 1 else f'_{index}'
+            tx.action(ctx.commands.prepare(broadcast_command(chunk),
+                                           idempotency_key=f'{tx.commit_id}_{tag}{suffix}', deadline=deadline()))
 
 
 if __name__ == '__main__':

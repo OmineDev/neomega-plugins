@@ -1,4 +1,5 @@
 """Drive the plugin through the real SDK storage against an in-memory Host."""
+import asyncio
 import copy
 import dataclasses
 import hashlib
@@ -8,7 +9,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from neomega_runtime import Event, PluginContext, ServiceRejected
 from neomega_runtime.config import load_config
@@ -20,6 +21,7 @@ from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWai
 from main import CATCH_UP_GAP, CATCH_UP_LIMIT, Settings, TitleDef, Titles, sanitize_horn_text
 
 ROOT = Path(__file__).resolve().parents[1]
+ROBOT = {'name': '机器人', 'uuid': 'u-bot', 'xuid': '0'}
 OWNER = {'name': 'Owner', 'uuid': 'u-owner', 'xuid': '1'}
 STEVE = {'name': 'Steve', 'uuid': 'u-steve', 'xuid': '2'}
 ALEX = {'name': 'Alex', 'uuid': 'u-alex', 'xuid': '3'}
@@ -27,15 +29,18 @@ XUID_ONLY = {'name': 'Guest', 'uuid': '', 'xuid': '99'}
 
 
 class FakeHost:
-    """players.list and state.get / state.commit / events.commit with Host revision CAS."""
+    """players.list, robot.status and state.get / state.commit / events.commit with Host revision CAS."""
 
     def __init__(self):
         self.values, self.revision, self.commits = {}, 0, []
         self.online = [dict(OWNER), dict(STEVE), dict(ALEX)]
+        self.bot_name = ROBOT['name']
 
     async def call(self, method, payload, timeout=None):
         if method == 'players.list':
             return {'session': 's1', 'players': copy.deepcopy(self.online)}
+        if method == 'robot.status':
+            return {'session': 's1', 'in_game': True, 'bot_name': self.bot_name, 'player_count': len(self.online)}
         if method == 'state.get':
             keys = payload.get('keys')
             values = self.values if keys is None else {k: self.values[k] for k in keys if k in self.values}
@@ -582,7 +587,7 @@ class ConfigAndMetadataTests(unittest.TestCase):
     def test_manifest_and_release_files(self):
         manifest = json.loads((ROOT / 'manifest.json').read_text())
         self.assertEqual(manifest['id'], 'neomega.titles')
-        self.assertEqual(manifest['version'], '1.0.0')
+        self.assertEqual(manifest['version'], '1.0.1')
         purposes = manifest['permissions']['purposes']
         for key in (
             'event:chat.received',
@@ -597,6 +602,96 @@ class ConfigAndMetadataTests(unittest.TestCase):
         self.assertEqual(release['name'], '称号与喇叭')
         self.assertNotIn('release.json', release['files'])
         self.assertFalse(any(name.startswith('tests/') for name in release['files']))
+
+
+class TitlesRegressionTests(TitlesTests):
+    async def test_admin_title_lookup_is_case_insensitive_for_online_players(self):
+        await self.say(OWNER, '!发称号 alex vip')
+        self.assertEqual(self.host.values['player:u-alex'], {'owned': ['vip'], 'equipped': None})
+        self.assertNotIn('pending_name:alex', self.host.values)
+        self.assertIn('已向在线玩家 Alex 发放称号', self.host.told('Owner'))
+        self.assertIn('管理员授予了你称号', self.host.told('Alex'))
+
+    async def test_lock_released_across_charge_economy_rpc(self):
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_pay(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return {'balance': 400, 'duplicate': False, 'currency': '金币'}
+
+        self.ctx.services.call = AsyncMock(side_effect=slow_pay)
+        first = asyncio.create_task(self.say(STEVE, '!买称号 pioneer', event_id='slow-buy'))
+        await entered.wait()
+        # Unrelated commands & chat complete without blocking on slow_pay.
+        await self.say(ALEX, '!称号', event_id='fast-list')
+        self.assertIn('称号列表：', self.host.told('Alex'))
+        await self.say(ALEX, '你好', event_id='fast-chat')
+        release.set()
+        await first
+        self.assertIn('pioneer', self.host.values['player:u-steve']['owned'])
+
+    async def test_robot_skipped_on_join_and_reply_failure_keeps_pending(self):
+        self.host.values['player:bot'] = {'owned': ['pioneer'], 'equipped': 'pioneer'}
+        self.host.values['pending_name:机器人'] = {'vip': 'grant'}
+        await self.join(ROBOT)
+        self.assert_only_acknowledged()
+        self.assertEqual(self.host.broadcasts(), [])
+        self.assertIn('pending_name:机器人', self.host.values)
+
+        self.host.values['pending_name:alex'] = {'vip': 'grant'}
+        with patch.object(self.plugin, 'reply', side_effect=ValueError('boom')):
+            await self.join(ALEX)
+        self.assertIn('pending_name:alex', self.host.values)
+        self.assertNotIn('player:u-alex', self.host.values)
+
+    async def test_long_horn_broadcast_is_chunked_within_320_bytes(self):
+        self.host.values['player:u-steve'] = {'owned': ['pioneer'], 'equipped': 'pioneer'}
+        long_msg = '甲' * 180
+        await self.say(STEVE, f'!喇叭 {long_msg}')
+        raw_cmds = [c for c in self.host.commands() if c.startswith('tellraw @a ')]
+        self.assertGreater(len(raw_cmds), 1)
+        for cmd in raw_cmds:
+            self.assertLessEqual(len(cmd.encode('utf-8')), 320)
+        broadcasts = self.host.broadcasts()
+        self.assertTrue(all(part.startswith('§f') for part in broadcasts[1:]))
+        joined = ''.join(broadcasts).replace('§f', '')
+        self.assertIn(long_msg, joined)
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': 'Steve', 'xuid': '2', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('titles-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await Titles().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':

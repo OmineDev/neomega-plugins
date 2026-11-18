@@ -15,31 +15,72 @@ and around the menu flow's own storage commits, because both advance the
 installation's single storage revision. Prompts are sent directly and are not
 stored; a restart simply closes open menus.
 """
+import asyncio
 from datetime import datetime, timedelta, timezone
 import uuid
+import weakref
+
+from neomega_runtime.http import ProtocolError
+from neomega_runtime.managed import IPCError
+from neomega_runtime.operations import OperationSubmissionError
 
 __all__ = ['feed', 'say', 'ask', 'choose', 'confirm']
 
 CANCEL_WORDS = frozenset({'0', '取消', 'q', 'quit', 'exit'})
 YES_WORDS = frozenset({'1', '是', '确认', '确定', 'y', 'yes'})
 MAX_ATTEMPTS = 3
+_SAY_ERRORS = (IPCError, OperationSubmissionError, ProtocolError, TimeoutError, ValueError)
+_WAIT_GATES: weakref.WeakKeyDictionary[object, dict[str, tuple[asyncio.Future, asyncio.Future]]] = weakref.WeakKeyDictionary()
+
+
+class _CommitAborted(Exception):
+    pass
+
+
+def _gates_for(chat_waiters) -> dict[str, tuple[asyncio.Future, asyncio.Future]]:
+    gates = _WAIT_GATES.get(chat_waiters)
+    if gates is None:
+        gates = {}
+        _WAIT_GATES[chat_waiters] = gates
+    return gates
 
 
 async def feed(ctx, event) -> bool:
     """Route a chat reply to its waiting menu. True means it was consumed and acknowledged."""
     if not await ctx.chat_waiters.feed(event):
         return False
-    await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+    name = event.payload['payload']['player']
+    entry = _gates_for(ctx.chat_waiters).get(name)
+    try:
+        await (await event.transaction(keys=[])).save()
+    except BaseException as exc:
+        if entry is not None:
+            _, gate = entry
+            if not gate.done():
+                gate.set_exception(_CommitAborted(exc))
+        raise
+    if entry is not None:
+        _, gate = entry
+        if not gate.done():
+            gate.set_result(None)
     return True
 
 
-async def say(ctx, player, text: str) -> None:
+async def say(ctx, player, text: str) -> bool:
     """Private message outside any storage transaction."""
-    deadline = (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat()
-    plan = ctx.notifications.prepare(player['name'], text, idempotency_key='menu_' + uuid.uuid4().hex,
-                                     deadline=deadline)
-    for part in plan.parts:
-        await ctx.operations.submit(part.intent)
+    try:
+        deadline = (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat()
+        plan = ctx.notifications.prepare(player['name'], text, idempotency_key='menu_' + uuid.uuid4().hex,
+                                         deadline=deadline)
+        for part in plan.parts:
+            await ctx.operations.submit(part.intent)
+        return True
+    except _SAY_ERRORS as exc:
+        log = getattr(ctx, 'log', None)
+        if log is not None:
+            log.warning('menu say failed player=%s error=%s',
+                        player.get('name', '?') if isinstance(player, dict) else '?', exc)
+        return False
 
 
 async def ask(ctx, player, question: str, *, timeout: float = 30) -> str | None:
@@ -50,12 +91,32 @@ async def ask(ctx, player, question: str, *, timeout: float = 30) -> str | None:
     except ValueError:
         await say(ctx, player, '你还有一个菜单没有完成，请先回复它或输入 0 取消。')
         return None
-    await say(ctx, player, question)
+    gate = asyncio.get_running_loop().create_future()
+    gates = _gates_for(ctx.chat_waiters)
+    name = player['name']
+    gates[name] = (reply, gate)
     try:
-        text = (await reply).message.strip()
+        if not await say(ctx, player, question):
+            return None
+        msg = await reply
+        await gate
+        text = msg.message.strip()
     except TimeoutError:
         await say(ctx, player, '太久没有回复，菜单已关闭。')
         return None
+    except _CommitAborted:
+        return None
+    finally:
+        if gates.get(name) == (reply, gate):
+            gates.pop(name, None)
+        if not reply.done():
+            reply.cancel()
+        elif not reply.cancelled():
+            reply.exception()
+        if not gate.done():
+            gate.cancel()
+        elif not gate.cancelled():
+            gate.exception()
     if text.lower() in CANCEL_WORDS:
         await say(ctx, player, '已取消。')
         return None
@@ -72,7 +133,7 @@ async def choose(ctx, player, title: str, options: list[str], *, timeout: float 
         text = await ask(ctx, player, prompt, timeout=timeout)
         if text is None:
             return None
-        if text.isdigit() and 1 <= int(text) <= len(options):
+        if text.isascii() and text.isdigit() and 1 <= int(text) <= len(options):
             return int(text) - 1
         prompt = f'没有这个选项，请输入 1-{len(options)} 之间的编号，输入 0 取消。'
     await say(ctx, player, '输入错误次数过多，菜单已关闭。')

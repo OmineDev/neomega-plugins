@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "id": "fatalder.cloud-import",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "host_api": {
     "major": 1,
     "min_minor": 8

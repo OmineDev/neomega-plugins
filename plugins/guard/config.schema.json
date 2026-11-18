@@ -95,7 +95,7 @@
     "spam_repeat_limit": {
       "type": "integer",
       "title": "重复消息上限",
-      "description": "统计时间内同一句话发到这么多次就算刷屏；填 0 不检查重复",
+      "description": "统计时间内同一句话发到这么多次就算刷屏；填 0 不检查重复（开启时至少填 2）",
       "minimum": 0,
       "default": 3
     },

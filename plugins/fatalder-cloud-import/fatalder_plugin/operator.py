@@ -73,7 +73,7 @@ class Operator:
         binding['grant'] = grant
         async with self._lock:
             try:
-                tx = await self.ctx.storage.transaction()
+                tx = await self.ctx.storage.transaction(keys=[key])
                 previous = tx.get(key)
                 if previous is not None:
                     if previous.get('binding') != binding:
@@ -94,7 +94,7 @@ class Operator:
                     return dict(state='unknown', reason='identity_changed')
                 if current['is_op'] == grant:
                     return dict(state='unknown', reason='permission_changed_externally')
-                tx = await self.ctx.storage.transaction(commit_id=commit_id)
+                tx = await self.ctx.storage.transaction(commit_id=commit_id, keys=[key])
                 deadline = (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat().replace('+00:00', 'Z')
                 # RequestPermissions addresses the observed entity ID, so queue
                 # delay cannot retarget a same-name replacement player.
