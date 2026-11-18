@@ -11,15 +11,17 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
+import json
 
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
-                             PlayerNotFound, ServiceRejected, player_target)
-from neomega_runtime.managed import IPCRejected
+                             PlayerNotFound, ProtocolError, ServiceRejected, player_target)
+from neomega_runtime.managed import IPCError, IPCRejected
 from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
 from neomega_runtime.storage import CommitUncertain
 
 BATCH = 255  # 每批玩家数；再加上排行键，正好是一次最多读取的 256 个键。
 TOP = 10
+SAFE_COMMIT_BUDGET = 240 << 10  # 预留余量，避免含奖励和币通知的提交超过 256 KiB 上限。
 
 
 @dataclass(frozen=True)
@@ -90,7 +92,7 @@ class OnlineTime(Plugin):
                 except (ValueError, PlayerNotFound, AmbiguousPlayer):
                     # 引号不配对，或玩家已经下线：不回复，只确认事件。
                     pass
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await event.ack()
 
     def today(self, ctx) -> date:
         offset = timedelta(hours=ctx.config.utc_offset_hours)
@@ -99,13 +101,30 @@ class OnlineTime(Plugin):
     async def tick(self, ctx):
         async with self.lock:
             try:
-                robot = (await ctx.robot())['bot_name']
-                online = {player_id(p): p for p in await ctx.players() if p['name'] != robot}
+                status = await ctx.robot()
+                bot_name = status.get('bot_name') if isinstance(status, dict) else None
+                bot_uuid = status.get('bot_uuid') if isinstance(status, dict) else None
+                online = {
+                    player_id(p): p
+                    for p in await ctx.players()
+                    if not ((bot_name and p['name'] == bot_name) or (bot_uuid and p.get('uuid') == bot_uuid))
+                }
                 ids = list(online)
                 for start in range(0, len(ids), BATCH):
                     await self.count(ctx, [online[i] for i in ids[start:start + BATCH]])
-            except (CommitUncertain, IPCRejected) as exc:
+            except (CommitUncertain, IPCRejected, IPCError, ProtocolError, TimeoutError, ValueError,
+                    ConnectionError, OSError) as exc:
                 ctx.log.warning('在线时长本轮未能保存，下一轮重新统计：%s', exc)
+
+    def _estimated_commit_bytes(self, tx, grant_count: int) -> int:
+        payload = {
+            'commit_id': tx.commit_id,
+            'expected_state_revision': tx.revision,
+            'mutations': list(tx._mutations.values()),
+            'actions': tx._actions,
+        }
+        raw = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8')
+        return len(raw) + grant_count * 1024 + 4096
 
     async def count(self, ctx, players):
         tx = await ctx.storage.transaction(keys=['player:' + player_id(p) for p in players] + ['top'])
@@ -125,7 +144,7 @@ class OnlineTime(Plugin):
             if config.daily_coin_limit:
                 coins = min(coins, config.daily_coin_limit - record['coins_today'])
             if coins > 0 and minutes % config.coin_interval_minutes == 0:
-                grants.append((player, record, coins, f'online-{today}-{minutes // config.coin_interval_minutes}'))
+                grants.append((player, record, coins, f'online-{today}-m{minutes}'))
 
             rewards = [reward for reward in config.rewards if reward.minutes == minutes]
             if not rewards:
@@ -138,13 +157,26 @@ class OnlineTime(Plugin):
                 continue
             for reward in rewards:
                 for line in reward.commands:
-                    tx.action(ctx.commands.prepare(line.strip().removeprefix('/').replace('{player}', target),
-                                                   idempotency_key=f'{tx.commit_id}_reward_{number}',
-                                                   deadline=deadline()))
+                    try:
+                        intent = ctx.commands.prepare(
+                            line.strip().removeprefix('/').replace('{player}', target),
+                            idempotency_key=f'{tx.commit_id}_reward_{number}',
+                            deadline=deadline(),
+                        )
+                    except ValueError as exc:
+                        ctx.log.warning('在线奖励命令无效，已跳过：%s', exc)
+                        continue
+                    tx.action(intent)
                     number += 1
                 if reward.message:
-                    self.tell(ctx, tx, player, reward.message, f'{tx.commit_id}_message_{number}')
-                    number += 1
+                    if self.tell(ctx, tx, player, reward.message, f'{tx.commit_id}_message_{number}'):
+                        number += 1
+
+        if len(players) > 1 and self._estimated_commit_bytes(tx, len(grants)) > SAFE_COMMIT_BUDGET:
+            mid = len(players) // 2
+            await self.count(ctx, players[:mid])
+            await self.count(ctx, players[mid:])
+            return
 
         results = await asyncio.gather(*(self.grant(ctx, player, coins, request_id)
                                          for player, _, coins, request_id in grants))
@@ -152,15 +184,15 @@ class OnlineTime(Plugin):
             if given:
                 tx.set('player:' + player_id(player), {**record, 'coins_today': record['coins_today'] + given})
             if text:
-                self.tell(ctx, tx, player, f'今天已在线 {duration(record["today"])}，{text}',
-                          f'{tx.commit_id}_message_{number}')
-                number += 1
+                if self.tell(ctx, tx, player, f'今天已在线 {duration(record["today"])}，{text}',
+                             f'{tx.commit_id}_message_{number}'):
+                    number += 1
         tx.set('top', sorted(top.values(), key=lambda entry: -entry['minutes'])[:TOP])
         await tx.save()
 
     async def info(self, ctx, command):
         player, key = command.player, 'player:' + player_id(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         record = tx.get(key, {'total': 0, 'day': '', 'today': 0})
         today = record['today'] if record['day'] == self.today(ctx).isoformat() else 0
         self.tell(ctx, tx, player, f'今天在线 {duration(today)}，累计 {duration(record["total"])}。',
@@ -168,7 +200,7 @@ class OnlineTime(Plugin):
         await tx.save()
 
     async def ranking(self, ctx, command):
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=['top'])
+        tx = await command.event.transaction(keys=['top'])
         top = tx.get('top', [])
         lines = ['在线时长排行：'] + [f'{rank}. {entry["name"]}  {duration(entry["minutes"])}'
                                       for rank, entry in enumerate(top, 1)]
@@ -196,10 +228,15 @@ class OnlineTime(Plugin):
             return coins, f'获得 {coins} {currency}，下次上线时到账。'
         return coins, f'获得 {coins} {currency}，现有 {result["balance"]} {currency}。'
 
-    def tell(self, ctx, tx, player, text, key):
-        plan = ctx.notifications.prepare(player['name'], text, idempotency_key=key, deadline=deadline())
+    def tell(self, ctx, tx, player, text, key) -> bool:
+        try:
+            plan = ctx.notifications.prepare(player['name'], text, idempotency_key=key, deadline=deadline())
+        except ValueError:
+            ctx.log.warning('玩家名不能用于通知，跳过消息：%r', player.get('name'))
+            return False
         for part in plan.parts:
             tx.action(part.intent)
+        return True
 
 
 if __name__ == '__main__':

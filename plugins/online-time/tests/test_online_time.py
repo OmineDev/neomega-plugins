@@ -1,14 +1,17 @@
 """Drive the plugin through the real SDK storage against an in-memory Host."""
+import asyncio
 import copy
 from datetime import date
 import json
 import logging
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from neomega_runtime import Event, PluginContext, ServiceRejected
-from neomega_runtime.managed import IPCRejected
+from neomega_runtime import Event, PluginContext, ProtocolError, ServiceRejected
+from neomega_runtime.managed import IPCRejected, ManagedPeer
 from neomega_runtime.operations import Operations
 from neomega_runtime.services import ServiceWaitTimeout
 from main import OnlineTime, Reward, Settings
@@ -160,14 +163,14 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
         name, arguments = self.ctx.services.call.await_args.args
         self.assertEqual(name, 'plugin.neomega.economy.grant')
         self.assertEqual(arguments, {'player_id': 'u1', 'amount': 5, 'reason': '在线奖励',
-                                     'request_id': 'online-2026-10-21-1'})
+                                     'request_id': 'online-2026-10-21-m30'})
         self.assertEqual(self.host.reply(), '今天已在线 30 分钟，获得 5 积分，现有 25 积分。')
         self.assertEqual(self.host.values['player:u1']['coins_today'], 5)
         await self.plugin.tick(self.ctx)
         self.assertEqual(self.ctx.services.call.await_count, 1)
         self.host.values['player:u1']['today'] = 59
         await self.plugin.tick(self.ctx)
-        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-1'), (5, 'online-2026-10-21-2')])
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-m30'), (5, 'online-2026-10-21-m60')])
         self.assertEqual(self.host.values['player:u1']['coins_today'], 10)
 
     async def test_failed_save_recomputes_the_same_request_id(self):
@@ -178,7 +181,7 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
             await self.plugin.tick(self.ctx)
         self.host.fail_commit = None
         await self.plugin.tick(self.ctx)
-        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-1')] * 2)
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-m30')] * 2)
         self.assertEqual(self.host.values['player:u1']['coins_today'], 5)
 
     async def test_daily_limit_trims_the_last_grant_and_then_stops(self):
@@ -186,7 +189,7 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
         self.ctx.config = Settings(rewards=[], coin_interval_minutes=1, daily_coin_limit=8)
         for _ in range(3):
             await self.plugin.tick(self.ctx)
-        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-1'), (3, 'online-2026-10-21-2')])
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-m1'), (3, 'online-2026-10-21-m2')])
         self.assertEqual(self.host.values['player:u1']['coins_today'], 8)
         self.assertEqual(self.host.commands(), [])
 
@@ -196,8 +199,45 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
         self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-20', 'today': 300,
                                          'coins_today': 8}
         await self.plugin.tick(self.ctx)
-        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-1')])
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-m1')])
         self.assertEqual(self.host.values['player:u1']['coins_today'], 5)
+
+    async def test_midday_coin_interval_change_does_not_collide_request_id(self):
+        self.economy()
+        self.ctx.config = Settings(rewards=[], coin_interval_minutes=10)
+        self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-21', 'today': 9}
+        await self.plugin.tick(self.ctx)
+        # Admin changes coin_interval_minutes from 10 to 30 mid-day
+        self.ctx.config = Settings(rewards=[], coin_interval_minutes=30)
+        self.host.values['player:u1']['today'] = 29
+        await self.plugin.tick(self.ctx)
+        self.assertEqual(self.granted(), [(5, 'online-2026-10-21-m10'), (5, 'online-2026-10-21-m30')])
+        self.assertEqual(self.host.values['player:u1']['coins_today'], 10)
+
+    async def test_tick_handles_robot_players_timeout_and_protocol_errors(self):
+        for exc in (TimeoutError('slow'), ProtocolError('bad reply')):
+            self.ctx.robot = AsyncMock(side_effect=exc)
+            with self.assertLogs('online-time-test', 'WARNING'):
+                await self.plugin.tick(self.ctx)
+        self.ctx.robot = AsyncMock(return_value={'session': 's1', 'in_game': True, 'bot_name': ROBOT['name']})
+        for exc in (TimeoutError('slow'), ProtocolError('bad reply')):
+            self.ctx.players = AsyncMock(side_effect=exc)
+            with self.assertLogs('online-time-test', 'WARNING'):
+                await self.plugin.tick(self.ctx)
+
+    async def test_large_rewards_batch_splits_before_exceeding_256k_limit(self):
+        self.host.online = [dict(ROBOT)] + [{'name': f'p{i}', 'uuid': '', 'xuid': str(i)} for i in range(255)]
+        for i in range(255):
+            self.host.values[f'player:xuid-{i}'] = {'name': f'p{i}', 'total': 10, 'day': '2026-10-21', 'today': 59}
+        self.ctx.config = Settings(
+            rewards=[Reward(60, [f'give {{player}} diamond {k}' for k in range(1, 6)], '满一小时大礼包' * 8)],
+            coins_per_interval=0,
+        )
+        await self.plugin.tick(self.ctx)
+        self.assertGreater(len(self.host.commits), 1)
+        for commit in self.host.commits:
+            self.assertLessEqual(len(json.dumps(commit, ensure_ascii=False).encode('utf-8')), 256 << 10)
+        self.assertEqual(self.host.values['player:xuid-254']['today'], 60)
 
     async def test_no_economy_means_no_coin_message(self):
         self.host.values['player:u1'] = {'name': '玩家', 'total': 500, 'day': '2026-10-21', 'today': 29}
@@ -254,6 +294,107 @@ class OnlineTimeTests(unittest.IsolatedAsyncioTestCase):
             Settings(rewards=[Reward(60, [' '])])
         with self.assertRaises(ValueError):
             Settings(rewards=[Reward(60), Reward(60)])
+
+
+class ServeWriter:
+    def __init__(self):
+        self.requests = asyncio.Queue()
+        self.responses = asyncio.Queue()
+        self.closed = False
+
+    def write(self, data):
+        for line in data.splitlines():
+            if not line:
+                continue
+            frame = json.loads(line)
+            if frame.get('type') == 'request':
+                self.requests.put_nowait(frame)
+            else:
+                self.responses.put_nowait(frame)
+
+    async def drain(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+    async def wait_closed(self):
+        pass
+
+
+class OnlineTimeServeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_serve_single_ack_and_commands(self):
+        host = FakeHost()
+        deliveries = set()
+        reader = asyncio.StreamReader(limit=1 << 20)
+        writer = ServeWriter()
+        peer = ManagedPeer(reader, writer)
+        plugin = OnlineTime()
+        plugin.today = lambda ctx: date(2026, 10, 21)
+
+        def send(frame):
+            reader.feed_data((json.dumps(frame) + '\n').encode())
+
+        async def wait_response(req_id):
+            while True:
+                msg = await asyncio.wait_for(writer.responses.get(), 2)
+                if msg.get('id') == req_id:
+                    return msg
+
+        async def pump():
+            while True:
+                frame = await writer.requests.get()
+                req_id, method, payload = frame['id'], frame['method'], frame['payload']
+                if method == 'hello':
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': {
+                        'protocol_major': 1, 'protocol_minor': 0, 'installation_id': 'inst-1', 'generation': 1,
+                        'capabilities': [], 'limits': {
+                            'max_frame_bytes': 1 << 20, 'outgoing_requests': 128,
+                            'inbound_requests': 32, 'queue_frames': 32}}}})
+                elif method == 'capabilities.get':
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': {'session': 's1'}}})
+                elif method == 'events.commit':
+                    key = (payload['subscription_id'], payload['event_id'], payload['delivery_token'])
+                    if key in deliveries:
+                        send({'type': 'response', 'id': req_id, 'payload': {'error': {
+                            'code': 'invalid_delivery', 'message': 'already acked', 'retryable': False, 'request_id': req_id}}})
+                    else:
+                        deliveries.add(key)
+                        res = await host.call(method, payload)
+                        send({'type': 'response', 'id': req_id, 'payload': {'result': res}})
+                else:
+                    res = await host.call(method, payload)
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': res}})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            serve_task = asyncio.create_task(plugin.serve(peer, data_dir=Path(tmp)))
+            pump_task = asyncio.create_task(pump())
+            try:
+                send({'type': 'request', 'id': 'v1', 'method': 'lifecycle.validate',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1, 'revision': 1}})
+                self.assertIn('result', (await wait_response('v1'))['payload'])
+                send({'type': 'request', 'id': 'a1', 'method': 'lifecycle.activate',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1, 'revision': 1, 'state_version': 1}})
+                self.assertTrue((await wait_response('a1'))['payload']['result']['activated'])
+
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'chat.received', 'subscription_id': 'chat', 'event_id': 'e1', 'delivery_token': 'd1',
+                    'payload': {'player': '玩家', 'xuid': '42', 'message': '!在线时长'}}})
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'chat.received', 'subscription_id': 'chat', 'event_id': 'e2', 'delivery_token': 'd2',
+                    'payload': {'player': '玩家', 'xuid': '42', 'message': '普通聊天'}}})
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'chat.received', 'subscription_id': 'chat', 'event_id': 'e3', 'delivery_token': 'd3',
+                    'payload': {'player': '玩家', 'xuid': '42', 'message': '!在线排行'}}})
+                send({'type': 'request', 'id': 'dr1', 'method': 'lifecycle.drain',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1}})
+                self.assertTrue((await wait_response('dr1'))['payload']['result']['drained'])
+                self.assertEqual(deliveries, {('chat', 'e1', 'd1'), ('chat', 'e2', 'd2'), ('chat', 'e3', 'd3')})
+                self.assertFalse(serve_task.done())
+            finally:
+                serve_task.cancel()
+                pump_task.cancel()
+                await asyncio.gather(serve_task, pump_task, return_exceptions=True)
 
 
 if __name__ == '__main__':

@@ -9,6 +9,9 @@ import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'tools'))
+import wheel_targets
 spec = importlib.util.spec_from_file_location('community_package', ROOT / 'tools/package-plugin.py')
 package = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(package)
@@ -59,6 +62,103 @@ class CommunityPackageTests(unittest.TestCase):
             (root / 'manifest.json').write_text(json.dumps(manifest))
             with self.assertRaisesRegex(ValueError, 'missing permission purpose'):
                 package.build(root, output)
+
+    def test_strict_manifest_schema_reserved_paths_and_bundled_collision(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / 'plugin'
+            shutil.copytree(ROOT / 'plugins/fatalder-cloud-import', root)
+            manifest = json.loads((root / 'manifest.json').read_text())
+            meta = json.loads((root / 'release.json').read_text())
+
+            # Prerelease / leading-zero semver rejected
+            for bad_ver in ('1.0.0-alpha.1', '01.0.0', '1.02.0'):
+                (root / 'manifest.json').write_text(json.dumps(dict(manifest, version=bad_ver)))
+                with self.subTest(version=bad_ver), self.assertRaises(ValueError):
+                    package.validate(root)
+
+            # target_os / target_arch rejected for non-Go runtime
+            (root / 'manifest.json').write_text(json.dumps(dict(manifest, target_os='linux')))
+            with self.assertRaisesRegex(ValueError, 'Go runtime'):
+                package.validate(root)
+
+            # Unrequested purpose key & control chars rejected
+            bad_perms = copy_dict(manifest['permissions'])
+            bad_perms['purposes']['operation:framework.unused'] = 'nope'
+            (root / 'manifest.json').write_text(json.dumps(dict(manifest, permissions=bad_perms)))
+            with self.assertRaisesRegex(ValueError, 'unrequested permission purpose'):
+                package.validate(root)
+
+            bad_perms = copy_dict(manifest['permissions'])
+            first_key = next(iter(bad_perms['purposes']))
+            bad_perms['purposes'][first_key] = 'line1\nline2'
+            (root / 'manifest.json').write_text(json.dumps(dict(manifest, permissions=bad_perms)))
+            with self.assertRaisesRegex(ValueError, 'invalid permission purpose'):
+                package.validate(root)
+
+            # Packet observe ID bounds (0 and >1023 rejected)
+            bad_perms = copy_dict(manifest['permissions'])
+            bad_perms['packet_observe_ids'] = [1024]
+            bad_perms['purposes']['packet_observe:1024'] = 'too high'
+            (root / 'manifest.json').write_text(json.dumps(dict(manifest, permissions=bad_perms)))
+            with self.assertRaisesRegex(ValueError, 'packet_observe_ids'):
+                package.validate(root)
+            (root / 'manifest.json').write_text(json.dumps(manifest))
+
+            # Windows reserved filename rejected
+            (root / 'CON.py').write_text('x = 1\n')
+            (root / 'release.json').write_text(json.dumps(dict(meta, files=meta['files'] + ['CON.py'])))
+            with self.assertRaisesRegex(ValueError, 'Windows reserved'):
+                package.validate(root)
+            (root / 'release.json').write_text(json.dumps(meta))
+
+            # check_config_schema rejects invalid config.schema.json
+            (root / 'config.schema.json').write_text(json.dumps({
+                'type': 'object',
+                'properties': {'x': {'type': 'integer', 'minimum': 10, 'maximum': 5}},
+            }))
+            with self.assertRaises(ValueError):
+                package.validate(root)
+            shutil.copy2(ROOT / 'plugins/fatalder-cloud-import/config.schema.json', root / 'config.schema.json')
+
+            # bundled_files collision caught during validate()
+            shutil.copytree(ROOT / 'plugins/menu', Path(folder) / 'menu')
+            menu_root = Path(folder) / 'menu'
+            menu_meta = json.loads((menu_root / 'release.json').read_text())
+            (menu_root / 'neomega_menu').mkdir()
+            (menu_root / 'neomega_menu/LICENSE').write_text('clash\n')
+            (menu_root / 'release.json').write_text(json.dumps(dict(menu_meta, files=menu_meta['files'] + ['neomega_menu/LICENSE'])))
+            with self.assertRaisesRegex(ValueError, 'bundled library overwrites'):
+                package.validate(menu_root)
+
+    def test_wheel_targets_contract(self):
+        # <= operator accepts equal version
+        wheel_targets.validate_python_requirement('<=3.11', (3, 11))
+        with self.assertRaises(ValueError):
+            wheel_targets.validate_python_requirement('<=3.10', (3, 11))
+
+        # Python manifest with platform wheel does not require target_os/target_arch (and rejects them)
+        lock = {
+            'platform': 'manylinux_2_17_x86_64',
+            'python_version': '311',
+            'abi': 'cp311',
+            'wheels': [{'wheel': 'demo-1.0-cp311-cp311-manylinux_2_17_x86_64.whl'}],
+        }
+        wheel_targets.validate_lock(lock, {'runtime': 'python'})
+        with self.assertRaisesRegex(ValueError, 'Go runtime'):
+            wheel_targets.validate_lock(lock, {'runtime': 'python', 'target_os': 'linux', 'target_arch': 'amd64'})
+
+        # runtime-target.json platform cannot be 'any'
+        with self.assertRaisesRegex(ValueError, 'cannot be any'):
+            wheel_targets.validate_runtime_target(
+                {'platform': 'any', 'python_version': '311', 'abi': 'none',
+                 'wheels': [{'wheel': 'demo-1.0-py3-none-any.whl', 'requires_python': '>=3.8'}]},
+                {'schema_version': 1, 'implementation': 'cpython', 'python_version': '3.11',
+                 'abi': 'cp311', 'platform': 'any'},
+            )
+
+
+def copy_dict(obj):
+    return json.loads(json.dumps(obj))
 
 
 class PrepareReleaseTests(unittest.TestCase):

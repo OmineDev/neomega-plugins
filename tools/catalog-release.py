@@ -27,7 +27,7 @@ def main():
     args=parser.parse_args()
     try:
         if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}',args.plugin): raise ValueError('invalid plugin ID')
-        if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?',args.version): raise ValueError('explicit semantic version required')
+        if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',args.version): raise ValueError('explicit semantic version required')
         if args.merge_index:
             if args.package or args.source_ref or args.source_path:
                 raise ValueError('merge uses the fixed candidate entry, not package/source arguments')
@@ -52,7 +52,7 @@ def main():
                     raise ValueError('README exceeds 256 KiB')
                 readme_text = readme.decode('utf-8') if readme is not None else ''
             if manifest['id'] != args.plugin or manifest['version'] != args.version: raise ValueError('manifest identity/version differs from reviewed release')
-            purposes=json.loads(args.permission_purposes.read_text()) if args.permission_purposes else {}
+            purposes=json.loads(args.permission_purposes.read_text()) if args.permission_purposes else manifest.get('permissions',{}).get('purposes',{})
             if not isinstance(purposes,dict) or not all(isinstance(k,str) and isinstance(v,str) for k,v in purposes.items()): raise ValueError('permission purposes must be a string map')
             entry={'plugin_id':args.plugin,'version':args.version,'name':args.name,
                    'url':ROOT+f'{args.plugin}-v{args.version}/{expected}',
@@ -86,7 +86,10 @@ def main():
                 print('Existing identical release entry retained')
                 return
         index['plugins'].append(entry)
-        index['plugins'].sort(key=lambda e:(e['plugin_id'],e['version']))
+        def _ver_key(v):
+            parts = v.split('.', 2)
+            return tuple(int(p) for p in parts) if len(parts) == 3 and all(p.isdigit() for p in parts) else (0, 0, 0)
+        index['plugins'].sort(key=lambda e:(e['plugin_id'], _ver_key(e['version']), e['version']))
         args.index.parent.mkdir(parents=True,exist_ok=True)
         with tempfile.NamedTemporaryFile(mode='w',dir=args.index.parent,delete=False,encoding='utf-8') as output:
             temporary=Path(output.name)

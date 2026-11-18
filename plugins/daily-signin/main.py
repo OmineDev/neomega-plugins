@@ -42,6 +42,8 @@ class Settings:
     def __post_init__(self):
         if any(not command.strip() for command in self.commands):
             raise ValueError('reward commands must not be empty')
+        if any(not command.strip() for milestone in self.milestones for command in milestone.commands):
+            raise ValueError('milestone commands must not be empty')
         if len({milestone.days for milestone in self.milestones}) != len(self.milestones):
             raise ValueError('milestone days must be unique')
 
@@ -75,7 +77,7 @@ class DailySignin(Plugin):
             except (ValueError, PlayerNotFound, AmbiguousPlayer):
                 # 引号不配对，或玩家已经下线：不回复，只确认事件。
                 pass
-        await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+        await event.ack()
 
     def today(self, ctx) -> date:
         offset = timedelta(hours=ctx.config.utc_offset_hours)
@@ -83,7 +85,7 @@ class DailySignin(Plugin):
 
     async def sign(self, ctx, command):
         player, key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         record = tx.get(key, {'day': '', 'streak': 0, 'total': 0})
         today = self.today(ctx)
         if record['day'] == today.isoformat():
@@ -117,14 +119,15 @@ class DailySignin(Plugin):
 
     async def info(self, ctx, command):
         player, key = command.player, player_key(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[key])
+        tx = await command.event.transaction(keys=[key])
         record = tx.get(key)
         if record is None:
             text = '你还没有签到过，发送 !签到 领取今日奖励。'
         else:
-            yesterday = (self.today(ctx) - timedelta(days=1)).isoformat()
+            today = self.today(ctx)
+            yesterday = (today - timedelta(days=1)).isoformat()
             streak = record['streak'] if record['day'] >= yesterday else 0
-            signed = '今天已签到' if record['day'] == self.today(ctx).isoformat() else '今天还没签到'
+            signed = '今天已签到' if record['day'] == today.isoformat() else '今天还没签到'
             text = f'{signed}，当前连续 {streak} 天，累计 {record["total"]} 天。'
         self.reply(ctx, tx, player, text)
         await tx.save()
@@ -145,6 +148,8 @@ class DailySignin(Plugin):
         except ServiceFailed:
             return ['金币奖励暂时没有发出。']
         coin = result.get('currency', '金币')  # 经济插件 2.0.0 不返回货币名
+        if result.get('pending'):
+            return [f'获得 {coins} {coin}，下次上线时到账。']
         return [f'获得 {coins} {coin}，现有 {result["balance"]} {coin}。']
 
     def reply(self, ctx, tx, player, text):

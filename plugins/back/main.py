@@ -5,8 +5,8 @@ player.list_added / player.list_removed 持续更新），后台按配置间隔�
 短时回退；同时订阅入站 Text 死亡翻译包（TextType=2, NeedsTranslation, Message 以
 death. 开头）。
 
-收到死亡通知后优先即时查询死者位置；若查询失败、位置为空或坐标落入虚空（y < -60 且未开启
-允许返回虚空），则回退使用最近 10 秒内采样的有效存活位置。有效死亡点通过独立存储事务写入
+收到死亡通知后优先即时查询死者位置；若查询失败、位置为空、处于秒重生或坐标落入虚空（y < -64 且未开启
+允许返回虚空），则回退使用最近采样的有效存活位置。有效死亡点通过独立存储事务写入
 death:<player_id> 并可选私聊提醒。玩家发送 !返回 时在单次事件事务中校验记录、有效期、
 单次限制、虚空限制与冷却，扣费（如配置且已安装经济插件）后标记已使用、更新冷却、下发跨维度
 tp 命令并私聊回复。
@@ -29,8 +29,10 @@ DIMENSIONS = {0: 'overworld', 1: 'nether', 2: 'the_end'}
 DIMENSION_NAMES = {0: '主世界', 1: '下界', 2: '末地'}
 # 位置查询（querytarget）报的是玩家眼睛的高度，脚下比它低 1.62 格。
 EYE_HEIGHT = 1.62
-VOID_Y = -60.0
+VOID_Y = -64.0
 FALLBACK_MAX_AGE_SECONDS = 10.0
+RESPAWN_JUMP_MIN_DISTANCE = 48.0
+RESPAWN_JUMP_SPEED = 20.0
 ECONOMY_PAY = 'plugin.neomega.economy.pay'
 # 结果不明的扣款可以用同一个 request_id 安全重试；明确的业务拒绝不在其中。
 UNSETTLED = (ServiceWaitTimeout, ServiceUncertain, ServiceFailed)
@@ -39,10 +41,10 @@ CHARGE_UNSURE = '扣款结果暂时不确定，这次没有传送。可以用 !�
 
 @dataclass(frozen=True)
 class Settings:
-    sample_interval_seconds: int = field(default=2, metadata={
+    sample_interval_seconds: int = field(default=15, metadata={
         'title': '位置采样间隔（秒）',
         'description': '后台定时记录在线玩家有效位置的时间间隔',
-        'minimum': 1, 'maximum': 10})
+        'minimum': 1, 'maximum': 60})
     expire_seconds: int = field(default=600, metadata={
         'title': '死亡记录有效期（秒）',
         'description': '死亡后多少秒内可以发送 !返回；填 0 表示不过期',
@@ -62,8 +64,8 @@ class Settings:
         'title': '死亡后私聊提醒',
         'description': '记录到有效死亡点后私聊提示玩家发送 !返回 回到死亡地点'})
     allow_void_return: bool = field(default=False, metadata={
-        'title': '允许返回虚空（y < -60）',
-        'description': '关闭时不记录 y < -60 的虚空死亡点，也会阻止传送到此类位置'})
+        'title': '允许返回虚空（y < -64）',
+        'description': '关闭时不记录 y < -64 的虚空死亡点，也会阻止传送到此类位置'})
 
 
 def deadline() -> str:
@@ -132,6 +134,18 @@ def format_duration(seconds: int) -> str:
     return f'{secs} 秒'
 
 
+def finite_number(value) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+        return float(value)
+    return None
+
+
+def valid_record(record) -> bool:
+    return (isinstance(record, dict)
+            and record.get('dimension') in DIMENSIONS
+            and all(finite_number(record.get(field)) is not None for field in ('x', 'y', 'z', 'at')))
+
+
 def charge_request_id(event_id: str) -> str:
     """同一个事件得到同一个 request_id，不同事件不同。"""
     return 'back-' + hashlib.sha256(event_id.encode('utf-8')).hexdigest()[:48]
@@ -143,13 +157,17 @@ class Back(Plugin):
     def __init__(self):
         self.lock = asyncio.Lock()
         self.bot_name: str | None = None
+        self.bot_uuid: str | None = None
         self.online: dict[str, dict] = {}
         self.online_synced = False
         self.last_pos: dict[str, dict] = {}
         self.routers = ()
+        self._stopping = False
 
     async def on_start(self, ctx: PluginContext):
+        self._stopping = False
         self.bot_name = None
+        self.bot_uuid = None
         self.online = {}
         self.online_synced = False
         self.last_pos = {}
@@ -164,6 +182,20 @@ class Back(Plugin):
         await self.sync_players(ctx)
         ctx.spawn(self.sample_loop(ctx), name='position-sampler')
         ctx.spawn(self.death_loop(ctx), name='death-listener')
+
+    async def on_stop(self, ctx: PluginContext):
+        self._stopping = True
+
+    def _peer_stopped(self, ctx: PluginContext) -> bool:
+        if self._stopping:
+            return True
+        peer = getattr(ctx, 'peer', None)
+        if peer is None:
+            return False
+        if getattr(peer, '_error', None) is not None:
+            return True
+        closed = getattr(peer, '_closed', None)
+        return closed is not None and closed.is_set()
 
     async def on_event(self, ctx: PluginContext, event: Event):
         if event.kind == 'player.list_added':
@@ -181,7 +213,7 @@ class Back(Plugin):
                 # 引号不配对、参数个数不对，或玩家已经下线：不回复，只确认事件。
                 pass
         async with self.lock:
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await event.ack()
 
     def clock(self) -> float:
         # 死亡记录有效期和冷却需要跨重启保留，使用墙上时间。
@@ -189,15 +221,24 @@ class Back(Plugin):
 
     # ---- 在线玩家缓存 ----
 
+    def _is_bot(self, name: str = '', uuid: str = '') -> bool:
+        return bool((self.bot_name and name == self.bot_name) or (self.bot_uuid and uuid == self.bot_uuid))
+
     async def refresh_bot_name(self, ctx: PluginContext) -> str | None:
         try:
-            name = (await ctx.robot()).get('bot_name')
+            status = await ctx.robot()
         except (IPCError, ProtocolError, ConnectionError, TimeoutError, OSError) as error:
             ctx.log.warning('robot status unavailable: %s', type(error).__name__)
             return self.bot_name
+        name = status.get('bot_name') if isinstance(status, dict) else None
+        bot_uuid = status.get('bot_uuid') if isinstance(status, dict) else None
         if name:
             self.bot_name = name
-            for key in [k for k, entry in self.online.items() if entry['name'] == name]:
+        if bot_uuid:
+            self.bot_uuid = bot_uuid
+        if name or bot_uuid:
+            for key in [k for k, entry in self.online.items()
+                        if self._is_bot(entry.get('name', ''), entry.get('uuid', ''))]:
                 removed = self.online.pop(key)
                 self.last_pos.pop(removed['player_id'], None)
         return self.bot_name
@@ -210,21 +251,24 @@ class Back(Plugin):
             return
         for player in roster:
             name = player.get('name', '')
-            if not name or (self.bot_name and name == self.bot_name):
-                continue
             uuid = player.get('uuid', '')
             xuid = player.get('xuid', '')
+            if not name or self._is_bot(name, uuid):
+                continue
             if not uuid and not xuid:
                 continue
             pid = player_id({'uuid': uuid, 'xuid': xuid})
             key = uuid or pid
             existing = self.online.get(key)
+            euid = player.get('entity_unique_id')
+            if euid is None and existing:
+                euid = existing.get('entity_unique_id')
             self.online[key] = {
                 'name': name,
                 'uuid': uuid,
                 'xuid': xuid or (existing.get('xuid', '') if existing else ''),
                 'player_id': pid,
-                'entity_unique_id': existing.get('entity_unique_id') if existing else None,
+                'entity_unique_id': euid,
             }
         self.online_synced = True
 
@@ -232,12 +276,12 @@ class Back(Plugin):
         if self.bot_name is None:
             await self.refresh_bot_name(ctx)
         async with self.lock:
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await event.ack()
         body = event.payload.get('payload') or {}
         name = body.get('name')
         uuid = body.get('uuid') or ''
         xuid = body.get('xuid') or ''
-        if not isinstance(name, str) or not name or (self.bot_name and name == self.bot_name):
+        if not isinstance(name, str) or not name or self._is_bot(name, uuid):
             return
         if not uuid and not xuid:
             return
@@ -257,14 +301,29 @@ class Back(Plugin):
 
     async def on_player_removed(self, ctx: PluginContext, event: Event):
         async with self.lock:
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await event.ack()
         body = event.payload.get('payload') or {}
         uuid = body.get('uuid') or ''
+        xuid = body.get('xuid') or ''
+        name = body.get('name') or ''
+        removed = None
         if uuid:
             removed = self.online.pop(uuid, None)
-            if removed is not None:
-                ctx.log.debug('player left: %s (%s)', removed['name'], uuid)
-                self.last_pos.pop(removed['player_id'], None)
+        if removed is None and xuid:
+            removed = self.online.pop('xuid-' + xuid, None)
+            if removed is None:
+                for key, entry in list(self.online.items()):
+                    if entry.get('xuid') == xuid:
+                        removed = self.online.pop(key)
+                        break
+        if removed is None and not uuid and not xuid and name:
+            for key, entry in list(self.online.items()):
+                if entry.get('name') == name:
+                    removed = self.online.pop(key)
+                    break
+        if removed is not None:
+            ctx.log.debug('player left: %s (%s)', removed['name'], removed['player_id'])
+            self.last_pos.pop(removed['player_id'], None)
 
     def find_online_by_name(self, name: str) -> dict | None:
         for entry in self.online.values():
@@ -291,18 +350,24 @@ class Back(Plugin):
     # ---- 后台采样与死亡监听 ----
 
     async def sample_loop(self, ctx: PluginContext):
-        while True:
+        while not self._peer_stopped(ctx):
             try:
                 await self.sample_once(ctx)
             except asyncio.CancelledError:
                 raise
             except (IPCError, ProtocolError, TimeoutError, ConnectionError, OSError) as error:
+                if self._peer_stopped(ctx):
+                    return
                 ctx.log.warning('position sampling failed: %s', error)
+            if self._peer_stopped(ctx):
+                return
             await asyncio.sleep(ctx.config.sample_interval_seconds)
 
     async def sample_once(self, ctx: PluginContext):
-        if self.bot_name is None:
+        if self.bot_name is None and self.bot_uuid is None:
             await self.refresh_bot_name(ctx)
+        if self.bot_name is None and self.bot_uuid is None:
+            return
         if not self.online_synced:
             await self.sync_players(ctx)
         if not self.online:
@@ -321,7 +386,7 @@ class Back(Plugin):
             self.last_pos[player['player_id']] = {**pos, 'at': now}
 
     async def death_loop(self, ctx: PluginContext):
-        while True:
+        while not self._peer_stopped(ctx):
             try:
                 async with ctx.packets.typed.subscribe([packets.Text]) as stream:
                     async for event in stream:
@@ -330,17 +395,22 @@ class Back(Plugin):
             except asyncio.CancelledError:
                 raise
             except PacketSubscriptionError as error:
-                if error.reason in ('permission_revoked', 'closed'):
+                if error.reason in ('permission_revoked', 'closed') or self._peer_stopped(ctx):
                     ctx.log.info('death packet subscription ended: %s', error.reason)
                     return
                 ctx.log.warning('death packet subscription interrupted (%s), retrying in 2s', error.reason)
             except IPCRejected as error:
-                if error.code in ('permission_denied', 'permission_revoked'):
+                if error.code in ('permission_denied', 'permission_revoked') or self._peer_stopped(ctx):
                     ctx.log.warning('death packet subscription unauthorized (%s)', error.code)
                     return
                 ctx.log.warning('death packet subscription rejected (%s), retrying in 2s', error.code)
             except (IPCError, ProtocolError, TimeoutError, ConnectionError, OSError) as error:
+                if self._peer_stopped(ctx):
+                    ctx.log.info('death packet subscription stopped: %s', error)
+                    return
                 ctx.log.warning('death packet subscription failed (%s), retrying in 2s', error)
+            if self._peer_stopped(ctx):
+                return
             await asyncio.sleep(2)
 
     def parse_death_victim(self, model) -> dict | None:
@@ -353,7 +423,7 @@ class Back(Plugin):
         if not params:
             return None
         victim_name = decode_text(params[0])
-        if not victim_name or (self.bot_name and victim_name == self.bot_name):
+        if not victim_name or self._is_bot(victim_name):
             return None
         return self.find_online_by_name(victim_name)
 
@@ -384,21 +454,41 @@ class Back(Plugin):
             return None, True
         return pos, False
 
+    def _recent_fallback(self, ctx: PluginContext, pid: str, now: float) -> dict | None:
+        cached = self.last_pos.get(pid)
+        if not valid_record(cached):
+            return None
+        max_age = max(FALLBACK_MAX_AGE_SECONDS, ctx.config.sample_interval_seconds * 2.0)
+        if not 0 <= now - cached['at'] <= max_age:
+            return None
+        if cached['y'] < VOID_Y and not ctx.config.allow_void_return:
+            return None
+        return {
+            'dimension': cached['dimension'],
+            'x': cached['x'],
+            'y': cached['y'],
+            'z': cached['z'],
+            'at': cached['at'],
+        }
+
+    def _looks_like_immediate_respawn(self, live_pos: dict, fallback: dict, now: float) -> bool:
+        if live_pos['dimension'] != fallback['dimension']:
+            return True
+        age = max(1.0, now - fallback['at'])
+        horizontal = math.hypot(live_pos['x'] - fallback['x'], live_pos['z'] - fallback['z'])
+        return horizontal > max(RESPAWN_JUMP_MIN_DISTANCE, RESPAWN_JUMP_SPEED * age)
+
     async def record_death(self, ctx: PluginContext, player: dict):
         pid = player['player_id']
         live_pos, saw_void = await self.query_player_pos(ctx, player['name'])
         now = self.clock()
+        fallback = self._recent_fallback(ctx, pid, now)
         chosen = live_pos
         if chosen is None:
-            cached = self.last_pos.get(pid)
-            if cached is not None and 0 <= now - cached['at'] <= FALLBACK_MAX_AGE_SECONDS:
-                if cached['y'] >= VOID_Y or ctx.config.allow_void_return:
-                    chosen = {
-                        'dimension': cached['dimension'],
-                        'x': cached['x'],
-                        'y': cached['y'],
-                        'z': cached['z'],
-                    }
+            if fallback is not None:
+                chosen = {k: fallback[k] for k in ('dimension', 'x', 'y', 'z')}
+        elif fallback is not None and self._looks_like_immediate_respawn(chosen, fallback, now):
+            chosen = {k: fallback[k] for k in ('dimension', 'x', 'y', 'z')}
         if chosen is None:
             if ctx.config.notify_on_death:
                 text = ('你在虚空中死亡，未能记录可返回的坐标。' if saw_void
@@ -422,53 +512,71 @@ class Back(Plugin):
 
     # ---- 玩家命令 ----
 
+    def _check_back_record(self, record, cd_record, now: float, config: Settings) -> tuple[bool, str | None]:
+        if record is None:
+            return False, '没有找到你的死亡记录。'
+        if not isinstance(record, dict) or record.get('dimension') not in DIMENSIONS:
+            return False, '死亡位置所在维度不支持返回。'
+        if not valid_record(record):
+            return False, '没有找到你的死亡记录。'
+        if record.get('used') and config.one_time:
+            return False, '上次死亡点的返回机会已经用过了。'
+        if config.expire_seconds > 0 and now - record['at'] > config.expire_seconds:
+            return False, '上次的死亡记录已经过期了。'
+        if record['y'] < VOID_Y and not config.allow_void_return:
+            return False, '上次死亡位置在虚空中，不允许返回。'
+        if config.cooldown_seconds > 0 and isinstance(cd_record, dict):
+            last_cd = finite_number(cd_record.get('at'))
+            if last_cd is not None:
+                wait = min(last_cd + config.cooldown_seconds - now, config.cooldown_seconds)
+                if wait > 0:
+                    return False, f'返回还在冷却中，请 {math.ceil(wait)} 秒后再试。'
+        return True, None
+
+    def _commit_teleport(self, ctx: PluginContext, tx, d_key: str, c_key: str,
+                         player: dict, target: str, record: dict, now: float, note: str):
+        tx.set(d_key, {**record, 'used': True})
+        tx.set(c_key, {'at': now})
+        coordinates = ' '.join(coordinate(record[axis]) for axis in 'xyz')
+        tx.action(ctx.commands.prepare(
+            f'execute in {DIMENSIONS[record["dimension"]]} run tp {target} {coordinates}',
+            idempotency_key=tx.commit_id + '_tp', deadline=deadline()))
+        self.attach_reply(ctx, tx, player, f'已传送回死亡地点（{place_text(record)}）。' + note)
+
     async def go_back(self, ctx: PluginContext, command):
         player = command.player
         pid = player_id(player)
         d_key, c_key = death_key(pid), cooldown_key(pid)
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[d_key, c_key])
+            tx = await command.event.transaction(keys=[d_key, c_key])
             record = tx.get(d_key)
             cd_record = tx.get(c_key)
             now = self.clock()
             config = ctx.config
-
-            if record is None:
-                self.attach_reply(ctx, tx, player, '没有找到你的死亡记录。')
+            ok, refusal = self._check_back_record(record, cd_record, now, config)
+            if not ok:
+                self.attach_reply(ctx, tx, player, refusal)
                 return await tx.save()
-            if not isinstance(record, dict) or record.get('dimension') not in DIMENSIONS:
-                self.attach_reply(ctx, tx, player, '死亡位置所在维度不支持返回。')
-                return await tx.save()
-            if record.get('used') and config.one_time:
-                self.attach_reply(ctx, tx, player, '上次死亡点的返回机会已经用过了。')
-                return await tx.save()
-            if config.expire_seconds > 0 and now - record['at'] > config.expire_seconds:
-                self.attach_reply(ctx, tx, player, '上次的死亡记录已经过期了。')
-                return await tx.save()
-            if record['y'] < VOID_Y and not config.allow_void_return:
-                self.attach_reply(ctx, tx, player, '上次死亡位置在虚空中，不允许返回。')
-                return await tx.save()
-
-            if config.cooldown_seconds > 0 and isinstance(cd_record, dict):
-                last_cd = cd_record.get('at', -math.inf)
-                wait = min(last_cd + config.cooldown_seconds - now, config.cooldown_seconds)
-                if wait > 0:
-                    self.attach_reply(ctx, tx, player, f'返回还在冷却中，请 {math.ceil(wait)} 秒后再试。')
-                    return await tx.save()
-
             target = player_target(player['name'])
-            paid, note = await self.charge(ctx, command)
+            if not config.cost:
+                self._commit_teleport(ctx, tx, d_key, c_key, player, target, record, now, '')
+                return await tx.save()
+
+        paid, note = await self.charge(ctx, command)
+        async with self.lock:
+            tx = await command.event.transaction(keys=[d_key, c_key])
             if not paid:
                 self.attach_reply(ctx, tx, player, note)
                 return await tx.save()
-
-            tx.set(d_key, {**record, 'used': True})
-            tx.set(c_key, {'at': now})
-            coordinates = ' '.join(coordinate(record[axis]) for axis in 'xyz')
-            tx.action(ctx.commands.prepare(
-                f'execute in {DIMENSIONS[record["dimension"]]} run tp {target} {coordinates}',
-                idempotency_key=tx.commit_id + '_tp', deadline=deadline()))
-            self.attach_reply(ctx, tx, player, f'已传送回死亡地点（{place_text(record)}）。' + note)
+            record = tx.get(d_key)
+            cd_record = tx.get(c_key)
+            now = self.clock()
+            ok, refusal = self._check_back_record(record, cd_record, now, ctx.config)
+            if not ok:
+                self.attach_reply(ctx, tx, player, refusal)
+                return await tx.save()
+            target = player_target(player['name'])
+            self._commit_teleport(ctx, tx, d_key, c_key, player, target, record, now, note)
             await tx.save()
 
     async def show_death(self, ctx: PluginContext, command):
@@ -476,12 +584,12 @@ class Back(Plugin):
         pid = player_id(player)
         d_key = death_key(pid)
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[d_key])
+            tx = await command.event.transaction(keys=[d_key])
             record = tx.get(d_key)
             now = self.clock()
             config = ctx.config
 
-            if not isinstance(record, dict) or record.get('dimension') not in DIMENSIONS:
+            if not valid_record(record):
                 text = '没有找到你的死亡记录。'
             else:
                 where = place_text(record)

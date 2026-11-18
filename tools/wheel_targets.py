@@ -78,13 +78,16 @@ def validate_lock(lock, manifest=None):
     if abi not in {'none', 'abi3', 'cp' + current, 'cp' + current + 't'}:
         raise ValueError('wheel ABI does not match locked Python version')
     target = platform_target(platform)
-    if target and manifest is not None:
-        oses, arches = manifest.get('target_os'), manifest.get('target_arch')
-        oses = [oses] if isinstance(oses, str) else oses
-        arches = [arches] if isinstance(arches, str) else arches
-        allowed_arches = {'amd64', 'arm64'} if target[1] == 'universal2' else {target[1]}
-        if not oses or not arches or set(oses) != {target[0]} or not set(arches) <= allowed_arches:
-            raise ValueError('wheel platform differs from manifest target_os/target_arch')
+    if manifest is not None:
+        if manifest.get('runtime') != 'go' and (manifest.get('target_os') is not None or manifest.get('target_arch') is not None):
+            raise ValueError('target_os/target_arch require Go runtime in manifest')
+        if target and manifest.get('runtime') == 'go':
+            oses, arches = manifest.get('target_os'), manifest.get('target_arch')
+            oses = [oses] if isinstance(oses, str) else oses
+            arches = [arches] if isinstance(arches, str) else arches
+            allowed_arches = {'amd64', 'arm64'} if target[1] == 'universal2' else {target[1]}
+            if not oses or not arches or set(oses) != {target[0]} or not set(arches) <= allowed_arches:
+                raise ValueError('wheel platform differs from manifest target_os/target_arch')
     for wheel in lock['wheels']:
         candidates = tags(wheel['wheel'])
         if not any(compatible(tag, version, abi, platform) for tag in candidates):
@@ -110,6 +113,8 @@ def validate_runtime_target(lock, target):
     expected_abi = 'cp' + ''.join(map(str, version))
     if target['abi'] not in {expected_abi, expected_abi + 't'}:
         raise ValueError('runtime target must identify the actual CPython ABI')
+    if target['platform'] == 'any':
+        raise ValueError('runtime-target.json platform cannot be any')
     platform_target(target['platform'])
     if version != python_version(lock['python_version']):
         raise ValueError('wheel lock Python differs from runtime target')
@@ -152,7 +157,7 @@ def validate_python_requirement(specifier, version):
         elif op == '>':
             accepted = version > bound
         elif op == '<=':
-            accepted = version < bound
+            accepted = version <= bound
         else:
             if minor is None:
                 raise ValueError('Requires-Python ~= needs a minor version')

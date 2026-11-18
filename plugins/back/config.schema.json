@@ -7,8 +7,8 @@
       "title": "位置采样间隔（秒）",
       "description": "后台定时记录在线玩家有效位置的时间间隔",
       "minimum": 1,
-      "maximum": 10,
-      "default": 2
+      "maximum": 60,
+      "default": 15
     },
     "expire_seconds": {
       "type": "integer",
@@ -45,8 +45,8 @@
     },
     "allow_void_return": {
       "type": "boolean",
-      "title": "允许返回虚空（y < -60）",
-      "description": "关闭时不记录 y < -60 的虚空死亡点，也会阻止传送到此类位置",
+      "title": "允许返回虚空（y < -64）",
+      "description": "关闭时不记录 y < -64 的虚空死亡点，也会阻止传送到此类位置",
       "default": false
     }
   },

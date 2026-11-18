@@ -15,7 +15,7 @@ from neomega_runtime import (Event, PacketSubscriptionError, PluginContext,
 from neomega_runtime.config import load_config
 from neomega_runtime.config_errors import ConfigError
 from neomega_runtime.config_schema import check_config_schema, schema_for_config
-from neomega_runtime.managed import IPCRejected
+from neomega_runtime.managed import IPCError, IPCRejected, ManagedPeer
 from neomega_runtime.operations import Operations
 from neomega_runtime.protocol import PROTOCOL_VERSION, SCHEMA_ID, StringBytes, packets
 from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
@@ -291,22 +291,56 @@ class BackTests(unittest.IsolatedAsyncioTestCase):
             'dimension': 2, 'x': 12.346, 'y': 200.0, 'z': -8.5, 'at': self.now,
         })
 
-        # Void sample (y = -60.1 < -60) is ignored when allow_void_return=False
+        # Void sample (y = -64.1 < -64) is ignored when allow_void_return=False
         self.now += 2
-        self.host.all_samples = at(0, -60.1, 0, dimension=0, unique_id=PLAYER['uuid'])
+        self.host.all_samples = at(0, -64.1, 0, dimension=0, unique_id=PLAYER['uuid'])
         await self.plugin.sample_once(self.ctx)
         self.assertEqual(self.plugin.last_pos['u1']['y'], 200.0)
 
-        # Boundary y == -60.0 is valid
-        self.host.all_samples = at(0, -60.0, 0, dimension=0, unique_id=PLAYER['uuid'])
+        # Overworld MC 1.18+ bedrock coordinates (-64..-60) are valid
+        self.host.all_samples = at(0, -62.0, 0, dimension=0, unique_id=PLAYER['uuid'])
         await self.plugin.sample_once(self.ctx)
-        self.assertEqual(self.plugin.last_pos['u1']['y'], -60.0)
+        self.assertEqual(self.plugin.last_pos['u1']['y'], -62.0)
+
+        # Boundary y == -64.0 is valid
+        self.host.all_samples = at(0, -64.0, 0, dimension=0, unique_id=PLAYER['uuid'])
+        await self.plugin.sample_once(self.ctx)
+        self.assertEqual(self.plugin.last_pos['u1']['y'], -64.0)
 
         # Void sample recorded when allow_void_return=True
         self.ctx.config = Settings(allow_void_return=True)
         self.host.all_samples = at(0, -80.0, 0, dimension=0, unique_id=PLAYER['uuid'])
         await self.plugin.sample_once(self.ctx)
         self.assertEqual(self.plugin.last_pos['u1']['y'], -80.0)
+
+    async def test_bot_only_presence_emits_zero_position_queries(self):
+        self.host.online = [dict(ROBOT)]
+        self.ctx = await self.start(Settings(), spawn_tasks=False)
+        await self.plugin.sample_once(self.ctx)
+        self.assertEqual(self.plugin.online, {})
+        self.assertEqual(self.host.query_calls, [])
+
+        # Even if robot() failed at startup, sample_once refuses to query when robot identity is unknown
+        self.host.robot_error = IPCRejected('unavailable', 'r1', True)
+        self.ctx = await self.start(Settings(), spawn_tasks=False)
+        await self.plugin.sample_once(self.ctx)
+        self.assertEqual(self.host.query_calls, [])
+
+    async def test_sync_players_preserves_entity_unique_id_and_xuid_remove_clears_cache(self):
+        self.host.online = [dict(ROBOT), dict(NO_UUID_PLAYER)]
+        self.ctx = await self.start(Settings(), spawn_tasks=False)
+        await self.deliver('player.list_added', {**NO_UUID_PLAYER, 'entity_unique_id': -77})
+        self.assertEqual(self.plugin.online['xuid-99']['entity_unique_id'], -77)
+        await self.plugin.sync_players(self.ctx)
+        self.assertEqual(self.plugin.online['xuid-99']['entity_unique_id'], -77)
+
+        self.host.all_samples = at(12, 64, 18, dimension=0, unique_id='-77')
+        await self.plugin.sample_once(self.ctx)
+        self.assertIn('xuid-99', self.plugin.last_pos)
+
+        await self.deliver('player.list_removed', {'uuid': '', 'xuid': '99'})
+        self.assertNotIn('xuid-99', self.plugin.online)
+        self.assertNotIn('xuid-99', self.plugin.last_pos)
 
     # ---- 死亡监听与回退 ----
 
@@ -347,11 +381,21 @@ class BackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.values['death:u1']['x'], 30.0)
         self.assertEqual(self.host.values['death:u1']['dimension'], 0)
 
-        # Stale last_pos (> 10s) and void live sample -> does NOT overwrite existing death:u1
-        self.now += 2  # 11s after initial sample
+        # Stale last_pos (> 30s with default 15s interval) and void live sample -> does NOT overwrite existing death:u1
+        self.now += 25  # 34s after initial sample
         await self.plugin.handle_death_packet(self.ctx, death_packet(PLAYER['name']))
-        self.assertEqual(self.host.values['death:u1']['at'], self.now - 2)
+        self.assertEqual(self.host.values['death:u1']['at'], self.now - 25)
         self.assertIn('虚空中死亡', self.host.reply())
+
+    async def test_death_falls_back_to_last_pos_on_immediate_respawn(self):
+        self.host.all_samples = at(500, 70, 500, dimension=1, unique_id=PLAYER['uuid'])
+        await self.plugin.sample_once(self.ctx)
+        self.now += 3
+        # Live query sees player already respawned in Overworld at (0, 64, 0)
+        self.host.sample_by_name[PLAYER['name']] = at(0, 64, 0, dimension=0, unique_id=PLAYER['uuid'])
+        await self.plugin.handle_death_packet(self.ctx, death_packet(PLAYER['name']))
+        self.assertEqual(self.host.values['death:u1']['dimension'], 1)
+        self.assertEqual(self.host.values['death:u1']['x'], 500.0)
 
     async def test_non_death_packets_and_stringbytes_handling(self):
         # Non-death packets ignored
@@ -404,6 +448,14 @@ class BackTests(unittest.IsolatedAsyncioTestCase):
         self.host.enqueue_terminal('closed')
         await self.plugin.death_loop(self.ctx)
         self.assertEqual(self.host.sub_counter, 3)
+
+    async def test_death_loop_exits_immediately_when_peer_stopped(self):
+        self.host.sub_open_error = IPCError('worker stopped')
+        self.ctx.peer = SimpleNamespace(call=self.host.call, _error=IPCError('worker stopped'), _closed=asyncio.Event())
+        self.ctx.peer._closed.set()
+        with patch('main.asyncio.sleep', new=AsyncMock()) as sleep_mock:
+            await self.plugin.death_loop(self.ctx)
+        sleep_mock.assert_not_awaited()
 
     async def test_spawned_loops_run_and_cancel_cleanly_on_teardown(self):
         self.host.all_samples = at(22, 64, 33, dimension=0, unique_id=PLAYER['uuid'])
@@ -625,6 +677,26 @@ class BackTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.host.commits[-1]['actions'], [])
             self.assertEqual(self.host.commits[-1]['mutations'], [])
 
+    async def test_go_back_does_not_hold_lock_across_charge_and_guards_corrupt_record(self):
+        await self.seed_death()
+        lock_states = []
+
+        async def check_lock_and_pay(*args, **kwargs):
+            lock_states.append(self.plugin.lock.locked())
+            return {'balance': 85, 'duplicate': False, 'currency': '金币', 'pending': False}
+
+        self.charged(side_effect=check_lock_and_pay)
+        await self.say('!返回', event_id='evt-lock')
+        self.assertEqual(lock_states, [False])
+        self.assertTrue(self.host.game_commands())
+
+        # Corrupt record missing 'at' or 'y' does not crash !返回 or !死亡点
+        self.host.values['death:u1'] = {'dimension': 0, 'x': 1, 'z': 2}
+        await self.say('!死亡点', event_id='evt-bad1')
+        self.assertIn('没有找到你的死亡记录', self.host.reply())
+        await self.say('!返回', event_id='evt-bad2')
+        self.assertIn('没有找到你的死亡记录', self.host.reply())
+
 
 class ConfigAndManifestTests(unittest.TestCase):
     def load(self, value):
@@ -647,7 +719,7 @@ class ConfigAndManifestTests(unittest.TestCase):
     def test_invalid_configurations_are_rejected(self):
         for bad in (
             {'sample_interval_seconds': 0},
-            {'sample_interval_seconds': 11},
+            {'sample_interval_seconds': 61},
             {'expire_seconds': -1},
             {'cooldown_seconds': -1},
             {'cost': -1},
@@ -662,7 +734,7 @@ class ConfigAndManifestTests(unittest.TestCase):
     def test_manifest_purposes_complete(self):
         manifest = json.loads((ROOT / 'manifest.json').read_text())
         self.assertEqual(manifest['id'], 'neomega.back')
-        self.assertEqual(manifest['version'], '1.0.0')
+        self.assertEqual(manifest['version'], '1.0.1')
         self.assertEqual(manifest['host_api'], {'major': 1, 'min_minor': 5})
         perms = manifest['permissions']
         purposes = perms['purposes']
@@ -675,6 +747,121 @@ class ConfigAndManifestTests(unittest.TestCase):
         }
         self.assertEqual(set(purposes), expected)
         self.assertTrue(all(isinstance(purposes[k], str) and purposes[k].strip() for k in expected))
+
+
+class ServeWriter:
+    def __init__(self):
+        self.requests = asyncio.Queue()
+        self.responses = asyncio.Queue()
+        self.closed = False
+
+    def write(self, data):
+        for line in data.splitlines():
+            if not line:
+                continue
+            frame = json.loads(line)
+            if frame.get('type') == 'request':
+                self.requests.put_nowait(frame)
+            else:
+                self.responses.put_nowait(frame)
+
+    async def drain(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+    async def wait_closed(self):
+        pass
+
+
+class BackServeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_serve_single_ack_and_bot_only_zero_queries(self):
+        host = FakeHost()
+        host.online = [dict(ROBOT)]
+        deliveries = set()
+        reader = asyncio.StreamReader(limit=1 << 20)
+        writer = ServeWriter()
+        peer = ManagedPeer(reader, writer)
+        plugin = Back()
+
+        def send(frame):
+            reader.feed_data((json.dumps(frame) + '\n').encode())
+
+        async def wait_response(req_id):
+            while True:
+                msg = await asyncio.wait_for(writer.responses.get(), 2)
+                if msg.get('id') == req_id:
+                    return msg
+
+        async def pump():
+            while True:
+                frame = await writer.requests.get()
+                req_id, method, payload = frame['id'], frame['method'], frame['payload']
+                if method == 'hello':
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': {
+                        'protocol_major': 1, 'protocol_minor': 0, 'installation_id': 'inst-1', 'generation': 1,
+                        'capabilities': [], 'limits': {
+                            'max_frame_bytes': 1 << 20, 'outgoing_requests': 128,
+                            'inbound_requests': 32, 'queue_frames': 32}}}})
+                elif method == 'capabilities.get':
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': {
+                        'session': 's1',
+                        'packet_subscriptions': {
+                            'open': 'packets.subscribe.open',
+                            'read': 'packets.subscribe.read',
+                            'close': 'packets.subscribe.close',
+                            'min_host_api_minor': 5,
+                            'max_events': 64,
+                            'max_bytes': 524288,
+                        },
+                    }}})
+                elif method == 'events.commit':
+                    key = (payload['subscription_id'], payload['event_id'], payload['delivery_token'])
+                    if key in deliveries:
+                        send({'type': 'response', 'id': req_id, 'payload': {'error': {
+                            'code': 'invalid_delivery', 'message': 'already acked', 'retryable': False, 'request_id': req_id}}})
+                    else:
+                        deliveries.add(key)
+                        res = await host.call(method, payload)
+                        send({'type': 'response', 'id': req_id, 'payload': {'result': res}})
+                else:
+                    res = await host.call(method, payload)
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': res}})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            serve_task = asyncio.create_task(plugin.serve(peer, data_dir=Path(tmp)))
+            pump_task = asyncio.create_task(pump())
+            try:
+                send({'type': 'request', 'id': 'v1', 'method': 'lifecycle.validate',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1, 'revision': 1}})
+                self.assertIn('result', (await wait_response('v1'))['payload'])
+                send({'type': 'request', 'id': 'a1', 'method': 'lifecycle.activate',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1, 'revision': 1, 'state_version': 1}})
+                self.assertTrue((await wait_response('a1'))['payload']['result']['activated'])
+                await asyncio.sleep(0.05)
+                self.assertEqual(host.query_calls, [])
+
+                host.online.append(dict(NO_UUID_PLAYER))
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'player.list_added', 'subscription_id': 'join', 'event_id': 'e1', 'delivery_token': 'd1',
+                    'payload': dict(NO_UUID_PLAYER)}})
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'chat.received', 'subscription_id': 'chat', 'event_id': 'e2', 'delivery_token': 'd2',
+                    'payload': {'player': NO_UUID_PLAYER['name'], 'xuid': NO_UUID_PLAYER['xuid'], 'message': '!死亡点'}}})
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'player.list_removed', 'subscription_id': 'leave', 'event_id': 'e3', 'delivery_token': 'd3',
+                    'payload': {'uuid': '', 'xuid': NO_UUID_PLAYER['xuid']}}})
+                send({'type': 'request', 'id': 'dr1', 'method': 'lifecycle.drain',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1}})
+                self.assertTrue((await asyncio.wait_for(wait_response('dr1'), 2))['payload']['result']['drained'])
+                self.assertEqual(deliveries, {('join', 'e1', 'd1'), ('chat', 'e2', 'd2'), ('leave', 'e3', 'd3')})
+                self.assertNotIn('xuid-99', plugin.online)
+                self.assertFalse(serve_task.done())
+            finally:
+                serve_task.cancel()
+                pump_task.cancel()
+                await asyncio.gather(serve_task, pump_task, return_exceptions=True)
 
 
 if __name__ == '__main__':

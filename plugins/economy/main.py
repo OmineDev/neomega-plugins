@@ -14,8 +14,9 @@ from uuid import uuid4
 from neomega_runtime import (AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext,
                              PlayerNotFound, ServiceRejected, service)
 from neomega_runtime.http import ProtocolError
-from neomega_runtime.managed import IPCRejected
-from neomega_runtime.operations import OperationWaitTimeout
+from neomega_runtime.managed import IPCError, IPCRejected
+from neomega_runtime.operations import (OperationSubmissionError, OperationSubmissionTimeout,
+                                      OperationWaitTimeout)
 from neomega_runtime.services import ServiceFailed, ServiceUncertain, ServiceWaitTimeout
 
 RECENT = 20
@@ -122,7 +123,7 @@ class Economy(Plugin):
                 except (ValueError, PlayerNotFound, AmbiguousPlayer):
                     # 引号不配对、参数个数不对，或玩家已经下线：不回复，只确认事件。
                     pass
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await event.ack()
 
     # ---- 计分板 ----
 
@@ -130,8 +131,10 @@ class Economy(Plugin):
         """执行一个读取或设置动作，返回服务器回应；没有成功时记日志并返回 None。"""
         try:
             row = await ctx.operations.execute(intent, timeout=WAIT)
-        except OperationWaitTimeout:
-            row = {'state': 'unknown', 'result': {}}
+        except (OperationWaitTimeout, OperationSubmissionTimeout, OperationSubmissionError,
+                IPCError, ProtocolError, TimeoutError, ConnectionError, OSError) as error:
+            ctx.log.warning('scoreboard action failed: %s', type(error).__name__)
+            return None
         if row['state'] == 'succeeded':
             return row['result']['result']
         ctx.log.warning('scoreboard action %s: %s', row['state'], row['result'].get('reason'))
@@ -139,7 +142,12 @@ class Economy(Plugin):
 
     async def online(self, ctx, pid):
         """在线玩家的当前名字，就是他在计分板上的 holder；不在线时为 None。"""
-        return next((p['name'] for p in await ctx.players() if player_id(p) == pid), None)
+        try:
+            players = await ctx.players()
+        except (IPCError, ProtocolError, TimeoutError, ConnectionError, OSError) as error:
+            ctx.log.warning('players list unavailable: %s', type(error).__name__)
+            raise ServiceRejected('unavailable') from None
+        return next((p['name'] for p in players if player_id(p) == pid), None)
 
     async def score(self, ctx, name):
         found = await self.execute(ctx, ctx.scoreboard.prepare_get(name, ctx.config.objective, **once()))
@@ -155,7 +163,7 @@ class Economy(Plugin):
         receipt = await tx.save()
         try:
             row = await ctx.operations.wait(receipt['operation_ids'][-1], timeout=WAIT)
-        except OperationWaitTimeout:
+        except (OperationWaitTimeout, IPCError, ProtocolError, TimeoutError, ConnectionError, OSError):
             row = {'state': 'unknown'}
         if row['state'] == 'succeeded':
             return True, row['result']['result']['value']
@@ -268,17 +276,26 @@ class Economy(Plugin):
     # ---- 进服入账 ----
 
     async def joined(self, ctx, event) -> bool:
-        body = event.payload['payload']
+        body = event.payload.get('payload') or {}
+        name = body.get('name') if isinstance(body.get('name'), str) else ''
+        uuid = body.get('uuid') if isinstance(body.get('uuid'), str) else ''
+        xuid = body.get('xuid') if isinstance(body.get('xuid'), str) else ''
+        if not (name or uuid or xuid):
+            return False
         try:
-            player = await ctx.resolve_player(name=body['name'], xuid=body.get('xuid') or None)
-        except (PlayerNotFound, AmbiguousPlayer):
+            kwargs = {'name': name or None, 'xuid': xuid or None}
+            if not name and not xuid:
+                kwargs['uuid'] = uuid
+            player = await ctx.resolve_player(**kwargs)
+        except (PlayerNotFound, AmbiguousPlayer, ValueError):
             return False  # 进服事件送达时玩家已经离开：只确认事件。
         pid, name = player_id(player), player['name']
-        tx = await ctx.storage.transaction(event=event.payload, keys=['a:' + pid])
+        tx = await event.transaction(keys=['a:' + pid])
         record = account(tx, pid)
         start, pending = (0 if record['started'] else ctx.config.starting_balance), record['pending']
         if record['started'] and not pending:
-            return False
+            await tx.save()
+            return True
         if start:
             post(record, tx.commit_id, start, '初始金币')
         if pending:
@@ -303,7 +320,7 @@ class Economy(Plugin):
 
     async def history(self, ctx, command):
         pid = player_id(command.player)
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=['a:' + pid])
+        tx = await command.event.transaction(keys=['a:' + pid])
         recent = account(tx, pid)['recent'][-10:][::-1]
         lines = [f'{entry["delta"]:+d} {entry["reason"]}' for entry in recent]
         text = '最近的收支：\n' + '\n'.join(lines) if lines else '还没有收支记录。'
@@ -339,7 +356,7 @@ class Economy(Plugin):
         text = f'已转给 {target_name} {amount} {coin}，剩余 {balance} {coin}'
         if payee is None and not duplicate:
             text += f'\n{target_name} 不在线，{coin}会在他下次进服时到账'
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+        tx = await command.event.transaction(keys=[])
         self.tell(ctx, tx, payer['name'], text)
         if payee is not None:
             self.tell(ctx, tx, target_name, f'{payer["name"]} 转给你 {amount} {coin}，现有 {payee} {coin}', 'payee')
@@ -347,14 +364,19 @@ class Economy(Plugin):
 
     async def find(self, ctx, name):
         """先在在线玩家里精确匹配名字，再请玩家档案按名字查离线玩家。"""
-        for player in await ctx.players():
+        try:
+            players = await ctx.players()
+        except (IPCError, ProtocolError, TimeoutError, ConnectionError, OSError) as error:
+            ctx.log.warning('players list unavailable: %s', type(error).__name__)
+            raise ServiceRejected('unavailable') from None
+        for player in players:
             if player['name'] == name:
                 return player_id(player), player['name']
         found = await ctx.services.call('plugin.neomega.players.resolve', {'name': name}, timeout=5)
         return found['id'], found['name']
 
     async def answer(self, ctx, command, text):
-        tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+        tx = await command.event.transaction(keys=[])
         self.tell(ctx, tx, command.player['name'], text)
         await tx.save()
 

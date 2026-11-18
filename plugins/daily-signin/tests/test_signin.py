@@ -1,14 +1,17 @@
 """Drive the plugin through the real SDK storage against an in-memory Host."""
+import asyncio
 import copy
 from datetime import date
 import json
 import logging
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
 from neomega_runtime import Event, PluginContext
-from neomega_runtime.managed import IPCRejected
+from neomega_runtime.managed import IPCRejected, ManagedPeer
 from neomega_runtime.operations import Operations
 from neomega_runtime.services import ServiceWaitTimeout
 from main import DailySignin, Milestone, Settings
@@ -146,7 +149,116 @@ class SigninTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             Settings(commands=[' '])
         with self.assertRaises(ValueError):
+            Settings(milestones=[Milestone(7, [' '])])
+        with self.assertRaises(ValueError):
             Settings(milestones=[Milestone(7), Milestone(7)])
+
+
+class ServeWriter:
+    def __init__(self):
+        self.requests = asyncio.Queue()
+        self.responses = asyncio.Queue()
+        self.closed = False
+
+    def write(self, data):
+        for line in data.splitlines():
+            if not line:
+                continue
+            frame = json.loads(line)
+            if frame.get('type') == 'request':
+                self.requests.put_nowait(frame)
+            else:
+                self.responses.put_nowait(frame)
+
+    async def drain(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+    async def wait_closed(self):
+        pass
+
+
+class SigninServeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_serve_single_ack_and_no_invalid_delivery(self):
+        host = FakeHost()
+        deliveries = set()
+        reader = asyncio.StreamReader(limit=1 << 20)
+        writer = ServeWriter()
+        peer = ManagedPeer(reader, writer)
+        plugin = DailySignin()
+        plugin.today = lambda ctx: date(2026, 10, 21)
+
+        def send(frame):
+            reader.feed_data((json.dumps(frame) + '\n').encode())
+
+        async def wait_response(req_id):
+            while True:
+                msg = await asyncio.wait_for(writer.responses.get(), 2)
+                if msg.get('id') == req_id:
+                    return msg
+
+        async def pump():
+            while True:
+                frame = await writer.requests.get()
+                req_id, method, payload = frame['id'], frame['method'], frame['payload']
+                if method == 'hello':
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': {
+                        'protocol_major': 1, 'protocol_minor': 0, 'installation_id': 'inst-1', 'generation': 1,
+                        'capabilities': [], 'limits': {
+                            'max_frame_bytes': 1 << 20, 'outgoing_requests': 128,
+                            'inbound_requests': 32, 'queue_frames': 32}}}})
+                elif method == 'capabilities.get':
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': {'session': 's1'}}})
+                elif method == 'players.list':
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': {'session': 's1', 'players': [dict(PLAYER)]}}})
+                elif method == 'services.online.submit':
+                    send({'type': 'response', 'id': req_id, 'payload': {'error': {
+                        'code': 'permission_denied', 'message': 'no economy', 'retryable': False, 'request_id': req_id}}})
+                elif method == 'events.commit':
+                    key = (payload['subscription_id'], payload['event_id'], payload['delivery_token'])
+                    if key in deliveries:
+                        send({'type': 'response', 'id': req_id, 'payload': {'error': {
+                            'code': 'invalid_delivery', 'message': 'already acked', 'retryable': False, 'request_id': req_id}}})
+                    else:
+                        deliveries.add(key)
+                        res = await host.call(method, payload)
+                        send({'type': 'response', 'id': req_id, 'payload': {'result': res}})
+                elif method in ('state.get', 'state.commit'):
+                    res = await host.call(method, payload)
+                    send({'type': 'response', 'id': req_id, 'payload': {'result': res}})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            serve_task = asyncio.create_task(plugin.serve(peer, data_dir=Path(tmp)))
+            pump_task = asyncio.create_task(pump())
+            try:
+                send({'type': 'request', 'id': 'v1', 'method': 'lifecycle.validate',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1, 'revision': 1}})
+                self.assertIn('result', (await wait_response('v1'))['payload'])
+                send({'type': 'request', 'id': 'a1', 'method': 'lifecycle.activate',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1, 'revision': 1, 'state_version': 1}})
+                self.assertTrue((await wait_response('a1'))['payload']['result']['activated'])
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'chat.received', 'subscription_id': 'chat', 'event_id': 'e1', 'delivery_token': 'd1',
+                    'payload': {'player': '玩家', 'xuid': '42', 'message': '!签到'}}})
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'chat.received', 'subscription_id': 'chat', 'event_id': 'e2', 'delivery_token': 'd2',
+                    'payload': {'player': '玩家', 'xuid': '42', 'message': '普通聊天'}}})
+                send({'type': 'notification', 'method': 'event', 'payload': {
+                    'kind': 'chat.received', 'subscription_id': 'chat', 'event_id': 'e3', 'delivery_token': 'd3',
+                    'payload': {'player': '玩家', 'xuid': '42', 'message': '!签到信息'}}})
+                send({'type': 'request', 'id': 'dr1', 'method': 'lifecycle.drain',
+                      'payload': {'installation_id': 'inst-1', 'generation': 1}})
+                self.assertTrue((await wait_response('dr1'))['payload']['result']['drained'])
+                self.assertEqual(len(host.commits), 3)
+                self.assertEqual(deliveries, {('chat', 'e1', 'd1'), ('chat', 'e2', 'd2'), ('chat', 'e3', 'd3')})
+                self.assertEqual(host.values['player:u1']['streak'], 1)
+                self.assertFalse(serve_task.done())
+            finally:
+                serve_task.cancel()
+                pump_task.cancel()
+                await asyncio.gather(serve_task, pump_task, return_exceptions=True)
 
 
 if __name__ == '__main__':

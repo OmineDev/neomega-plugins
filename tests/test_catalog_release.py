@@ -26,3 +26,40 @@ class ReleaseTests(unittest.TestCase):
             args[args.index('--version')+1]='2.0.0'
             self.assertNotEqual(subprocess.run(args,capture_output=True).returncode,0)
             self.assertEqual(index.read_bytes(),before)
+
+    def test_rejects_prerelease_preserves_manifest_purposes_and_sorts_semver(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            index = root / 'index.json'
+            for ver in ('1.10.0', '1.2.0'):
+                pkg = root / f'test.demo-{ver}.zip'
+                with zipfile.ZipFile(pkg, 'w') as archive:
+                    archive.writestr('manifest.json', json.dumps({
+                        'id': 'test.demo',
+                        'version': ver,
+                        'permissions': {
+                            'operations': ['framework.command.execute'],
+                            'services': [],
+                            'purposes': {'operation:framework.command.execute': '执行命令'},
+                        },
+                    }))
+                res = subprocess.run([
+                    sys.executable, str(ROOT / 'tools/catalog-release.py'),
+                    '--package', str(pkg), '--plugin', 'test.demo', '--version', ver,
+                    '--name', '示例', '--index', str(index),
+                ], capture_output=True, text=True)
+                self.assertEqual(res.returncode, 0, res.stderr)
+
+            plugins = json.loads(index.read_text())['plugins']
+            self.assertEqual([e['version'] for e in plugins], ['1.2.0', '1.10.0'])
+            self.assertEqual(plugins[0]['permission_purposes'], {'operation:framework.command.execute': '执行命令'})
+
+            bad_pkg = root / 'test.demo-1.2.0-rc.1.zip'
+            with zipfile.ZipFile(bad_pkg, 'w') as archive:
+                archive.writestr('manifest.json', json.dumps({'id': 'test.demo', 'version': '1.2.0-rc.1', 'permissions': {}}))
+            bad = subprocess.run([
+                sys.executable, str(ROOT / 'tools/catalog-release.py'),
+                '--package', str(bad_pkg), '--plugin', 'test.demo', '--version', '1.2.0-rc.1',
+                '--name', '示例', '--index', str(index),
+            ], capture_output=True, text=True)
+            self.assertNotEqual(bad.returncode, 0)

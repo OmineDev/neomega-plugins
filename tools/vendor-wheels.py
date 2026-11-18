@@ -9,7 +9,13 @@ import sys
 import tempfile
 import zipfile
 from email.parser import Parser
-from wheel_targets import validate_lock, validate_runtime_target, python_version
+from wheel_targets import validate_lock, validate_runtime_target, python_version, tags
+
+
+def _needs_runtime_target(records, platform, abi):
+    if platform != 'any' or abi != 'none':
+        return True
+    return any(('py3', 'none', 'any') not in tags(rec['wheel']) or rec.get('requires_python') for rec in records)
 
 
 def main():
@@ -36,7 +42,15 @@ def main():
         payload.mkdir()
         records = []
         version = python_version(args.python_version)
-        runtime_target = {'schema_version': 1, 'implementation': 'cpython', 'python_version': '.'.join(map(str, version)), 'abi': args.abi if args.abi.startswith('cp') else 'cp' + ''.join(map(str, version)), 'platform': args.platform}
+        runtime_target = None
+        if args.platform != 'any':
+            runtime_target = {
+                'schema_version': 1,
+                'implementation': 'cpython',
+                'python_version': '.'.join(map(str, version)),
+                'abi': args.abi if args.abi.startswith('cp') else 'cp' + ''.join(map(str, version)),
+                'platform': args.platform,
+            }
         for wheel in sorted(wheels.glob('*.whl')):
             distribution = wheel.name.split('-')[0]
             license_id = licenses.get(distribution)
@@ -53,6 +67,8 @@ def main():
                 if len(package_metadata_paths) != 1:
                     raise ValueError('wheel requires exactly one METADATA file')
                 record['requires_python'] = Parser().parsestr(archive.read(package_metadata_paths[0]).decode('utf-8')).get('Requires-Python')
+                if runtime_target is None and _needs_runtime_target([record], args.platform, args.abi):
+                    raise ValueError('restricted or platform-specific wheels require an explicit --platform (not any) for runtime-target.json')
                 validate_runtime_target({'platform': args.platform, 'python_version': args.python_version, 'abi': args.abi, 'wheels': [record]}, runtime_target)
                 validate_lock({'platform': args.platform, 'python_version': args.python_version, 'abi': args.abi, 'wheels': [record]})
                 if not any('license' in n.lower() or 'copying' in n.lower() for n in names):
@@ -71,7 +87,8 @@ def main():
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     destination.write_bytes(archive.read(member))
             records.append(record)
-        (payload / 'runtime-target.json').write_text(json.dumps(runtime_target, indent=2) + '\n')
+        if runtime_target is not None:
+            (payload / 'runtime-target.json').write_text(json.dumps(runtime_target, indent=2) + '\n')
         (payload / 'wheels.lock.json').write_text(json.dumps({'schema_version': 1, 'platform': args.platform, 'python_version': args.python_version, 'abi': args.abi, 'wheels': records, 'files': {p.relative_to(payload).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(payload.rglob('*')) if p.is_file()}}, indent=2) + '\n')
         payload.rename(args.output)
     print(args.output)

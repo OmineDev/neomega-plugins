@@ -1,5 +1,5 @@
 {
-  "sample_interval_seconds": 2,
+  "sample_interval_seconds": 15,
   "expire_seconds": 600,
   "one_time": true,
   "cooldown_seconds": 30,

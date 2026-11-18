@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "id": "neomega.economy",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "host_api": {
     "major": 1,
     "min_minor": 4

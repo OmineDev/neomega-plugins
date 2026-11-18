@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
   "id": "neomega.timed-commands",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "host_api": {
     "major": 1,
-    "min_minor": 2
+    "min_minor": 4
   },
   "worker_protocol": {
     "major": 1,

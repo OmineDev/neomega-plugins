@@ -10,9 +10,11 @@ from datetime import datetime, timedelta, timezone
 import json
 import re
 
-from neomega_runtime import Plugin, PluginContext
-from neomega_runtime.managed import IPCRejected
+from neomega_runtime import Plugin, PluginContext, ProtocolError
+from neomega_runtime.managed import IPCError, IPCRejected
 from neomega_runtime.storage import CommitUncertain
+
+MAX_BROADCAST_BYTES = 320
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,8 @@ class Task:
     def __post_init__(self):
         if not self.name.strip():
             raise ValueError('task name must not be empty')
+        if len(task_key(self).encode('utf-8')) > 256:
+            raise ValueError(f'task {self.name}: storage key exceeds 256 UTF-8 bytes')
         if (self.every_minutes > 0) == bool(self.daily_at):
             raise ValueError(f'task {self.name}: set exactly one of every_minutes or daily_at')
         if self.daily_at and not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', self.daily_at):
@@ -82,11 +86,59 @@ def broadcast(message) -> str:
     return 'tellraw @a ' + json.dumps({'rawtext': [{'text': message}]}, ensure_ascii=False)
 
 
+def _tokens(text: str):
+    i = 0
+    while i < len(text):
+        end = i + (2 if text[i] == '§' and i + 1 < len(text) else 1)
+        yield text[i:end]
+        i = end
+
+
+def _style(style: str, token: str) -> str:
+    if len(token) != 2 or token[0] != '§':
+        return style
+    code = token[1].lower()
+    if code == 'r':
+        return ''
+    if code in '0123456789abcdefghijmnpqstu':
+        return token + ''.join('§' + c for c in 'klo' if '§' + c in style.lower())
+    if code in 'klo' and token.lower() not in style.lower():
+        return style + token
+    return style
+
+
+def broadcast_commands(message: str, max_bytes: int = MAX_BROADCAST_BYTES) -> list[str]:
+    single = broadcast(message)
+    if len(single.encode('utf-8')) <= max_bytes:
+        return [single]
+
+    def fits(value: str) -> bool:
+        return len(broadcast(value).encode('utf-8')) <= max_bytes
+
+    chunks, chunk, prefix, style = [], '', '', ''
+    for line in message.splitlines(keepends=True):
+        if chunk and not fits(prefix + chunk + line):
+            chunks.append(broadcast(prefix + chunk))
+            chunk, prefix = '', style
+        for token in _tokens(line):
+            if not fits(prefix + chunk + token):
+                if chunk:
+                    chunks.append(broadcast(prefix + chunk))
+                    chunk, prefix = '', style
+                if not fits(prefix + token):
+                    raise ValueError('broadcast token exceeds command byte budget')
+            chunk += token
+            style = _style(style, token)
+    if chunk or not chunks:
+        chunks.append(broadcast(prefix + chunk))
+    return chunks
+
+
 class TimedCommands(Plugin):
     config_type = Settings
 
     async def on_start(self, ctx: PluginContext):
-        ctx.every(10, lambda: self.check(ctx), name='timed-commands')
+        ctx.every(10, lambda: self.check(ctx), immediate=True, name='timed-commands')
 
     def now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -107,13 +159,19 @@ class TimedCommands(Plugin):
                     continue
                 lines = [line.strip().removeprefix('/') for line in task.commands]
                 if task.message:
-                    lines.append(broadcast(task.message))
+                    lines.extend(broadcast_commands(task.message))
                 for number, line in enumerate(lines):
-                    tx.action(ctx.commands.prepare(line, idempotency_key=f'{tx.commit_id}_{index}_{number}',
-                                                   deadline=deadline()))
+                    try:
+                        intent = ctx.commands.prepare(
+                            line, idempotency_key=f'{tx.commit_id}_{index}_{number}', deadline=deadline())
+                    except ValueError as exc:
+                        ctx.log.warning('定时任务 %s 命令无效，已跳过：%s', task.name, exc)
+                        continue
+                    tx.action(intent)
             if due:
                 await tx.save()
-        except (CommitUncertain, IPCRejected) as exc:
+        except (CommitUncertain, IPCRejected, IPCError, ProtocolError, TimeoutError, ValueError,
+                ConnectionError, OSError) as exc:
             ctx.log.warning('定时任务本轮未能保存，下一轮重新检查：%s', exc)
 
 

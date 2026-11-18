@@ -38,15 +38,22 @@ class Players(Plugin):
 
     async def on_event(self, ctx: PluginContext, event: Event):
         if event.kind == 'player.list_added':
-            joined = event.payload['payload']
-            try:
-                player = await ctx.resolve_player(name=joined['name'], xuid=joined.get('xuid') or None)
-            except (PlayerNotFound, AmbiguousPlayer):
-                pass  # 玩家已经离开：只确认事件。
-            else:
-                await self.record(ctx, event, player)
-                return
-        await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            joined = event.payload.get('payload') or {}
+            name = joined.get('name') if isinstance(joined.get('name'), str) else ''
+            uuid = joined.get('uuid') if isinstance(joined.get('uuid'), str) else ''
+            xuid = joined.get('xuid') if isinstance(joined.get('xuid'), str) else ''
+            if name or uuid or xuid:
+                try:
+                    kwargs = {'name': name or None, 'xuid': xuid or None}
+                    if not name and not xuid:
+                        kwargs['uuid'] = uuid
+                    player = await ctx.resolve_player(**kwargs)
+                except (PlayerNotFound, AmbiguousPlayer, ValueError):
+                    pass  # 玩家已经离开：只确认事件。
+                else:
+                    await self.record(ctx, event, player)
+                    return
+        await event.ack()
 
     async def record(self, ctx, event, player):
         pid, name, xuid = player_id(player), player['name'], player['xuid']
@@ -55,7 +62,7 @@ class Players(Plugin):
         keys = {'p:' + pid, name_key(name)} | {name_key(old) for old in known['names'] + [known.get('name', name)]}
         if player['uuid'] and xuid:
             keys.add('x:' + xuid)
-        tx = await ctx.storage.transaction(event=event.payload, keys=sorted(keys))
+        tx = await event.transaction(keys=sorted(keys))
 
         now = self.now()
         record = tx.get('p:' + pid)
@@ -85,19 +92,31 @@ class Players(Plugin):
 
     @service('resolve', major=1)
     async def resolve(self, ctx: PluginContext, arguments):
-        if len(arguments) != 1:
+        if not isinstance(arguments, dict) or len(arguments) != 1:
             raise ServiceRejected('invalid_argument')
         (field, value), = arguments.items()
+        if field not in ('name', 'uuid', 'xuid') or not isinstance(value, str) or not value:
+            raise ServiceRejected('invalid_argument')
         if field == 'uuid':
             pid = value
+            lookup_key = 'p:' + pid
+        elif field == 'name':
+            pid = None
+            lookup_key = name_key(value)
         else:
-            index = name_key(value) if field == 'name' else 'x:' + value
-            pid = await ctx.storage.get(index)
+            pid = None
+            lookup_key = 'x:' + value
+        if len(lookup_key.encode('utf-8')) > 256 or (field == 'xuid' and len(('p:xuid-' + value).encode('utf-8')) > 256):
+            raise ServiceRejected('invalid_argument')
+        if pid is None:
+            pid = await ctx.storage.get(lookup_key)
             # 没有 uuid 的玩家不写 xuid 索引，他们的 ID 本身就带着 xuid。
             if pid is None and field == 'xuid':
                 pid = 'xuid-' + value
-        record = await ctx.storage.get('p:' + pid) if pid else None
-        if record is None or (field != 'name' and record[field] != value):
+        if not isinstance(pid, str) or not pid or len(('p:' + pid).encode('utf-8')) > 256:
+            raise ServiceRejected('not_found')
+        record = await ctx.storage.get('p:' + pid)
+        if record is None or (field != 'name' and record.get(field) != value):
             raise ServiceRejected('not_found')
         return {'id': pid, 'name': record['name'], 'uuid': record['uuid'], 'xuid': record['xuid'],
                 'names': record['names'], 'last_seen': record['last_seen']}

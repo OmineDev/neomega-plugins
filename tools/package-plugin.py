@@ -6,11 +6,33 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import unicodedata
 import zipfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from library_bundle import bundled_files
 from wheel_targets import validate_lock, validate_runtime_target
+
+try:
+    from neomega_runtime.config_schema import check_config_schema
+except ImportError:
+    check_config_schema = None
+
+SEMVER_RE = re.compile(r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')
+WINDOWS_RESERVED = {'CON', 'PRN', 'AUX', 'NUL'} | {f'COM{i}' for i in range(10)} | {f'LPT{i}' for i in range(10)}
+
+
+def _check_safe_relative_path(name: str):
+    path = PurePosixPath(name)
+    if not name or path.is_absolute() or '..' in path.parts or str(path) != name or '\\' in name or ':' in name or '\x00' in name:
+        raise ValueError('unsafe packaged path: ' + name)
+    for part in path.parts:
+        if part in {'.', '..'} or part.strip() != part or part.endswith('.'):
+            raise ValueError('unsafe packaged path: ' + name)
+        if any(ord(ch) < 32 or ch in '<>"|?*' for ch in part):
+            raise ValueError('unsafe packaged path: ' + name)
+        if part.split('.', 1)[0].upper() in WINDOWS_RESERVED:
+            raise ValueError('Windows reserved packaged path: ' + name)
 
 
 def validate(root):
@@ -28,9 +50,8 @@ def validate(root):
     if len(names) != len(set(names)):
         raise ValueError('duplicate packaged path')
     for name in names:
+        _check_safe_relative_path(name)
         path = PurePosixPath(name)
-        if path.is_absolute() or '..' in path.parts or str(path) != name or '\\' in name:
-            raise ValueError('unsafe packaged path: ' + name)
         if any(part.startswith('.') or part in {'__pycache__', 'node_modules'} for part in path.parts):
             raise ValueError('private/generated packaged path: ' + name)
         if path.suffix in {'.log', '.db', '.sqlite', '.pyc'} or path.name in {'config.json', 'release.json'}:
@@ -54,15 +75,20 @@ def validate(root):
         raise ValueError('plugin ID must be <namespace>.<name> in lowercase letters, digits and hyphens, at most 80 characters')
     if manifest['id'].split('.')[0] in {'community', 'example', 'test'}:
         raise ValueError('reserved plugin namespace: ' + manifest['id'])
-    if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', manifest['version']):
+    if not SEMVER_RE.fullmatch(manifest['version']):
         raise ValueError('explicit semantic version required')
     if manifest.get('manifest_version') != 1 or manifest.get('runtime') != 'python':
         raise ValueError('unsupported manifest version/runtime')
+    if manifest.get('target_os') is not None or manifest.get('target_arch') is not None:
+        raise ValueError('target_os/target_arch require Go runtime')
+    _check_safe_relative_path(str(manifest.get('entrypoint', '')))
     if manifest.get('entrypoint') not in names:
         raise ValueError('entrypoint must be packaged')
     schema = json.loads((root / 'config.schema.json').read_text())
     if not isinstance(schema, dict) or schema.get('type') != 'object':
         raise ValueError('configuration schema must describe an object')
+    if check_config_schema is not None:
+        check_config_schema(schema)
     permissions = manifest.get('permissions', {})
     purposes = meta.get('permission_purposes', permissions.get('purposes', {}))
     if not isinstance(purposes, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in purposes.items()):
@@ -71,17 +97,38 @@ def validate(root):
         if permission in purposes and purposes[permission] != purpose:
             raise ValueError('conflicting permission purpose: ' + permission)
     required = []
-    for field, prefix in [('operations', 'operation'), ('services', 'service'), ('players', 'players'), ('packet_send_ids', 'packet_send'), ('packet_observe_ids', 'packet_observe')]:
+    for field, prefix in [
+        ('operations', 'operation'),
+        ('services', 'service'),
+        ('players', 'players'),
+        ('packet_send_ids', 'packet_send'),
+        ('packet_observe_ids', 'packet_observe'),
+        ('packet_preview_ids', 'packet_preview'),
+        ('raw_packet_directions', 'packet_raw'),
+    ]:
         values = permissions.get(field, [])
         if not isinstance(values, list):
             raise ValueError('permission lists required')
-        if field in {'packet_send_ids', 'packet_observe_ids'} and any(type(value) is not int or not 0 <= value <= 0xffffffff for value in values):
-            raise ValueError('packet permission IDs must be uint32')
+        if field in {'packet_send_ids', 'packet_observe_ids', 'packet_preview_ids'}:
+            if len(values) > 256 or len(set(values)) != len(values):
+                raise ValueError(f'{field} must contain at most 256 unique IDs')
+            upper = 1023 if field == 'packet_observe_ids' else 0xffffffff
+            if any(type(value) is not int or not 1 <= value <= upper for value in values):
+                raise ValueError(f'{field} must contain integers in 1..{upper}')
+        if field == 'raw_packet_directions':
+            if len(set(values)) != len(values) or any(v not in ('inbound', 'outbound') for v in values):
+                raise ValueError('raw_packet_directions must contain unique inbound/outbound values')
         required.extend(f'{prefix}:{value}' for value in values)
     required.extend('event:' + sub['kind'] for sub in manifest.get('subscriptions', []))
+    required_set = set(required)
     for permission in required:
         if not isinstance(purposes.get(permission), str) or not purposes[permission].strip():
             raise ValueError('missing permission purpose: ' + permission)
+    for permission, purpose in purposes.items():
+        if permission not in required_set:
+            raise ValueError('unrequested permission purpose: ' + permission)
+        if not purpose.strip() or len(purpose) > 512 or any(unicodedata.category(ch)[0] == 'C' for ch in purpose):
+            raise ValueError('invalid permission purpose: ' + permission)
     runtime_target = json.loads((root / 'runtime-target.json').read_text()) if 'runtime-target.json' in names else None
     for lock_name in (name for name in names if PurePosixPath(name).name == 'wheels.lock.json'):
         wheel_lock = json.loads((root / lock_name).read_text())
@@ -105,7 +152,10 @@ def validate(root):
             wheel['requires_python'] = package_metadata.get('Requires-Python')
         validate_lock(wheel_lock, manifest)
         validate_runtime_target(wheel_lock, runtime_target)
-    bundled_files(root, meta)
+    bundled = bundled_files(root, meta)
+    overlap = set(names) & set(bundled)
+    if overlap:
+        raise ValueError('bundled library overwrites plugin file: ' + sorted(overlap)[0])
     return meta, manifest
 
 
