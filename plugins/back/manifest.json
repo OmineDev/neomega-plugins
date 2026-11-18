@@ -1,0 +1,69 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.back",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 5
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    },
+    {
+      "name": "join",
+      "kind": "player.list_added",
+      "delivery": "durable"
+    },
+    {
+      "name": "leave",
+      "kind": "player.list_removed",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute",
+      "framework.entities.query"
+    ],
+    "players": [
+      "list"
+    ],
+    "packet_observe_ids": [
+      9
+    ],
+    "services": [
+      "plugin.neomega.economy.pay"
+    ],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !返回 和 !死亡点 命令",
+      "event:player.list_added": "玩家进服时更新在线玩家和实体映射缓存",
+      "event:player.list_removed": "玩家离服时清理在线玩家缓存和临时坐标",
+      "operation:framework.command.execute": "将玩家传送回死亡地点，并发送私聊提示和回复",
+      "operation:framework.entities.query": "定时采样在线玩家位置，并在收到死亡消息时读取死亡点坐标",
+      "players:list": "启动时初始化在线玩家缓存，并确认发命令的玩家身份",
+      "packet_observe:9": "监听 Text 数据包中的死亡翻译消息以识别玩家死亡事件",
+      "service:plugin.neomega.economy.pay": "设置了返回费用并安装了经济插件时扣除金币"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.economy",
+      "major": 2,
+      "min_version": "2.0.0",
+      "optional": true
+    }
+  ],
+  "exports": []
+}

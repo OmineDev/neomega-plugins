@@ -1,0 +1,49 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.reports",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 5
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    },
+    {
+      "name": "join",
+      "kind": "player.list_added",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute",
+      "framework.entities.query"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !举报、!留言、!我的举报 与管理员查办命令",
+      "event:player.list_added": "玩家进服时自动投递离线处理通知，并在管理员进服时提醒待处理记录",
+      "operation:framework.command.execute": "私聊回复玩家、提醒管理员及送达离线处理通知",
+      "operation:framework.entities.query": "提交举报时采样举报人与在线被举报人的当前维度和坐标",
+      "players:list": "确认发命令与进服玩家身份，检查被举报人和管理员是否在线"
+    }
+  },
+  "dependencies": [],
+  "exports": []
+}

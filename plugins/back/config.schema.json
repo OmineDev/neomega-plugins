@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "sample_interval_seconds": {
+      "type": "integer",
+      "title": "位置采样间隔（秒）",
+      "description": "后台定时记录在线玩家有效位置的时间间隔",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 2
+    },
+    "expire_seconds": {
+      "type": "integer",
+      "title": "死亡记录有效期（秒）",
+      "description": "死亡后多少秒内可以发送 !返回；填 0 表示不过期",
+      "minimum": 0,
+      "default": 600
+    },
+    "one_time": {
+      "type": "boolean",
+      "title": "单次有效",
+      "description": "开启后每次死亡记录只能成功返回一次；关闭则在有效期内可多次返回",
+      "default": true
+    },
+    "cooldown_seconds": {
+      "type": "integer",
+      "title": "返回冷却（秒）",
+      "description": "两次使用 !返回 之间至少间隔的秒数，填 0 不限制",
+      "minimum": 0,
+      "default": 30
+    },
+    "cost": {
+      "type": "integer",
+      "title": "每次返回花费金币",
+      "description": "需要安装经济插件，没装时不收费；填 0 免费",
+      "minimum": 0,
+      "default": 0
+    },
+    "notify_on_death": {
+      "type": "boolean",
+      "title": "死亡后私聊提醒",
+      "description": "记录到有效死亡点后私聊提示玩家发送 !返回 回到死亡地点",
+      "default": true
+    },
+    "allow_void_return": {
+      "type": "boolean",
+      "title": "允许返回虚空（y < -60）",
+      "description": "关闭时不记录 y < -60 的虚空死亡点，也会阻止传送到此类位置",
+      "default": false
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

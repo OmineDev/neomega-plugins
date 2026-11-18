@@ -1,0 +1,13 @@
+{
+  "name": "口令红包",
+  "kind": "app",
+  "description": "玩家可用金币发拼手气红包或口令红包，全服发送 !抢 拼手气领金币并播报手气最佳，过期未领完自动退回。管理员可发系统红包。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "admins": [],
+  "titles": [
+    {
+      "id": "pioneer",
+      "name": "开拓者",
+      "display": "§6[开拓者]",
+      "price": 100,
+      "purchasable": true,
+      "description": "服务器开拓纪念"
+    },
+    {
+      "id": "vip",
+      "name": "赞助者",
+      "display": "§b[赞助者]",
+      "price": 0,
+      "purchasable": false,
+      "description": "管理员手动发放"
+    }
+  ],
+  "horn_enabled": true,
+  "horn_cost": 10,
+  "horn_cooldown_seconds": 15,
+  "horn_sound": true,
+  "join_broadcast": true
+}

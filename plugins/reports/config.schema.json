@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "管理员",
+      "description": "可以使用 !查举报、!查全部举报、!处理举报 并接收举报提醒的玩家名字，不区分大小写",
+      "default": []
+    },
+    "cooldown_seconds": {
+      "type": "integer",
+      "title": "提交冷却（秒）",
+      "description": "同一名玩家两次提交 !举报 或 !留言 之间至少间隔的秒数，填 0 不限制",
+      "minimum": 0,
+      "default": 60
+    },
+    "max_records": {
+      "type": "integer",
+      "title": "最多保留记录数",
+      "description": "超出后优先淘汰最旧的已处理记录，仍超出则裁剪最旧记录",
+      "minimum": 20,
+      "maximum": 1000,
+      "default": 200
+    },
+    "allow_feedback": {
+      "type": "boolean",
+      "title": "允许玩家留言",
+      "description": "关闭后玩家无法使用 !留言 命令",
+      "default": true
+    },
+    "notify_admins_on_submit": {
+      "type": "boolean",
+      "title": "提交时提醒在线管理员",
+      "description": "玩家提交新举报或留言时，私聊通知当前在线的管理员",
+      "default": true
+    },
+    "notify_admins_on_join": {
+      "type": "boolean",
+      "title": "管理员进服时提醒待处理数",
+      "description": "管理员进服且存在待处理记录时，私聊提醒条数",
+      "default": true
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

@@ -25,7 +25,7 @@ python3 -m unittest discover -s tests
 python3 tools/package-plugin.py plugins/<目录> --output /tmp/review.zip
 ```
 
-本地 `NEOMEGA_TOOLKIT` 指向与目标 Host 匹配的公开工具包解包目录。CI 匿名下载 [1.2.0 Linux amd64 工具包](https://wiki.wuxie233.com/downloads/neomega-toolkit-1.2.0-linux-amd64.tar.gz)，固定 SHA-256 `6a6329ddcffafd13e7f2ac47356e278870a2686d784d96e9446ecc67893e8871`，再验证包内 `FILES.sha256`。SDK API 为 1.11，Worker Wire 为 1.0；无需读取私有框架仓库或配置 SDK 凭据。运行各插件 `tests/` 与已有 `tools/check-offline.py`，发布时另用随包原生 checker 校验 ZIP。SDK 仅作开发依赖，不放入插件 ZIP。
+本地 `NEOMEGA_TOOLKIT` 指向与目标 Host 匹配的公开工具包解包目录。CI 匿名下载 [1.3.0 Linux amd64 工具包](https://wiki.wuxie233.com/downloads/neomega-toolkit-1.3.0-linux-amd64.tar.gz)，固定 SHA-256 `978a1af47f5139cac81f00ee2de3d847654f612283742fec94f012e8ec6bccaf`，再验证包内 `FILES.sha256`。SDK API 为 1.11，Worker Wire 为 1.0；无需读取私有框架仓库或配置 SDK 凭据。运行各插件 `tests/` 与已有 `tools/check-offline.py`，发布时另用随包原生 checker 校验 ZIP。SDK 仅作开发依赖，不放入插件 ZIP。
 
 通用打包器只校验社区提交约定，不替代 Host 完整 manifest/schema 校验。社区制品上限为 32 MiB；Polaris 托管安装当前上限为 5 MiB，超过该大小的包只能在支持对应大小的独立 Host/CLI 中安装。ZIP 的文件顺序取自白名单，时间和权限固定；同一源和打包运行时可复现。既有 Fatalder 白名单保持旧打包器字节不变。Host 离线检查仍可使用 `tools/check-host.py`；离线安装不证明实服业务运行成功。
 

@@ -1,0 +1,9 @@
+{
+  "admins": [
+    "Steve"
+  ],
+  "min_total": 10,
+  "max_count": 20,
+  "expire_minutes": 30,
+  "max_active_packets": 10
+}

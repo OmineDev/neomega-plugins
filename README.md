@@ -14,6 +14,11 @@ OmineDev 审核维护的 neomega 业务插件。社区通过 Pull Request 贡献
 | 兑换码 | `neomega.redeem-codes` | [plugins/redeem-codes](plugins/redeem-codes/README.md) |
 | 服务器守卫 | `neomega.guard` | [plugins/guard](plugins/guard/README.md) |
 | 自定义菜单 | `neomega.menu` | [plugins/menu](plugins/menu/README.md) |
+| 积分商店 | `neomega.shop` | [plugins/shop](plugins/shop/README.md) |
+| 死亡点返回 | `neomega.back` | [plugins/back](plugins/back/README.md) |
+| 称号与喇叭 | `neomega.titles` | [plugins/titles](plugins/titles/README.md) |
+| 举报与留言 | `neomega.reports` | [plugins/reports](plugins/reports/README.md) |
+| 口令红包 | `neomega.redpacket` | [plugins/redpacket](plugins/redpacket/README.md) |
 | Fatalder 云导入 | `fatalder.cloud-import` | [plugins/fatalder-cloud-import](plugins/fatalder-cloud-import/README.md) |
 
 玩法插件可以独立安装；用到金币的功能会自动带上经济插件。写新插件时以 [plugins/daily-signin](plugins/daily-signin/) 为范本：一次处理只做一次存储提交，同时写入状态、游戏命令、回复和事件确认。`plugins/` 下其余 `neomega.*` 前置服务正在重新设计，暂不收录到目录。

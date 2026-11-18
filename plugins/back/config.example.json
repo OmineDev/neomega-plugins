@@ -1,0 +1,9 @@
+{
+  "sample_interval_seconds": 2,
+  "expire_seconds": 600,
+  "one_time": true,
+  "cooldown_seconds": 30,
+  "cost": 0,
+  "notify_on_death": true,
+  "allow_void_return": false
+}

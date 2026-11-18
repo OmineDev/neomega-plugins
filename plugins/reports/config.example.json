@@ -1,0 +1,8 @@
+{
+  "admins": [],
+  "cooldown_seconds": 60,
+  "max_records": 200,
+  "allow_feedback": true,
+  "notify_admins_on_submit": true,
+  "notify_admins_on_join": true
+}

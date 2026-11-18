@@ -1,0 +1,13 @@
+{
+  "name": "举报与留言",
+  "kind": "app",
+  "description": "玩家用 !举报 举报违规行为（自动附带位置坐标）或 !留言 反馈建议，用 !我的举报 查看进度；管理员实时或进服收到提醒，通过 !查举报 和 !处理举报 核实回复，不在线的提交人下次进服自动送达结果。开箱即用，无需其他插件。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}

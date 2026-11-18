@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "管理员",
+      "description": "可以使用 !发称号 和 !收称号 的玩家名字，不区分大小写",
+      "default": []
+    },
+    "titles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "称号编号",
+            "description": "唯一标识，玩家可用 !买称号 或 !佩戴称号 传入，玩家存档也按它识别"
+          },
+          "name": {
+            "type": "string",
+            "title": "称号名称",
+            "description": "显示在列表里的名称，不能与其他称号重复"
+          },
+          "display": {
+            "type": "string",
+            "title": "展示效果",
+            "description": "支持 Minecraft § 颜色与格式代码，例如 §6[开拓者]"
+          },
+          "price": {
+            "type": "integer",
+            "title": "价格",
+            "description": "购买需要的金币数量（需经济插件）；0 表示免费",
+            "minimum": 0,
+            "default": 0
+          },
+          "purchasable": {
+            "type": "boolean",
+            "title": "允许购买",
+            "description": "开启后玩家可以用 !买称号 购买；关闭后仅管理员可用 !发称号 发放",
+            "default": false
+          },
+          "description": {
+            "type": "string",
+            "title": "说明",
+            "description": "显示在 !称号 列表里的介绍，可留空",
+            "default": ""
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "display"
+        ],
+        "additionalProperties": false
+      },
+      "title": "称号列表",
+      "description": "配置所有可用的称号，编号（id）和名称（name）均不能重复",
+      "default": [
+        {
+          "id": "pioneer",
+          "name": "开拓者",
+          "display": "§6[开拓者]",
+          "price": 100,
+          "purchasable": true,
+          "description": "服务器开拓纪念"
+        },
+        {
+          "id": "vip",
+          "name": "赞助者",
+          "display": "§b[赞助者]",
+          "price": 0,
+          "purchasable": false,
+          "description": "管理员手动发放"
+        }
+      ]
+    },
+    "horn_enabled": {
+      "type": "boolean",
+      "title": "启用全服喇叭",
+      "description": "开启后玩家可以用 !喇叭 发送带佩戴称号的全服广播",
+      "default": true
+    },
+    "horn_cost": {
+      "type": "integer",
+      "title": "喇叭费用",
+      "description": "每次发送喇叭扣除的金币（需要经济插件，未安装时跳过扣款）；填 0 免费",
+      "minimum": 0,
+      "default": 10
+    },
+    "horn_cooldown_seconds": {
+      "type": "integer",
+      "title": "喇叭冷却（秒）",
+      "description": "同一玩家两次发送喇叭之间至少间隔的秒数，填 0 不限制",
+      "minimum": 0,
+      "default": 15
+    },
+    "horn_sound": {
+      "type": "boolean",
+      "title": "喇叭提示音",
+      "description": "全服发喇叭时给全体在线玩家播放 random.orb 提示音",
+      "default": true
+    },
+    "join_broadcast": {
+      "type": "boolean",
+      "title": "进服头衔播报",
+      "description": "玩家进服时若佩戴有称号，向全服播报其佩戴头衔",
+      "default": true
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

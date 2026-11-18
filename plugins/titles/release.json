@@ -1,0 +1,13 @@
+{
+  "name": "称号与喇叭",
+  "kind": "app",
+  "description": "玩家可用 !称号 查看称号、!买称号 购买、!佩戴称号 与 !卸下称号 切换头衔，并用 !喇叭 发送全服广播（支持冷却、音效和过滤控制符）；管理员支持在线与离线发收称号，进服可播报佩戴头衔。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}

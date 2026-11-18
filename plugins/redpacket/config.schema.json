@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "管理员",
+      "description": "可以在游戏里发系统红包的玩家名字，不区分大小写",
+      "default": []
+    },
+    "min_total": {
+      "type": "integer",
+      "title": "最低总金额",
+      "description": "发一个红包最少需要多少金币",
+      "minimum": 1,
+      "default": 10
+    },
+    "max_count": {
+      "type": "integer",
+      "title": "最大份数",
+      "description": "单个红包最多可以分成多少份",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 20
+    },
+    "expire_minutes": {
+      "type": "integer",
+      "title": "过期时间（分钟）",
+      "description": "红包超过这么久还没抢完时，剩余金额退回发包人",
+      "minimum": 1,
+      "maximum": 1440,
+      "default": 30
+    },
+    "max_active_packets": {
+      "type": "integer",
+      "title": "最多同时存在红包数",
+      "description": "场上未过期且未抢完的红包最多有几个",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 10
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

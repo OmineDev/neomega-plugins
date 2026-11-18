@@ -1,0 +1,58 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.redpacket",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 4
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    },
+    {
+      "name": "join",
+      "kind": "player.list_added",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [
+      "plugin.neomega.economy.pay",
+      "plugin.neomega.economy.grant"
+    ],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !发红包、!抢、!红包 和管理员的 !系统红包 命令",
+      "event:player.list_added": "玩家进服时补发离线期间的红包过期退回通知，并提醒当前可抢的红包",
+      "operation:framework.command.execute": "发送全服红包播报、手气最佳公告和私聊回复",
+      "players:list": "确认发命令和进服玩家的身份，并判断退回时发包人是否在线",
+      "service:plugin.neomega.economy.pay": "玩家发红包时扣除对应的总金币",
+      "service:plugin.neomega.economy.grant": "玩家抢红包时发放金币，以及红包过期后退回剩余金币"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.economy",
+      "major": 2,
+      "min_version": "2.0.0"
+    }
+  ],
+  "exports": []
+}

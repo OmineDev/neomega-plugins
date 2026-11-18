@@ -1,0 +1,57 @@
+{
+  "manifest_version": 1,
+  "id": "neomega.titles",
+  "version": "1.0.0",
+  "host_api": {
+    "major": 1,
+    "min_minor": 4
+  },
+  "worker_protocol": {
+    "major": 1,
+    "min_minor": 0
+  },
+  "runtime": "python",
+  "entrypoint": "main.py",
+  "mode": "service",
+  "session_required": true,
+  "state_version": 1,
+  "subscriptions": [
+    {
+      "name": "chat",
+      "kind": "chat.received",
+      "delivery": "durable"
+    },
+    {
+      "name": "join",
+      "kind": "player.list_added",
+      "delivery": "durable"
+    }
+  ],
+  "permissions": {
+    "operations": [
+      "framework.command.execute"
+    ],
+    "players": [
+      "list"
+    ],
+    "services": [
+      "plugin.neomega.economy.pay"
+    ],
+    "purposes": {
+      "event:chat.received": "接收玩家的 !称号、!买称号、!佩戴称号、!卸下称号、!喇叭 和管理员的 !发称号、!收称号 命令",
+      "event:player.list_added": "玩家进服时合并待生效的称号授予与收回，并按配置播报所佩戴称号",
+      "operation:framework.command.execute": "回复玩家提示、发送全服喇叭与进服播报，并播放喇叭提示音效",
+      "players:list": "确认发命令和进服的玩家身份，并在发收称号时解析在线目标玩家",
+      "service:plugin.neomega.economy.pay": "购买收费称号和发送收费喇叭时扣除金币"
+    }
+  },
+  "dependencies": [
+    {
+      "id": "neomega.economy",
+      "major": 2,
+      "min_version": "2.0.0",
+      "optional": true
+    }
+  ],
+  "exports": []
+}

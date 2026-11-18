@@ -1,0 +1,13 @@
+{
+  "name": "死亡点返回",
+  "kind": "app",
+  "description": "自动记录玩家死亡前的位置，死亡后发送 !返回 即可回到死亡地点，也可发送 !死亡点 查看记录。支持跨维度、有效期、单次限制与冷却，装了经济插件时可按次扣费。",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "main.py",
+    "manifest.json",
+    "config.schema.json",
+    "config.example.json"
+  ]
+}
