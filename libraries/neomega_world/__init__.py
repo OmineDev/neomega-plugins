@@ -59,14 +59,19 @@ def container_slots(slots, *, double_chest=False):
     limit = 54 if double_chest else 27
     result = {}
     for raw, item in slots.items():
-        try:
+        if type(raw) is int:
+            slot = raw
+        elif type(raw) is str and raw.isascii() and raw.isdigit() and (raw == '0' or not raw.startswith('0')):
             slot = int(raw)
-        except (ValueError, TypeError):
-            raise ValueError('invalid container slot') from None
-        if str(slot) != str(raw) or not 0 <= slot < limit or not isinstance(item, dict):
+        else:
+            raise ValueError('invalid container slot')
+        if not 0 <= slot < limit or not isinstance(item, dict):
             raise ValueError('invalid container slot or item')
+        key = str(slot)
+        if key in result:
+            raise ValueError('duplicate container slot')
         canonical(item)
-        result[str(slot)] = item
+        result[key] = item
     return result
 
 
@@ -88,23 +93,79 @@ def snapshot(region, cells, *, dimension, epoch, losses=()):
 
 
 def verify_snapshot(value):
+    if not isinstance(value, dict):
+        raise ValueError('snapshot must be an object')
     body = {k: v for k, v in value.items() if k != 'sha256'}
     if body.get('format') != 'neomega.world.snapshot.v1' or digest(body) != value.get('sha256'):
         raise ValueError('snapshot format or digest mismatch')
-    Region(body['region']['origin'], body['region']['size'])
+    region = body.get('region')
+    if (not isinstance(region, dict) or 'origin' not in region or 'size' not in region
+            or not isinstance(body.get('cells'), dict) or not isinstance(body.get('losses'), list)):
+        raise ValueError('snapshot structure invalid')
+    Region(region['origin'], region['size'])
     return body
+
+
+_COMMAND_MODES = {'command_block': 0, 'repeating_command_block': 1, 'chain_command_block': 2}
+MAX_COMMAND_BYTES = 32768
+MAX_CUSTOM_NAME_BYTES = 1024
+MAX_INT32 = 2147483647
+
+
+def _flag(mapping, key):
+    if key not in mapping:
+        return False
+    val = mapping[key]
+    if type(val) is bool:
+        return val
+    if type(val) is int and val in (0, 1):
+        return bool(val)
+    raise ValueError('invalid boolean flag')
+
+
+def validate_command_block_fields(fields):
+    """Validate command block fields against Host world schema bounds."""
+    if not isinstance(fields, dict):
+        raise ValueError('command block fields must be an object')
+    command = fields.get('command')
+    mode = fields.get('mode')
+    facing = fields.get('facing')
+    tick_delay = fields.get('tick_delay')
+    name = fields.get('name')
+    if (type(command) is not str or len(command.encode('utf-8')) > MAX_COMMAND_BYTES
+            or any(ch in command for ch in '\x00\r\n')):
+        raise ValueError('invalid command string')
+    if type(mode) is not int or not 0 <= mode <= 2:
+        raise ValueError('invalid command block mode')
+    if type(facing) is not int or not 0 <= facing <= 5:
+        raise ValueError('invalid facing_direction')
+    if type(tick_delay) is not int or not 0 <= tick_delay <= MAX_INT32:
+        raise ValueError('invalid TickDelay')
+    if type(name) is not str or len(name.encode('utf-8')) > MAX_CUSTOM_NAME_BYTES:
+        raise ValueError('invalid CustomName')
+    for flag_key in ('conditional', 'need_redstone', 'track_output', 'execute_on_first_tick'):
+        if type(fields.get(flag_key)) is not bool:
+            raise ValueError('invalid boolean command block field')
+    return fields
 
 
 def normalize_block(entry):
     """Record raw block data plus the exact subset supported by native writers."""
+    if not isinstance(entry, dict):
+        raise ValueError('block entry must be an object')
     foreground = entry.get('foreground')
     if not isinstance(foreground, dict) or not isinstance(foreground.get('name'), str):
         raise ValueError('unobserved foreground cannot be backed up as air')
-    cell = {'foreground': {'name': foreground['name'], 'states': foreground.get('states') or {}},
+    states_raw = foreground.get('states')
+    if states_raw is not None and not isinstance(states_raw, dict):
+        raise ValueError('foreground states must be an object')
+    cell = {'foreground': {'name': foreground['name'], 'states': states_raw or {}},
             'raw_entity_data': entry.get('entity_data'), 'background': entry.get('background'),
             'coverage': ['foreground'], 'missing': [], 'nbt': None}
     background = entry.get('background')
-    if background and background.get('name') not in ('air', 'minecraft:air'):
+    if background and isinstance(background, dict) and background.get('name') not in ('air', 'minecraft:air'):
+        cell['missing'].append('background')
+    elif background is not None and not isinstance(background, dict):
         cell['missing'].append('background')
     raw = entry.get('entity_data')
     if raw is None:
@@ -124,7 +185,11 @@ def normalize_block(entry):
             if type(item.get('Damage',0)) is not int or not 0 <= item.get('Damage',0) <= 32767 or not isinstance(item.get('Name'), str) or type(item.get('Count')) is not int or not 1 <= item['Count'] <= 64 or type(item.get('Slot')) is not int or not 0 <= item['Slot'] < 27:
                 unsupported = True
                 continue
-            slots[str(item['Slot'])] = {'item': {'name': item['Name'], 'val': item.get('Damage', 0)}, 'count': item['Count']}
+            slot_key = str(item['Slot'])
+            if slot_key in slots:
+                unsupported = True
+                continue
+            slots[slot_key] = {'item': {'name': item['Name'], 'val': item.get('Damage', 0)}, 'count': item['Count']}
         # Partial inventories never clear/replace a container; only complete supported lists do.
         if unsupported:
             cell['missing'].append('container_items')
@@ -141,15 +206,26 @@ def normalize_block(entry):
             cell['nbt'] = None
             if 'container_items' not in cell['missing']:
                 cell['missing'].append('container_items')
-    elif name in ('command_block','repeating_command_block','chain_command_block'):
-        states = foreground.get('states') or {}
-        fields = {'command': raw.get('Command',''), 'mode': {'command_block':0,'repeating_command_block':1,'chain_command_block':2}[name],
-                  'facing': states.get('facing_direction',0), 'conditional': bool(states.get('conditional_bit',False)),
-                  'need_redstone': not bool(raw.get('auto',False)), 'tick_delay': raw.get('TickDelay',0),
-                  'name': raw.get('CustomName',''), 'track_output': bool(raw.get('TrackOutput',False)),
-                  'execute_on_first_tick': bool(raw.get('ExecuteOnFirstTick',False))}
-        cell['nbt'] = {'kind':'command_block','fields':fields}
-        cell['coverage'].append('command_configuration')
+    elif name in _COMMAND_MODES:
+        states = states_raw if states_raw is not None else {}
+        try:
+            fields = {
+                'command': raw['Command'] if 'Command' in raw else '',
+                'mode': _COMMAND_MODES[name],
+                'facing': states['facing_direction'] if 'facing_direction' in states else 0,
+                'conditional': _flag(states, 'conditional_bit'),
+                'need_redstone': not _flag(raw, 'auto'),
+                'tick_delay': raw['TickDelay'] if 'TickDelay' in raw else 0,
+                'name': raw['CustomName'] if 'CustomName' in raw else '',
+                'track_output': _flag(raw, 'TrackOutput'),
+                'execute_on_first_tick': _flag(raw, 'ExecuteOnFirstTick'),
+            }
+            validate_command_block_fields(fields)
+        except ValueError:
+            cell['missing'].append('command_configuration')
+        else:
+            cell['nbt'] = {'kind': 'command_block', 'fields': fields}
+            cell['coverage'].append('command_configuration')
         ignored = {'id','x','y','z','isMovable','Command','auto','TickDelay','CustomName','TrackOutput','ExecuteOnFirstTick'}
         cell['missing'].extend('entity_data.'+k for k in sorted(set(raw)-ignored))
     else:

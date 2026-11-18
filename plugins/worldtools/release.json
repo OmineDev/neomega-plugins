@@ -1,5 +1,6 @@
 {
   "name": "世界工具与区域备份",
+  "kind": "provider",
   "description": "方块与NBT操作、区域复制、分块备份和恢复，提供持久进度及原操作回执。",
   "files": [
     "manifest.json",

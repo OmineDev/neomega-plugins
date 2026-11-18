@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "id": "neomega.moderation",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "host_api": {
     "major": 1,
     "min_minor": 8
@@ -34,24 +34,25 @@
     "purposes": {
       "players:list": "将离线封禁对应到当前在线的稳定玩家身份",
       "operation:framework.command.execute": "对生效的封禁玩家发送踢出命令",
-      "service:plugin.neomega.players.resolve": "解析玩家身份并管理封禁到期任务",
-      "service:plugin.neomega.scheduler.schedule": "解析玩家身份并管理封禁到期任务",
-      "service:plugin.neomega.scheduler.query": "解析玩家身份并管理封禁到期任务",
-      "service:plugin.neomega.scheduler.claim": "解析玩家身份并管理封禁到期任务",
-      "service:plugin.neomega.scheduler.ack": "解析玩家身份并管理封禁到期任务",
+      "service:plugin.neomega.players.resolve": "核对在线玩家的持久身份档案（UUID/XUID）",
+      "service:plugin.neomega.scheduler.schedule": "在调度器可用时注册临时封禁到期任务",
+      "service:plugin.neomega.scheduler.query": "查询已有封禁到期调度任务的状态",
+      "service:plugin.neomega.scheduler.claim": "认领到期的封禁调度任务以转换封禁状态",
+      "service:plugin.neomega.scheduler.ack": "确认已处理的封禁到期调度任务",
       "service:plugin.neomega.scheduler.cancel": "取消已替换、解除或到期的封禁调度任务"
     }
   },
   "dependencies": [
     {
       "id": "neomega.players",
-      "major": 1,
-      "min_version": "1.0.0"
+      "major": 2,
+      "min_version": "2.0.0"
     },
     {
       "id": "neomega.scheduler",
       "major": 1,
-      "min_version": "1.0.0"
+      "min_version": "1.0.0",
+      "optional": true
     }
   ],
   "exports": [

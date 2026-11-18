@@ -1,5 +1,6 @@
 {
   "name": "消息桥",
+  "kind": "app",
   "description": "现有 Polaris WebSocket 群桥、OneBot HTTP 和 Telegram 双向路由、持久回执与固定管理命令。",
   "files": [
     "LICENSE",

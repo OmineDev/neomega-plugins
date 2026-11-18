@@ -4,19 +4,27 @@
   "properties": {
     "max_tasks": {
       "type": "integer",
-      "default": 256
+      "default": 256,
+      "minimum": 1,
+      "maximum": 4096
     },
     "max_blocks": {
       "type": "integer",
-      "default": 262144
+      "default": 262144,
+      "minimum": 1,
+      "maximum": 1048576
     },
     "max_steps": {
       "type": "integer",
-      "default": 1024
+      "default": 1024,
+      "minimum": 1,
+      "maximum": 1024
     },
     "max_state_bytes": {
       "type": "integer",
-      "default": 33554432
+      "default": 33554432,
+      "minimum": 1048576,
+      "maximum": 268435456
     }
   },
   "required": [],

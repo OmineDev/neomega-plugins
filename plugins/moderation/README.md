@@ -4,7 +4,7 @@
 
 ## 安装与设置
 
-插件 ID `neomega.moderation`，版本 1.0.0；依赖 `neomega.players`、`neomega.scheduler` 1.x。要求游戏会话。配置 `writer_installations` 为被授权处罚的插件安装 ID，空列表禁止封禁/解封；`enforce` 控制踢出执行，默认开启；`poll_seconds` 默认5秒；`max_players` 默认256（含保留历史主体）。完整示例见 `config.example.json`。
+插件 ID `neomega.moderation`，版本 1.0.1；依赖 `neomega.players` 2.x，可选依赖 `neomega.scheduler` 1.x（未安装调度器时由插件自带周期扫描负责临时封禁到期）。要求游戏会话。配置 `writer_installations` 为被授权处罚的插件安装 ID，空列表禁止封禁/解封；`enforce` 控制踢出执行，默认开启；`poll_seconds` 默认5秒；`max_players` 默认256（含保留历史主体）。完整示例见 `config.example.json`。
 
 申请 players:list 以匹配在线 UUID/XUID，申请 framework.command.execute 以发送踢出，申请玩家身份与调度服务以核对身份和处理到期。调用插件另需逐项申请公开服务权限。
 

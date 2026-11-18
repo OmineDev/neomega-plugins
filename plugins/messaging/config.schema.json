@@ -26,7 +26,15 @@
             "description": "远程地址必须使用 HTTPS 或 WSS；Telegram 填 https://api.telegram.org。"
           },
           "secret": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string",
+                "x-secret": true
+              },
+              {
+                "type": "string"
+              }
+            ],
             "default": "",
             "title": "接口密钥引用",
             "description": "填写 secret:名称；本机 Polaris 网关无认证时可留空。"
@@ -34,6 +42,7 @@
           "webhook_secret": {
             "type": "string",
             "default": "secret:bridge-webhook",
+            "x-secret": true,
             "title": "回调签名密钥引用",
             "description": "填写 secret:名称，用于核验 OneBot 回调签名。"
           },
@@ -149,6 +158,8 @@
           "messages_per_minute": {
             "type": "integer",
             "default": 30,
+            "minimum": 1,
+            "maximum": 600,
             "title": "每分钟消息数",
             "description": "每条路由的入站和出站分别限速，范围 1 至 600。"
           }
@@ -171,30 +182,40 @@
     "webhook_port": {
       "type": "integer",
       "default": 0,
+      "minimum": 0,
+      "maximum": 65535,
       "title": "回调监听端口",
       "description": "0 为关闭；开启 OneBot HTTP 回调时填写 1 至 65535。"
     },
     "poll_seconds": {
       "type": "number",
       "default": 2.0,
+      "minimum": 0.25,
+      "maximum": 60,
       "title": "轮询间隔（秒）",
       "description": "0.25 至 60 秒；控制投递、Telegram 轮询和分批回收周期。"
     },
     "max_records": {
       "type": "integer",
       "default": 10000,
+      "minimum": 10,
+      "maximum": 100000,
       "title": "每类记录容量",
       "description": "10 至 100000；出站与入站分别计数。未决记录保留，满额返回 capacity_exhausted。"
     },
     "max_text_bytes": {
       "type": "integer",
       "default": 3000,
+      "minimum": 64,
+      "maximum": 4096,
       "title": "消息字节上限",
       "description": "按 UTF-8 计算，范围 64 至 4096。"
     },
     "subscription_history": {
       "type": "integer",
       "default": 1000,
+      "minimum": 10,
+      "maximum": 10000,
       "title": "订阅历史条数",
       "description": "10 至 10000；超出范围的旧事件被截断，读取时标记 gap。"
     },

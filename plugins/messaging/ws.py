@@ -10,8 +10,10 @@ from urllib.parse import urlsplit
 
 
 class OneBotSocket:
-    def __init__(self, endpoint, token):
+    def __init__(self, endpoint, token, *, ping_interval=30.0, pong_timeout=15.0):
         self.endpoint, self.token = endpoint, token
+        self.ping_interval = ping_interval
+        self.pong_timeout = pong_timeout
         self.reader = self.writer = None
         self.lock = asyncio.Lock()
         self.pending = {}
@@ -19,6 +21,8 @@ class OneBotSocket:
 
     async def connect(self):
         url = urlsplit(self.endpoint)
+        if not url.hostname:
+            raise ValueError('invalid endpoint')
         secure = url.scheme == 'wss'
         self.reader, self.writer = await asyncio.wait_for(asyncio.open_connection(
             url.hostname, url.port or (443 if secure else 80),
@@ -37,11 +41,19 @@ class OneBotSocket:
         await self.writer.drain()
         raw = await asyncio.wait_for(self.reader.readuntil(b'\r\n\r\n'), 10)
         lines = raw.decode('ascii').split('\r\n')
-        fields = {a.strip().lower(): b.strip() for a, b in (line.split(':', 1) for line in lines[1:] if ':' in line)}
+        fields = {}
+        for line in lines[1:]:
+            if ':' in line:
+                name, val = line.split(':', 1)
+                name, val = name.strip().lower(), val.strip()
+                fields[name] = f'{fields[name]}, {val}' if name in fields else val
         accept = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
-        if (len(raw) > 8192 or lines[0].split()[1] != '101' or fields.get('sec-websocket-accept') != accept
+        status_parts = lines[0].split()
+        connection_tokens = {token.strip().lower() for token in fields.get('connection', '').split(',') if token.strip()}
+        if (len(raw) > 8192 or len(status_parts) < 2 or status_parts[1] != '101'
+                or fields.get('sec-websocket-accept') != accept
                 or fields.get('upgrade', '').lower() != 'websocket'
-                or 'upgrade' not in fields.get('connection', '').lower().split(', ')):
+                or 'upgrade' not in connection_tokens):
             raise ValueError('websocket handshake rejected')
 
     async def frame(self, opcode, payload):
@@ -51,6 +63,8 @@ class OneBotSocket:
         length = len(payload)
         head = bytes([128 | opcode, 128 | length]) if length < 126 else bytes([128 | opcode, 254]) + struct.pack('!H', length) if length < 65536 else bytes([128 | opcode, 255]) + struct.pack('!Q', length)
         async with self.lock:
+            if self.writer is None or self.writer.is_closing():
+                raise ConnectionError('websocket disconnected')
             self.writer.write(head + mask + bytes(c ^ mask[i % 4] for i, c in enumerate(payload)))
             await self.writer.drain()
 
@@ -67,11 +81,30 @@ class OneBotSocket:
         finally:
             self.pending.pop(echo, None)
 
+    async def _read_frame_head(self):
+        read_task = asyncio.create_task(self.reader.readexactly(2))
+        awaiting_pong = False
+        try:
+            while not read_task.done():
+                timeout = self.pong_timeout if awaiting_pong else self.ping_interval
+                done, _ = await asyncio.wait({read_task}, timeout=timeout)
+                if read_task in done:
+                    return read_task.result()
+                if awaiting_pong:
+                    raise TimeoutError('websocket keepalive timeout')
+                await self.frame(9, b'keepalive')
+                awaiting_pong = True
+            return read_task.result()
+        finally:
+            if not read_task.done():
+                read_task.cancel()
+                await asyncio.gather(read_task, return_exceptions=True)
+
     async def receive(self, inbox):
         fragmented = bytearray()
         fragment_opcode = None
         while True:
-            head = await asyncio.wait_for(self.reader.readexactly(2), 90)
+            head = await self._read_frame_head()
             final, opcode, masked, length = bool(head[0] & 128), head[0] & 15, head[1] & 128, head[1] & 127
             if head[0] & 112 or masked:
                 raise ValueError('invalid server frame')
@@ -124,5 +157,5 @@ class OneBotSocket:
             self.writer.close()
             try:
                 await self.writer.wait_closed()
-            except OSError:
+            except (OSError, ConnectionError, RuntimeError):
                 pass

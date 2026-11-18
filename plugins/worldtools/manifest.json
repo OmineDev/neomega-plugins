@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "host_api": {
     "major": 1,
     "min_minor": 11
@@ -90,20 +90,354 @@
       "name": "inspect",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request_key",
+          "pos"
+        ],
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "pattern": "(?s)^.{1,128}$"
+          },
+          "pos": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            }
+          },
+          "dimension": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          }
+        }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "method",
+                "args",
+                "state",
+                "commit_id",
+                "operation_ids"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "commit_id": {
+                  "type": "string"
+                },
+                "operation_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "origin",
+                "size",
+                "volume"
+              ],
+              "properties": {
+                "origin": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "size": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "volume": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       }
     },
     {
       "name": "prepare",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request_key",
+          "kind",
+          "args"
+        ],
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "pattern": "(?s)^.{1,128}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "copy",
+              "restore",
+              "container",
+              "command_block",
+              "sign",
+              "item",
+              "enhanced_item",
+              "structure_block",
+              "pick_block",
+              "place_block",
+              "held_on_block",
+              "item_frame",
+              "inspect"
+            ]
+          },
+          "args": {
+            "type": "object"
+          }
+        }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "method",
+                "args",
+                "state",
+                "commit_id",
+                "operation_ids"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "commit_id": {
+                  "type": "string"
+                },
+                "operation_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "origin",
+                "size",
+                "volume"
+              ],
+              "properties": {
+                "origin": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "size": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "volume": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       }
     },
     {
@@ -111,6 +445,7 @@
       "major": 1,
       "input_schema": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "task_id",
           "expected_revision"
@@ -126,17 +461,311 @@
         }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "method",
+                "args",
+                "state",
+                "commit_id",
+                "operation_ids"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "commit_id": {
+                  "type": "string"
+                },
+                "operation_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "origin",
+                "size",
+                "volume"
+              ],
+              "properties": {
+                "origin": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "size": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "volume": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       }
     },
     {
       "name": "status",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          }
+        }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "method",
+                "args",
+                "state",
+                "commit_id",
+                "operation_ids"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "commit_id": {
+                  "type": "string"
+                },
+                "operation_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "origin",
+                "size",
+                "volume"
+              ],
+              "properties": {
+                "origin": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "size": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "volume": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       }
     },
     {
@@ -144,6 +773,7 @@
       "major": 1,
       "input_schema": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "task_id",
           "expected_revision"
@@ -159,7 +789,145 @@
         }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "method",
+                "args",
+                "state",
+                "commit_id",
+                "operation_ids"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "commit_id": {
+                  "type": "string"
+                },
+                "operation_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "origin",
+                "size",
+                "volume"
+              ],
+              "properties": {
+                "origin": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "size": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "volume": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       }
     },
     {
@@ -167,6 +935,7 @@
       "major": 1,
       "input_schema": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "task_id",
           "expected_revision"
@@ -182,37 +951,542 @@
         }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "method",
+                "args",
+                "state",
+                "commit_id",
+                "operation_ids"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "commit_id": {
+                  "type": "string"
+                },
+                "operation_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "origin",
+                "size",
+                "volume"
+              ],
+              "properties": {
+                "origin": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "size": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "volume": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       }
     },
     {
       "name": "fatalder_prepare",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request_key",
+          "source_name",
+          "position",
+          "dimension"
+        ],
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "pattern": "(?s)^.{1,128}$"
+          },
+          "source_name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            }
+          },
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "overworld",
+              "nether",
+              "the_end"
+            ]
+          }
+        }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset",
+          "remote_call_count",
+          "remote_calls"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_key": {
+            "type": "string"
+          },
+          "remote_call_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_calls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
       }
     },
     {
       "name": "fatalder_status",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          }
+        }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset",
+          "remote_call_count",
+          "remote_calls"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_key": {
+            "type": "string"
+          },
+          "remote_call_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_calls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
       }
     },
     {
       "name": "fatalder_confirm",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "confirm_token",
+          "confirmation_key"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "confirm_token": {
+            "type": "string"
+          },
+          "confirmation_key": {
+            "type": "string"
+          }
+        }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset",
+          "remote_call_count",
+          "remote_calls"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_key": {
+            "type": "string"
+          },
+          "remote_call_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_calls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
       }
     },
     {
@@ -220,6 +1494,7 @@
       "major": 1,
       "input_schema": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "task_id",
           "control_id"
@@ -235,7 +1510,110 @@
         }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset",
+          "remote_call_count",
+          "remote_calls"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_key": {
+            "type": "string"
+          },
+          "remote_call_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_calls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
       }
     },
     {
@@ -243,6 +1621,7 @@
       "major": 1,
       "input_schema": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "task_id",
           "control_id"
@@ -258,7 +1637,110 @@
         }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset",
+          "remote_call_count",
+          "remote_calls"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_key": {
+            "type": "string"
+          },
+          "remote_call_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_calls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
       }
     },
     {
@@ -266,6 +1748,7 @@
       "major": 1,
       "input_schema": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "task_id",
           "control_id"
@@ -281,27 +1764,291 @@
         }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset",
+          "remote_call_count",
+          "remote_calls"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_key": {
+            "type": "string"
+          },
+          "remote_call_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_calls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
       }
     },
     {
       "name": "fatalder_recover",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          }
+        }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "task_id",
+          "kind",
+          "state",
+          "cursor",
+          "cancel_requested",
+          "created_at",
+          "schema_version",
+          "revision",
+          "steps",
+          "step_count",
+          "step_offset",
+          "regions",
+          "region_count",
+          "losses",
+          "loss_count",
+          "loss_offset",
+          "remote_call_count",
+          "remote_calls"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "step_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "step_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "region_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "loss_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loss_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_key": {
+            "type": "string"
+          },
+          "remote_call_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remote_calls": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
       }
     },
     {
       "name": "snapshot",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "index",
+          "offset",
+          "length",
+          "sha256",
+          "data_base64"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "data_base64": {
+            "type": "string"
+          }
+        }
       }
     }
   ]

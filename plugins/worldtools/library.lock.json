@@ -4,12 +4,12 @@
   "libraries": [
     {
       "name": "neomega_world",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "license": "MIT",
       "files": {
         "LICENSE": "ad4d2d600a26b8eb588d31b9479b7bd55fac3051df91ea63142bad8f3c5f5b78",
         "README.md": "d357c56342280a56d3362a8f80c5578b8dc5ee1f37c8e52b79bf2201a245f3ec",
-        "__init__.py": "9a77e6f4cb1cc2460d1d8b9e8781588e59ac7d523e0ec49d87976289bb323f42"
+        "__init__.py": "6bbdd3fcc153085ccf89ef20a08edd0325be3bade3679cf0f4c3228be86200bb"
       }
     }
   ]

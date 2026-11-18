@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "host_api": {
     "major": 1,
     "min_minor": 8
@@ -31,50 +31,543 @@
       "name": "request",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "dimension": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "pos": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            }
+          },
+          "max_age": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 3600
+          }
+        },
+        "required": [
+          "dimension",
+          "pos"
+        ],
+        "additionalProperties": false
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "dimension": {
+            "type": "integer"
+          },
+          "pos": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "waiting",
+              "unknown",
+              "observed",
+              "unobserved",
+              "failed",
+              "cancelled",
+              "epoch_expired"
+            ]
+          },
+          "action_state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "unknown",
+              "accepted",
+              "dispatching",
+              "pending",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "observation": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "observed",
+              "unobserved"
+            ]
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "cached_at": {
+            "type": "number"
+          },
+          "operation_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "baseline_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observation_not_before": {
+            "type": "number"
+          },
+          "submitted_at": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          },
+          "observation_error": {
+            "type": "string"
+          },
+          "receipt": {
+            "type": "object"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "request_id",
+          "dimension",
+          "pos",
+          "epoch",
+          "state",
+          "action_state",
+          "observation",
+          "created_at",
+          "cached_at",
+          "operation_ids"
+        ],
+        "additionalProperties": false
       }
     },
     {
       "name": "read",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "cell": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          },
+          "nbt_offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16384
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "additionalProperties": false
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "dimension": {
+            "type": "integer"
+          },
+          "pos": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "waiting",
+              "unknown",
+              "observed",
+              "unobserved",
+              "failed",
+              "cancelled",
+              "epoch_expired"
+            ]
+          },
+          "action_state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "unknown",
+              "accepted",
+              "dispatching",
+              "pending",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "observation": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "observed",
+              "unobserved"
+            ]
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "cached_at": {
+            "type": "number"
+          },
+          "operation_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "baseline_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observation_not_before": {
+            "type": "number"
+          },
+          "submitted_at": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          },
+          "observation_error": {
+            "type": "string"
+          },
+          "receipt": {
+            "type": "object"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "cell": {
+            "type": "object",
+            "properties": {
+              "nbt_complete": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "nbt_complete"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "data_base64": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "dimension",
+          "pos",
+          "epoch",
+          "state",
+          "action_state",
+          "observation",
+          "created_at",
+          "cached_at",
+          "operation_ids"
+        ],
+        "additionalProperties": false
       }
     },
     {
       "name": "cancel",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "additionalProperties": false
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "detached"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "state"
+        ],
+        "additionalProperties": false
       }
     },
     {
       "name": "subscribe",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "dimension": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "pos": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            }
+          },
+          "ttl": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 3600
+          },
+          "max_age": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 3600
+          }
+        },
+        "required": [
+          "dimension",
+          "pos"
+        ],
+        "additionalProperties": false
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "subscription_id",
+          "request_id",
+          "cursor"
+        ],
+        "additionalProperties": false
       }
     },
     {
       "name": "poll",
       "major": 1,
       "input_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "subscription_id"
+        ],
+        "additionalProperties": false
       },
       "output_schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gap": {
+            "type": "boolean"
+          },
+          "updates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "request_id": {
+                  "type": "string"
+                },
+                "dimension": {
+                  "type": "integer"
+                },
+                "pos": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "epoch": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "waiting",
+                    "unknown",
+                    "observed",
+                    "unobserved",
+                    "failed",
+                    "cancelled",
+                    "epoch_expired"
+                  ]
+                },
+                "action_state": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "unknown",
+                    "accepted",
+                    "dispatching",
+                    "pending",
+                    "running",
+                    "succeeded",
+                    "failed",
+                    "cancelled"
+                  ]
+                },
+                "observation": {
+                  "type": "string",
+                  "enum": [
+                    "waiting",
+                    "observed",
+                    "unobserved"
+                  ]
+                },
+                "created_at": {
+                  "type": "number"
+                },
+                "cached_at": {
+                  "type": "number"
+                },
+                "operation_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "baseline_revision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "observation_not_before": {
+                  "type": "number"
+                },
+                "submitted_at": {
+                  "type": "number"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "observation_error": {
+                  "type": "string"
+                },
+                "receipt": {
+                  "type": "object"
+                },
+                "digest": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "request_id",
+                "dimension",
+                "pos",
+                "epoch",
+                "state",
+                "action_state",
+                "observation",
+                "created_at",
+                "cached_at",
+                "operation_ids"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "cursor",
+          "gap",
+          "updates"
+        ],
+        "additionalProperties": false
       }
     }
   ]

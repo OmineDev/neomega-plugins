@@ -60,7 +60,7 @@ Telegram 使用来源 `message.date`，OneBot 使用来源 `event.time`（均为
 
 Polaris WS 若来源省略 time，允许有效无时间事件，使用本机首次接收时间做有限窗口去重；游戏聊天/命令方块流保留原 delivery token 或 connection_id/source_sequence 派生 ID，同样只承诺来源保留窗口，不把每次接收时间包装成可信 v2 ID。无时间事件在记录回收后再次到达不享有永久去重保证。所有入站记录回收前读取原 commit receipt 和 operation_ids；仅无动作或所有动作均有明确 succeeded/failed/cancelled 结果且无 partial_effects 时可删除，pending、unknown、缺失回执继续保留。事务被接纳不等于游戏已显示。
 
-seal 在锁内阻止新写入及后台投递，存在网络在途、unknown 或尚未核定提交返回 busy；release 校验维护 token。Worker 管理定时任务与入站连接回调；停止时关闭监听服务器并等待限时 HTTP 请求退出。
+seal 在锁内阻止新写入及后台投递，存在网络在途、未结算 dispatching 或尚未核定提交返回 busy；release 校验维护 token。Worker 管理定时任务与入站连接回调；停止时关闭监听服务器并等待限时 HTTP 请求退出。
 
 ## 作者使用
 
