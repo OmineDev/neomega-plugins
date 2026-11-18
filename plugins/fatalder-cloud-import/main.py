@@ -23,7 +23,11 @@ class CloudImport(ServiceAdapter, Plugin):
 
     async def on_maintenance(self, ctx, request):
         if not hasattr(self, 'controller'):
-            return {'status': 'unsupported'}
+            token = request.get('token') if isinstance(request, dict) else None
+            reply = {'status': 'unsupported'}
+            if isinstance(token, str) and token:
+                reply['token'] = token
+            return reply
         return await self.controller.maintenance(request)
 
     async def on_stop(self, ctx):

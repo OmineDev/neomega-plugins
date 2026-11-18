@@ -1,4 +1,5 @@
 """Drive the plugin through the real SDK storage against an in-memory Host."""
+import asyncio
 import copy
 import json
 import logging
@@ -6,7 +7,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from neomega_runtime import Event, PluginContext, ProtocolError, ServiceRejected
 from neomega_runtime.config import load_config
@@ -458,6 +459,83 @@ class ConfigTests(unittest.TestCase):
                       {'unknown': 1}):
             with self.subTest(value=value), self.assertRaises(ConfigError):
                 self.load(value)
+
+    def test_purposes_cover_all_permissions(self):
+        manifest = json.loads((ROOT / 'manifest.json').read_text())
+        purposes = manifest['permissions']['purposes']
+        self.assertIn('event:chat.received', purposes)
+        self.assertIn('service:plugin.neomega.economy.pay', purposes)
+
+
+class WarpsRegressionTests(WarpsTests):
+    async def test_player_target_validated_before_charge_and_tx_not_held_across_charge(self):
+        self.ctx.config = Settings(admins=['admin'], warps=PRESETS, teleport_cost=5)
+        self.as_player({'name': 'bad"name', 'uuid': 'u-bad', 'xuid': '99'})
+        self.charged(return_value={'balance': 95, 'duplicate': False})
+        await self.say('!传送 1')
+        self.ctx.services.call.assert_not_awaited()
+
+        self.as_player(PLAYER)
+        async def bump_revision(*args, **kwargs):
+            self.host.revision += 1
+            return {'balance': 95, 'duplicate': False, 'currency': '金币'}
+        self.ctx.services.call = AsyncMock(side_effect=bump_revision)
+        await self.say('!传送 1')
+        self.assertIn('已传送到「出生点」', self.host.reply())
+
+    async def test_shadowed_stored_warp_does_not_count_toward_max_warps(self):
+        # 1 preset ('出生点') + 63 other stored warps + 1 shadowed stored warp ('出生点') = 64 active warps -> 64 limit allows 1 more?
+        #Wait: active = 1 preset + 62 stored = 63, plus 1 shadowed stored = 64 total keys -> should allow adding 64th active warp!
+        stored = {f'w{i}': {'dimension': 0, 'x': 0, 'y': 64, 'z': 0, 'description': ''} for i in range(62)}
+        stored['出生点'] = {'dimension': 0, 'x': 1, 'y': 64, 'z': 1, 'description': ''}
+        self.host.values['warps'] = stored
+        self.ctx.config = Settings(admins=['admin'], warps=[PRESETS[0]])
+        self.as_player(ADMIN)
+        await self.say('!设传送点 最后一个')
+        self.assertIn('已设置传送点「最后一个」', self.host.reply())
+
+    async def test_non_ascii_digits_do_not_crash_find_or_valid_name(self):
+        self.as_player(ADMIN)
+        await self.say('!设传送点 ²')
+        self.assertIn('已设置传送点「²」', self.host.reply())
+        await self.say('!传送 ²')
+        self.assertIn('已传送到「²」', self.host.reply())
+        await self.say('!传送 ①')
+        self.assertIn('没有找到传送点「①」', self.host.reply())
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': '玩家', 'xuid': '42', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('warps-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await Warps().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':

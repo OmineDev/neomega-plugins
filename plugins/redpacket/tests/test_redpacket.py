@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from neomega_runtime import Event, PlayerNotFound, PluginContext, ServiceRejected
 from neomega_runtime.config import load_config
@@ -468,28 +468,32 @@ class RedPacketTests(unittest.IsolatedAsyncioTestCase):
         await self.say(ALICE, '!发红包 20 2')
         self.service_calls.clear()
 
-        # 两次都失败：不写入 claims，后续可重抢
-        self.outcomes[ECONOMY_GRANT] = [ServiceWaitTimeout('g1'), ServiceFailed({'call_id': 'g2'})]
-        await self.say(BOB, '!抢 1')
-        self.assertEqual(len(self.service_calls), 2)
-        self.assertEqual(self.service_calls[0][1]['request_id'], grab_request_id(1, 'u-bob'))
-        self.assertEqual(self.service_calls[0][1]['request_id'], self.service_calls[1][1]['request_id'])
-        self.assertIn('结果暂时不确定', self.host.told('Bob'))
-        self.assertEqual(self.host.values[PACKETS]['items'][0]['claims'], [])
-
-        # IPCRejected：不写入 claims
+        # 明确拒绝（IPCRejected）：不写入 claims，后续可重抢
         self.outcomes[ECONOMY_GRANT] = [IPCRejected('unavailable', 'r1', False)]
         await self.say(BOB, '!抢 1')
         self.assertIn('经济服务当前不可用', self.host.told('Bob'))
         self.assertEqual(self.host.values[PACKETS]['items'][0]['claims'], [])
 
-        # unavailable 后重试成功（pending=True）
+        # GRANT_UNSURE：原子占位并记录 request_id，防止他人重复领取同一份额
+        self.outcomes[ECONOMY_GRANT] = [ServiceWaitTimeout('g1'), ServiceFailed({'call_id': 'g2'})]
+        await self.say(BOB, '!抢 1')
+        self.assertEqual(len(self.service_calls), 3)
+        self.assertEqual(self.service_calls[1][1]['request_id'], grab_request_id(1, 'u-bob'))
+        self.assertEqual(self.service_calls[1][1]['request_id'], self.service_calls[2][1]['request_id'])
+        self.assertIn('结果暂时不确定', self.host.told('Bob'))
+        claims = self.host.values[PACKETS]['items'][0]['claims']
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0]['request_id'], grab_request_id(1, 'u-bob'))
+        self.assertTrue(claims[0]['unsure'])
+
+        # 同一玩家重抢 unsettled 占位时复用同一 request_id，unavailable 后重试成功（pending=True）
         self.outcomes[ECONOMY_GRANT] = [
             ServiceRejected('unavailable'),
             {'balance': 0, 'duplicate': True, 'currency': '积分', 'pending': True},
         ]
         await self.say(BOB, '!抢 1')
         self.assertEqual(len(self.host.values[PACKETS]['items'][0]['claims']), 1)
+        self.assertNotIn('unsure', self.host.values[PACKETS]['items'][0]['claims'][0])
         self.assertIn('将在下次确认在线时入账', self.host.told('Bob'))
 
     # ---- 查看红包清单 ----
@@ -771,7 +775,7 @@ class ConfigAndManifestTests(unittest.TestCase):
     def test_manifest_has_required_economy_dependency_and_purposes(self):
         manifest = json.loads((ROOT / 'manifest.json').read_text())
         self.assertEqual(manifest['id'], 'neomega.redpacket')
-        self.assertEqual(manifest['version'], '1.0.0')
+        self.assertEqual(manifest['version'], '1.0.1')
         self.assertEqual(manifest['dependencies'], [{'id': 'neomega.economy', 'major': 2, 'min_version': '2.0.0'}])
         self.assertEqual(manifest['exports'], [])
         purposes = manifest['permissions']['purposes']
@@ -784,6 +788,127 @@ class ConfigAndManifestTests(unittest.TestCase):
             'service:plugin.neomega.economy.grant',
         ):
             self.assertTrue(purposes.get(key), key)
+
+
+class RedPacketRegressionTests(RedPacketTests):
+    async def test_grant_unsure_prevents_next_grabber_double_spend_and_sweep_double_refund(self):
+        await self.say(ALICE, '!发红包 100 2')
+        pkt = self.host.values[PACKETS]['items'][0]
+        shares = list(pkt['shares'])
+        self.service_calls.clear()
+
+        # Bob hits GRANT_UNSURE on shares[0].
+        self.outcomes[ECONOMY_GRANT] = [ServiceWaitTimeout('g1'), ServiceWaitTimeout('g2')]
+        await self.say(BOB, '!抢 1')
+        self.assertIn('结果暂时不确定', self.host.told('Bob'))
+
+        # Carol grabs next -> must get shares[1], NOT shares[0].
+        await self.say(CAROL, '!抢 1')
+        self.assertEqual(self.balances['u-carol'], 100 + shares[1])
+        stored = self.host.values[PACKETS]['items'][0]
+        self.assertEqual(len(stored['claims']), 2)
+        self.assertEqual(sum(c['amount'] for c in stored['claims']), 100)
+
+        # Even if only 1 share was claimed (say count=3) and packet expires, sweep must NOT refund Bob's unsure slot.
+        await self.say(ALICE, '!发红包 90 3')
+        shares2 = list(self.host.values[PACKETS]['items'][1]['shares'])
+        self.outcomes[ECONOMY_GRANT] = [ServiceWaitTimeout('g3'), ServiceWaitTimeout('g4')]
+        await self.say(BOB, '!抢 2')
+        self.wall += 31 * 60
+        self.service_calls.clear()
+        await self.plugin.sweep(self.ctx)
+        self.assertEqual(len(self.service_calls), 1)
+        self.assertEqual(self.service_calls[0][1]['amount'], shares2[1] + shares2[2])
+
+    async def test_sweep_releases_lock_across_grant_rpcs(self):
+        await self.say(ALICE, '!发红包 40 2')
+        self.wall += 31 * 60
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        orig_mock = self.mock_economy
+
+        async def slow_grant(service, arguments, *, major=1, timeout=5, idempotency_key=None):
+            if service == ECONOMY_GRANT:
+                entered.set()
+                await release.wait()
+            return await orig_mock(service, arguments, major=major, timeout=timeout, idempotency_key=idempotency_key)
+
+        self.ctx.services.call = AsyncMock(side_effect=slow_grant)
+        sweep_task = asyncio.create_task(self.plugin.sweep(self.ctx))
+        await entered.wait()
+        # While sweep is awaiting ECONOMY_GRANT, unrelated commands complete immediately.
+        await self.say(BOB, '!红包')
+        self.assertIn('当前没有可抢的红包', self.host.told('Bob'))
+        release.set()
+        await sweep_task
+        self.assertTrue(self.host.values[PACKETS]['items'][0]['refunded'])
+
+    async def test_handle_join_preserves_refund_notices_when_reply_fails(self):
+        self.host.values[REFUND_NOTICES] = {'u-alice': [{'id': 7, 'amount': 50, 'currency': '金币'}]}
+        with patch.object(self.plugin, 'reply', side_effect=ValueError('bad')):
+            await self.join(ALICE)
+        self.assertEqual(self.host.values[REFUND_NOTICES],
+                         {'u-alice': [{'id': 7, 'amount': 50, 'currency': '金币'}]})
+
+        await self.join(ALICE)
+        self.assertIn('#7 号红包已过期，剩余 50 金币已退回账户', self.host.told('Alice'))
+        self.assertNotIn(REFUND_NOTICES, self.host.values)
+
+    async def test_passcode_strips_formatting_and_broadcast_chunks_long_text(self):
+        await self.say(ALICE, '!发红包 20 2 "§c§l新年§r快乐"')
+        pkt = self.host.values[PACKETS]['items'][0]
+        self.assertEqual(pkt['passcode'], '新年快乐')
+        [bc] = self.host.broadcasts()
+        self.assertNotIn('§', bc)
+        self.assertIn('!抢 新年快乐', bc)
+
+        # Only formatting codes is rejected.
+        await self.say(ALICE, '!发红包 20 2 §c§r')
+        self.assertIn('口令不能为空', self.host.told('Alice'))
+
+        # Long broadcast is chunked within 320 bytes per tellraw @a command.
+        long_sender = {'name': '甲' * 80, 'uuid': 'u-long', 'xuid': '99'}
+        self.balances['u-long'] = 1000
+        self.host.online.append(long_sender)
+        await self.say(long_sender, '!发红包 20 2 "' + '福' * 20 + '"')
+        cmds = [c for c in self.host.commands() if c.startswith('tellraw @a ')]
+        self.assertGreater(len(cmds), 1)
+        for cmd in cmds:
+            self.assertLessEqual(len(cmd.encode('utf-8')), 320)
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': 'Alice', 'xuid': '10', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('redpacket-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await RedPacket().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':

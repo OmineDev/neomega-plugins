@@ -1,12 +1,17 @@
 """Drive the plugin through the real SDK storage against an in-memory Host."""
+import asyncio
 import copy
 import json
 import logging
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from neomega_runtime import Event, PluginContext, ProtocolError
+from neomega_runtime.config import load_config
+from neomega_runtime.config_schema import check_config_schema, schema_for_config
 from neomega_runtime.operations import Operations
 from main import Homes, Settings
 
@@ -210,6 +215,62 @@ class HomesTests(unittest.IsolatedAsyncioTestCase):
             await self.say(message)
             self.assertEqual(self.host.commits[-1]['actions'], [])
             self.assertEqual(self.host.commits[-1]['mutations'], [])
+
+    async def test_empty_name_and_unknown_dimension_are_handled_cleanly(self):
+        await self.say('!设家 ""')
+        self.ctx.positions.sample.assert_not_awaited()
+        self.assertIn('不能为空', self.host.reply())
+        await self.say('!设家 "   "')
+        self.assertIn('不能为空', self.host.reply())
+
+        self.host.values['player:u1'] = {'怪维度': {'dimension': 99, 'x': 1.0, 'y': 64.0, 'z': 1.0, 'feet': True}}
+        await self.say('!回家 怪维度')
+        self.assertEqual(self.host.teleports(), [])
+        self.assertIn('维度不受支持', self.host.reply())
+        self.assertEqual(self.plugin.last_home, {})
+
+    def test_schema_example_and_purposes_match_settings(self):
+        root = Path(__file__).resolve().parents[1]
+        schema = json.loads((root / 'config.schema.json').read_text())
+        check_config_schema(schema)
+        self.assertEqual(schema, schema_for_config(Settings))
+        self.assertEqual(load_config(Settings, root / 'config.example.json'), Settings())
+        manifest = json.loads((root / 'manifest.json').read_text())
+        self.assertIn('event:chat.received', manifest['permissions']['purposes'])
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': '玩家', 'xuid': '42', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('homes-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await Homes().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':

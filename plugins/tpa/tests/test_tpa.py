@@ -1,13 +1,19 @@
 """Drive the plugin through the real SDK storage against an in-memory Host."""
+import asyncio
 import copy
 import json
 import logging
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from neomega_runtime import Event, PluginContext
+from neomega_runtime.config import load_config
+from neomega_runtime.config_schema import check_config_schema, schema_for_config
 from neomega_runtime.operations import Operations
-from main import Settings, Tpa
+from main import Settings, Tpa, match
 
 ROSTER = [{'name': 'Steve', 'uuid': 'u1', 'xuid': '1'},
           {'name': 'Stella', 'uuid': 'u2', 'xuid': '2'},
@@ -19,15 +25,25 @@ class FakeHost:
     def __init__(self):
         self.values, self.revision, self.commits = {}, 0, []
         self.players = copy.deepcopy(ROSTER)
+        self.bot_name = 'Bot'
+        self.fail_players = False
+        self.fail_commit = False
 
     async def call(self, method, payload, timeout=None):
+        if method == 'robot.status':
+            return {'session': 's1', 'in_game': True, 'bot_name': self.bot_name,
+                    'player_count': len(self.players)}
         if method == 'players.list':
+            if self.fail_players:
+                raise TimeoutError('players slow')
             return {'session': 's1', 'players': copy.deepcopy(self.players)}
         if method == 'state.get':
             keys = payload.get('keys')
             values = self.values if keys is None else {k: self.values[k] for k in keys if k in self.values}
             return {'revision': self.revision, 'values': copy.deepcopy(values), 'session': 's1'}
         assert method in ('state.commit', 'events.commit'), method
+        if self.fail_commit:
+            raise ConnectionError('commit lost')
         assert payload['expected_state_revision'] == self.revision
         assert payload['mutations'] == []   # 这个插件不写存储键
         self.revision += 1
@@ -180,6 +196,80 @@ class TpaTests(unittest.IsolatedAsyncioTestCase):
         for message in ('你好', '!其他命令', '!tpa', '!tpa a b', '!tpa "没闭合'):
             await self.say('Steve', message)
             self.assertEqual(self.host.commits[-1]['actions'], [])
+
+    async def test_match_rejects_empty_query_and_prefers_case_insensitive_exact(self):
+        self.assertEqual(match(['Steve', 'Steve2'], ''), [])
+        self.assertEqual(match(['Steve', 'Steve2'], 'steve'), ['Steve'])
+        await self.say('Alex', '!tpa ""')
+        self.assertEqual(self.host.reply('Alex'), '没有找到在线玩家“”。')
+        await self.say('Steve', '!tpa Alex')
+        await self.say('Alex', '!同意 ""')
+        self.assertEqual(self.host.reply('Alex'), '没有来自“”的传送请求。')
+
+    async def test_answer_keeps_request_when_players_or_save_fails(self):
+        await self.say('Steve', '!tpa Alex')
+        self.host.fail_players = True
+        with self.assertRaises(TimeoutError):
+            await self.say('Alex', '!同意')
+        self.host.fail_players = False
+        self.host.fail_commit = True
+        with self.assertRaises(Exception):
+            await self.say('Alex', '!同意')
+        self.host.fail_commit = False
+        await self.say('Alex', '!同意')
+        self.assertEqual(self.host.teleports(), ['tp @a[name="Steve"] @a[name="Alex"]'])
+
+    async def test_skips_robot_in_targets_and_chat(self):
+        self.host.players.append({'name': 'Bot', 'uuid': 'u-bot', 'xuid': '99'})
+        await self.say('Steve', '!tpa Bot')
+        self.assertEqual(self.host.reply('Steve'), '没有找到在线玩家“Bot”。')
+        await self.plugin.on_event(self.ctx, Event(self.ctx, {
+            'kind': 'chat.received', 'payload': {'player': 'Bot', 'xuid': '99', 'message': '!tpa Alex'},
+            'subscription_id': 'chat', 'event_id': 'ebot', 'delivery_token': 'dbot'}))
+        self.assertEqual(self.host.commits[-1]['actions'], [])
+
+    def test_schema_example_and_purposes_match_settings(self):
+        root = Path(__file__).resolve().parents[1]
+        schema = json.loads((root / 'config.schema.json').read_text())
+        check_config_schema(schema)
+        self.assertEqual(schema, schema_for_config(Settings))
+        self.assertEqual(load_config(Settings, root / 'config.example.json'), Settings())
+        manifest = json.loads((root / 'manifest.json').read_text())
+        self.assertIn('event:chat.received', manifest['permissions']['purposes'])
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': 'Steve', 'xuid': '1', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('tpa-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await Tpa().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':

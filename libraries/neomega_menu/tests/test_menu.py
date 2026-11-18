@@ -7,7 +7,9 @@ import unittest
 from unittest.mock import AsyncMock
 
 from neomega_runtime import Event, PluginContext
-from neomega_runtime.operations import Operations
+from neomega_runtime.http import ProtocolError
+from neomega_runtime.managed import IPCRejected
+from neomega_runtime.operations import Operations, OperationSubmissionError
 import neomega_menu as menu
 
 PLAYER = {'name': '玩家', 'uuid': 'u1', 'xuid': '42'}
@@ -16,15 +18,24 @@ PLAYER = {'name': '玩家', 'uuid': 'u1', 'xuid': '42'}
 class FakeHost:
     def __init__(self):
         self.revision, self.commits, self.sent = 0, [], []
+        self.commit_gate = None
+        self.commit_error = None
+        self.submit_error = None
 
     async def call(self, method, payload, timeout=None):
         if method == 'state.get':
             return {'revision': self.revision, 'values': {}, 'session': 's1'}
         if method == 'operations.submit':
+            if self.submit_error is not None:
+                raise self.submit_error
             command = payload['arguments']['cmd']
             self.sent.append(''.join(p['text'] for p in json.loads(command[command.index('{'):])['rawtext']))
             return {'operation_id': 'op' + str(len(self.sent)), 'state': 'accepted', 'duplicate': False}
         assert method == 'events.commit' and payload['expected_state_revision'] == self.revision
+        if self.commit_gate is not None:
+            await self.commit_gate.wait()
+        if self.commit_error is not None:
+            raise self.commit_error
         self.revision += 1
         self.commits.append(payload)
         return {'commit_id': payload['commit_id'], 'revision': self.revision, 'duplicate': False, 'operation_ids': []}
@@ -89,6 +100,49 @@ class MenuTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('还有一个菜单没有完成', self.host.sent[-1])
         await self.reply('好')
         self.assertEqual(await first, '好')
+
+    async def test_non_ascii_digits_do_not_crash_choose(self):
+        flow = asyncio.create_task(menu.choose(self.ctx, PLAYER, '商店', ['面包']))
+        for text in ('²', '①', '1'):
+            self.assertTrue(await self.reply(text))
+        self.assertEqual(await flow, 0)
+        self.assertIn('没有这个选项', self.host.sent[1])
+
+    async def test_ask_resolves_only_after_commit_and_aborts_on_commit_error(self):
+        self.host.commit_gate = asyncio.Event()
+        flow = asyncio.create_task(menu.ask(self.ctx, PLAYER, '名字？'))
+        await asyncio.sleep(0)
+        feed_task = asyncio.create_task(self.reply('小明'))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        self.assertFalse(flow.done())
+        self.host.commit_gate.set()
+        self.assertTrue(await feed_task)
+        self.assertEqual(await flow, '小明')
+
+        self.host.commit_gate = None
+        self.host.commit_error = IPCRejected('revision_conflict', 'r1', True)
+        flow2 = asyncio.create_task(menu.ask(self.ctx, PLAYER, '名字？'))
+        await asyncio.sleep(0)
+        with self.assertRaises(IPCRejected):
+            await self.reply('小红')
+        self.assertIsNone(await flow2)
+
+    async def test_say_failures_do_not_crash_or_leak_future(self):
+        for err in (
+            IPCRejected('rejected', 'r1', False),
+            OperationSubmissionError(object()),
+            ProtocolError('bad'),
+            TimeoutError('slow'),
+            ValueError('bad target'),
+        ):
+            self.host.submit_error = err
+            self.assertFalse(await menu.say(self.ctx, PLAYER, 'hello'))
+            self.assertIsNone(await menu.ask(self.ctx, PLAYER, '问题？'))
+        self.host.submit_error = None
+        flow = asyncio.create_task(menu.ask(self.ctx, PLAYER, '恢复了吗？'))
+        self.assertTrue(await self.reply('好了'))
+        self.assertEqual(await flow, '好了')
 
 
 if __name__ == '__main__':

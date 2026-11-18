@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 
+from neomega_runtime.storage import CommitUncertain
+
 
 def barrier(ctx):
     return Path(ctx.data_dir) / 'fatalder-state-pending.json'
@@ -29,7 +31,7 @@ def clear(ctx):
         os.close(fd)
 
 
-async def save(ctx, tx, commit_id):
+def _write_barrier(ctx, commit_id):
     path = barrier(ctx)
     path.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive creation prevents a second CAS overwriting unresolved evidence.
@@ -42,6 +44,13 @@ async def save(ctx, tx, commit_id):
         os.fsync(fd)
     finally:
         os.close(fd)
-    result = await tx.save()
-    clear(ctx)
-    return result
+
+
+async def save(ctx, tx, commit_id):
+    if barrier(ctx).exists():
+        raise RuntimeError('Fatalder state commit unresolved; barrier already present')
+    try:
+        return await tx.save()
+    except CommitUncertain:
+        _write_barrier(ctx, commit_id)
+        raise

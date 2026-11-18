@@ -6,11 +6,15 @@ import asyncio
 import copy
 import json
 import logging
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from neomega_runtime import Event, PluginContext, ServiceRejected
+from neomega_runtime.config import load_config
+from neomega_runtime.config_schema import check_config_schema, schema_for_config
 from neomega_runtime.operations import Operations
 from neomega_runtime.services import ServiceUncertain, ServiceWaitTimeout
 from main import Item, Settings, Shop
@@ -217,9 +221,73 @@ class ShopTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             Settings(items=[])
         with self.assertRaises(ValueError):
+            Settings(items=[Item(' ', 1, ['give {player} diamond 1'])])
+        with self.assertRaises(ValueError):
+            Settings(items=[Item('钻石', 1, [])])
+        with self.assertRaises(ValueError):
             Settings(items=[Item('钻石', 1, ['give {player} diamond 1'])] * 2)
         with self.assertRaises(ValueError):
+            Settings(items=[Item('钻石', 1, ['give {player} diamond 1']),
+                            Item(' 钻石 ', 2, ['give {player} bread 1'])])
+        with self.assertRaises(ValueError):
             Settings(items=[Item('钻石', 1, [' '])])
+
+    def test_schema_example_and_purposes_match_settings(self):
+        root = Path(__file__).resolve().parents[1]
+        schema = json.loads((root / 'config.schema.json').read_text())
+        check_config_schema(schema)
+        self.assertEqual(schema, schema_for_config(Settings))
+        self.assertEqual(load_config(Settings, root / 'config.example.json'), Settings())
+        manifest = json.loads((root / 'manifest.json').read_text())
+        self.assertIn('event:chat.received', manifest['permissions']['purposes'])
+
+    async def test_spawn_guards_target_and_unknown_rejection(self):
+        self.outcomes[PAY] = [ServiceRejected('unexpected_code')]
+        with self.assertLogs('shop-test', 'WARNING'):
+            await self.buy('1', '1')
+        self.assertEqual(self.host.sent[-1], '扣款失败，请稍后再试。')
+        self.assertEqual(self.host.deliveries(), [])
+
+        self.tasks.clear()
+        self.calls.clear()
+        self.ctx.resolve_player = AsyncMock(return_value={'name': 'bad"name', 'uuid': 'u2', 'xuid': '43'})
+        with self.assertLogs('shop-test', 'WARNING'):
+            await self.buy('1', '1')
+        self.assertEqual(self.pays(), [])
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': '玩家', 'xuid': '42', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('shop-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await Shop().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':

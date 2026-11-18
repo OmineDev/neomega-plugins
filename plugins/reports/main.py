@@ -1,8 +1,9 @@
 """举报与留言：玩家提交举报（附带坐标）与意见留言，管理员查办回复并支持离线进服送达。
 
-所有举报和留言保存在存储键 board（{next_id, records}）中；超出 max_records 时优先淘汰
-最旧的已处理（resolved）记录，仍超出则裁剪最旧记录。提交冷却跨重启保存于 cd:<pid>。
-处理不在线玩家的记录时写入 inbox:<pid>，待其下次进服（player.list_added）自动私聊并清空。
+每条举报和留言独立保存在存储键 report:<id> 中，紧凑索引 index 仅保存编号、类型、
+状态与提交人标识；超出 max_records 时优先淘汰最旧的已处理（resolved）记录，仍超出则
+裁剪最旧记录并删除对应的 report:<id>。旧版单键 board 会在首次读写时分批无感迁移。
+提交冷却跨重启保存于 cd:<pid>，离线处理通知按条数上限保存于 inbox:<pid>。
 
 每次事件处理只做一次存储提交，状态变更、通知和事件确认一起落盘。位置采样与在线列表
 查询放在打开存储事务之前，采样失败降级为无坐标，不阻塞举报提交。
@@ -14,8 +15,14 @@ import math
 import time
 
 from neomega_runtime import AmbiguousPlayer, ChatRouter, Event, Plugin, PluginContext, PlayerNotFound
+from neomega_runtime.http import ProtocolError
+from neomega_runtime.managed import IPCError
 
 BOARD = 'board'
+INDEX = 'index'
+MIGRATE_BATCH = 50
+MAX_INBOX_ITEMS = 20
+MAX_STORAGE_KEY_BYTES = 256
 MAX_TEXT_LENGTH = 200
 PAGE_SIZE = 5
 # 位置查询（querytarget）报的是玩家眼睛高度，脚坐标比它低 1.62 格。
@@ -72,6 +79,40 @@ def cd_key(pid: str) -> str:
 
 def inbox_key(pid: str) -> str:
     return 'inbox:' + pid
+
+
+def report_key(record_id: int) -> str:
+    return f'report:{record_id}'
+
+
+def make_index_entry(record: dict) -> list:
+    kind = 'r' if record.get('kind') == 'report' else 'f'
+    status = 'x' if record.get('status') == 'resolved' else 'o'
+    pid = record.get('reporter_pid') or ''
+    owner = pid if pid else 'name:' + str(record.get('reporter', ''))
+    return [int(record['id']), kind, status, owner]
+
+
+def entry_matches_player(entry: list, pid: str, name: str) -> bool:
+    owner = entry[3]
+    if owner.startswith('name:'):
+        return owner[5:] == name
+    return owner == pid
+
+
+def trim_entries(entries: list[list], limit: int) -> tuple[list[list], list[int]]:
+    kept = list(entries)
+    evicted: list[int] = []
+    while len(kept) > limit:
+        idx = next((i for i, row in enumerate(kept) if row[2] == 'x'), None)
+        if idx is not None:
+            evicted.append(kept.pop(idx)[0])
+        else:
+            drop = len(kept) - limit
+            evicted.extend(row[0] for row in kept[:drop])
+            kept = kept[drop:]
+            break
+    return kept, evicted
 
 
 def coordinate(value) -> str:
@@ -191,10 +232,12 @@ class Reports(Plugin):
 
     def __init__(self):
         self.lock = asyncio.Lock()
+        self.bot_name = None
         self.started = self.last_event = None
         self.caught_up = False
 
     async def on_start(self, ctx: PluginContext):
+        self.bot_name = None
         self.started = self.now()
         # 全角感叹号是中文输入法的默认输出，两个前缀都接受。
         self.routers = (ctx.chat, ChatRouter(prefix='！'))
@@ -217,6 +260,8 @@ class Reports(Plugin):
             router.command('处理举报', aliases=('cljb', 'resolve'), description='管理员处理并回复举报或留言',
                            usage='<编号> <回复内容...>')(
                 lambda command: self.resolve_report(ctx, command))
+        async with self.lock:
+            await self._ensure_migrated(ctx)
 
     async def on_event(self, ctx: PluginContext, event: Event):
         self.watch_backlog()
@@ -231,7 +276,47 @@ class Reports(Plugin):
             # 引号不配对、参数个数不对，或玩家已经下线：不回复，只确认事件。
             pass
         async with self.lock:
-            await (await ctx.storage.transaction(event=event.payload, keys=[])).save()
+            await (await event.transaction(keys=[])).save()
+
+    async def bot(self, ctx: PluginContext) -> str | None:
+        try:
+            name = (await ctx.robot()).get('bot_name')
+        except (IPCError, ProtocolError, TimeoutError, ConnectionError, OSError):
+            return self.bot_name
+        if name:
+            self.bot_name = name
+        return self.bot_name
+
+    async def _migrate_board(self, ctx: PluginContext, legacy: dict) -> dict:
+        """把旧版单键 board 分批拆分为 report:<id> 与紧凑索引 index，最后删除 board。"""
+        records = [r for r in legacy.get('records', []) if isinstance(r, dict) and type(r.get('id')) is int]
+        records = trim_records(records, ctx.config.max_records)
+        next_id = max(int(legacy.get('next_id', 1)), max((r['id'] for r in records), default=0) + 1)
+        entries = [make_index_entry(r) for r in records]
+        index = {'next_id': next_id, 'entries': entries}
+
+        for start in range(0, len(records), MIGRATE_BATCH):
+            batch = records[start:start + MIGRATE_BATCH]
+            tx = await ctx.storage.transaction(keys=[])
+            for row in batch:
+                tx.set(report_key(int(row['id'])), row)
+            if start + MIGRATE_BATCH >= len(records):
+                tx.set(INDEX, index)
+                tx.delete(BOARD)
+            await tx.save()
+        if not records:
+            tx = await ctx.storage.transaction(keys=[])
+            tx.set(INDEX, index)
+            tx.delete(BOARD)
+            await tx.save()
+        return index
+
+    async def _ensure_migrated(self, ctx: PluginContext) -> dict:
+        snap = await ctx.storage.transaction(keys=[INDEX, BOARD])
+        legacy = snap.get(BOARD)
+        if isinstance(legacy, dict):
+            return await self._migrate_board(ctx, legacy)
+        return snap.get(INDEX) or {'next_id': 1, 'entries': []}
 
     def now(self) -> float:
         return time.monotonic()
@@ -336,15 +421,18 @@ class Reports(Plugin):
         pid = player_id(player)
         ckey = cd_key(pid)
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[BOARD, ckey])
+            tx = await command.event.transaction(keys=[INDEX, BOARD, ckey])
+            if isinstance(tx.get(BOARD), dict):
+                await self._migrate_board(ctx, tx.get(BOARD))
+                tx = await command.event.transaction(keys=[INDEX, ckey])
             now = self.clock()
             wait = check_cooldown(tx.get(ckey), now, ctx.config.cooldown_seconds)
             if wait > 0:
                 self.reply(ctx, tx, player['name'], f'提交还在冷却中，请 {wait} 秒后再试。')
                 return await tx.save()
 
-            board = tx.get(BOARD) or {'next_id': 1, 'records': []}
-            record_id = int(board.get('next_id', 1))
+            index = tx.get(INDEX) or {'next_id': 1, 'entries': []}
+            record_id = int(index.get('next_id', 1))
             record = {
                 'id': record_id,
                 'kind': kind,
@@ -357,8 +445,12 @@ class Reports(Plugin):
                 'reporter_pos': reporter_pos,
                 'target_pos': target_pos,
             }
-            records = trim_records(list(board.get('records', [])) + [record], ctx.config.max_records)
-            tx.set(BOARD, {'next_id': record_id + 1, 'records': records})
+            kept, evicted = trim_entries(list(index.get('entries', [])) + [make_index_entry(record)],
+                                         ctx.config.max_records)
+            tx.set(INDEX, {'next_id': record_id + 1, 'entries': kept})
+            tx.set(report_key(record_id), record)
+            for old_id in evicted:
+                tx.delete(report_key(old_id))
             if ctx.config.cooldown_seconds > 0:
                 tx.set(ckey, now)
 
@@ -399,11 +491,12 @@ class Reports(Plugin):
         pid = player_id(command.player)
         name = command.player['name']
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[BOARD])
-            board = tx.get(BOARD) or {'next_id': 1, 'records': []}
-            mine = [r for r in board.get('records', [])
-                    if r.get('reporter_pid') == pid or (not r.get('reporter_pid') and r.get('reporter') == name)]
-            recent = list(reversed(mine[-5:]))
+            index = await self._ensure_migrated(ctx)
+            latest_ids = [row[0] for row in index.get('entries', [])
+                          if entry_matches_player(row, pid, name)][-5:]
+            tx = await command.event.transaction(keys=[report_key(rid) for rid in latest_ids])
+            recent = [row for rid in reversed(latest_ids)
+                      if (row := tx.get(report_key(rid))) is not None]
             if not recent:
                 text = '你还没有提交过举报或留言。'
             else:
@@ -419,28 +512,31 @@ class Reports(Plugin):
         page = 1
         if command.args:
             raw = command.args[0].strip()
-            if not (raw.isdigit() and int(raw) >= 1):
+            if not (raw.isascii() and raw.isdigit() and int(raw) >= 1):
                 cmd_name = '!查举报' if only_open else '!查全部举报'
                 return await self.answer(ctx, command, f'页码请填写大于 0 的整数，例如 {cmd_name} 1')
             page = int(raw)
 
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[BOARD])
-            board = tx.get(BOARD) or {'next_id': 1, 'records': []}
-            records = list(reversed(board.get('records', [])))
+            index = await self._ensure_migrated(ctx)
+            entries = list(reversed(index.get('entries', [])))
             if only_open:
-                records = [r for r in records if r.get('status') == 'open']
-            if not records:
+                entries = [row for row in entries if row[2] == 'o']
+            if not entries:
+                tx = await command.event.transaction(keys=[])
                 text = '当前没有待处理的举报或留言。' if only_open else '目前还没有任何举报或留言记录。'
             else:
-                total_pages = math.ceil(len(records) / PAGE_SIZE)
+                total_pages = math.ceil(len(entries) / PAGE_SIZE)
                 if page > total_pages:
-                    text = f'共 {total_pages} 页（{len(records)} 条），请查看第 1 到 {total_pages} 页。'
+                    tx = await command.event.transaction(keys=[])
+                    text = f'共 {total_pages} 页（{len(entries)} 条），请查看第 1 到 {total_pages} 页。'
                 else:
                     start = (page - 1) * PAGE_SIZE
-                    chunk = records[start:start + PAGE_SIZE]
-                    title = f'待处理举报与留言（第 {page}/{total_pages} 页，共 {len(records)} 条）：' if only_open \
-                        else f'全部举报与留言（第 {page}/{total_pages} 页，共 {len(records)} 条）：'
+                    page_ids = [row[0] for row in entries[start:start + PAGE_SIZE]]
+                    tx = await command.event.transaction(keys=[report_key(rid) for rid in page_ids])
+                    chunk = [row for rid in page_ids if (row := tx.get(report_key(rid))) is not None]
+                    title = f'待处理举报与留言（第 {page}/{total_pages} 页，共 {len(entries)} 条）：' if only_open \
+                        else f'全部举报与留言（第 {page}/{total_pages} 页，共 {len(entries)} 条）：'
                     lines = [title] + [format_admin_record(r) for r in chunk]
                     if any(r.get('status') == 'open' for r in chunk):
                         lines.append('发送 !处理举报 <编号> <回复内容> 标记为已处理。')
@@ -454,7 +550,7 @@ class Reports(Plugin):
         if len(command.args) < 2:
             return await self.answer(ctx, command, '用法：!处理举报 <编号> <回复内容>')
         raw_id = command.args[0].strip().lstrip('#')
-        if not (raw_id.isdigit() and int(raw_id) >= 1):
+        if not (raw_id.isascii() and raw_id.isdigit() and int(raw_id) >= 1):
             return await self.answer(ctx, command, '举报编号请填写正整数，例如 !处理举报 1 已核实处理')
         target_id = int(raw_id)
         reply_text = ' '.join(command.args[1:]).strip()
@@ -463,22 +559,23 @@ class Reports(Plugin):
         if len(reply_text) > MAX_TEXT_LENGTH:
             return await self.answer(ctx, command, f'回复内容最多 {MAX_TEXT_LENGTH} 个字（当前 {len(reply_text)} 字）。')
 
-        snapshot = await ctx.storage.get(BOARD) or {'next_id': 1, 'records': []}
-        preview = next((r for r in snapshot.get('records', []) if r.get('id') == target_id), None)
-        if preview is None:
+        rkey = report_key(target_id)
+        async with self.lock:
+            await self._ensure_migrated(ctx)
+        preview = await ctx.storage.get(rkey)
+        if not isinstance(preview, dict):
             return await self.answer(ctx, command, f'没有找到编号 #{target_id} 的记录。')
 
         reporter_pid = preview.get('reporter_pid', '')
-        ikey = inbox_key(reporter_pid) if reporter_pid else None
+        raw_ikey = inbox_key(reporter_pid) if reporter_pid else None
+        ikey = raw_ikey if raw_ikey and len(raw_ikey.encode('utf-8')) <= MAX_STORAGE_KEY_BYTES else None
         roster = await ctx.players()
-        keys = [BOARD, ikey] if ikey else [BOARD]
+        keys = [INDEX, rkey, ikey] if ikey else [INDEX, rkey]
 
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=keys)
-            board = tx.get(BOARD) or {'next_id': 1, 'records': []}
-            records = list(board.get('records', []))
-            record = next((r for r in records if r.get('id') == target_id), None)
-            if record is None:
+            tx = await command.event.transaction(keys=keys)
+            record = tx.get(rkey)
+            if not isinstance(record, dict):
                 self.reply(ctx, tx, command.player['name'], f'没有找到编号 #{target_id} 的记录。')
                 return await tx.save()
             if record.get('status') == 'resolved':
@@ -491,7 +588,15 @@ class Reports(Plugin):
             record['reply'] = reply_text
             record['resolved_by'] = command.player['name']
             record['resolved_at'] = resolved_at
-            tx.set(BOARD, {'next_id': int(board.get('next_id', 1)), 'records': records})
+            tx.set(rkey, record)
+
+            index = tx.get(INDEX) or {'next_id': target_id + 1, 'entries': []}
+            entries = list(index.get('entries', []))
+            for row in entries:
+                if row[0] == target_id:
+                    row[2] = 'x'
+                    break
+            tx.set(INDEX, {'next_id': int(index.get('next_id', target_id + 1)), 'entries': entries})
 
             item = {
                 'id': target_id,
@@ -513,7 +618,7 @@ class Reports(Plugin):
             elif ikey:
                 inbox = list(tx.get(ikey, []))
                 inbox.append(item)
-                tx.set(ikey, inbox)
+                tx.set(ikey, inbox[-MAX_INBOX_ITEMS:])
                 admin_msg = f'已处理 #{target_id}，{record["reporter"]} 当前不在线，将在下次进服时自动通知。'
             else:
                 admin_msg = f'已处理 #{target_id}。'
@@ -528,30 +633,35 @@ class Reports(Plugin):
         if not isinstance(body, dict) or not isinstance(body.get('name'), str) or not body['name']:
             return False
         player = await self.resolve_joined(ctx, body['name'], body.get('xuid') or '')
+        bot = await self.bot(ctx)
+        if bot and player['name'] == bot:
+            return False
         pid = player_id(player)
-        ikey = inbox_key(pid)
+        raw_ikey = inbox_key(pid)
+        ikey = raw_ikey if len(raw_ikey.encode('utf-8')) <= MAX_STORAGE_KEY_BYTES else None
         is_live = self.caught_up and event.payload.get('session', ctx.operations.session) == ctx.operations.session
         check_admin = bool(ctx.config.notify_admins_on_join and is_live and self.is_admin(ctx, player))
-        keys = [ikey, BOARD] if check_admin else [ikey]
 
         async with self.lock:
-            tx = await ctx.storage.transaction(event=event.payload, keys=keys)
+            index = await self._ensure_migrated(ctx) if check_admin else None
+            keys = [ikey] if ikey else []
+            tx = await event.transaction(keys=keys)
             messages = []
-            inbox = tx.get(ikey, [])
+            inbox = tx.get(ikey, []) if ikey else []
             if inbox:
                 messages.extend(format_inbox_item(item) for item in inbox)
-                tx.delete(ikey)
-            if check_admin:
-                board = tx.get(BOARD) or {'next_id': 1, 'records': []}
-                open_rows = [r for r in board.get('records', []) if r.get('status') == 'open']
+            if check_admin and index is not None:
+                open_rows = [row for row in index.get('entries', []) if row[2] == 'o']
                 if open_rows:
-                    reports = sum(1 for r in open_rows if r.get('kind') == 'report')
+                    reports = sum(1 for row in open_rows if row[1] == 'r')
                     feedbacks = len(open_rows) - reports
                     messages.append(
                         f'当前有 {len(open_rows)} 条待处理记录（举报 {reports} 条、留言 {feedbacks} 条），发送 !查举报 查看。'
                     )
             if messages:
                 self.reply(ctx, tx, player['name'], '\n'.join(messages))
+            if inbox and ikey:
+                tx.delete(ikey)
             await tx.save()
         return True
 
@@ -559,7 +669,7 @@ class Reports(Plugin):
 
     async def answer(self, ctx: PluginContext, command, text: str):
         async with self.lock:
-            tx = await ctx.storage.transaction(event=command.event.payload, keys=[])
+            tx = await command.event.transaction(keys=[])
             self.reply(ctx, tx, command.player['name'], text)
             await tx.save()
 

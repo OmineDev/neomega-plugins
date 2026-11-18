@@ -45,7 +45,7 @@
 | 启用防刷屏 `spam_check` | 开启 | 打开后统计玩家发言 |
 | 刷屏统计时间（秒） `spam_window_seconds` | `10` | 统计最近多少秒内的消息 |
 | 最多消息条数 `spam_max_messages` | `6` | 统计时间内超过这么多条就算刷屏 |
-| 重复消息上限 `spam_repeat_limit` | `3` | 统计时间内同一句话发到这么多次就算刷屏；填 0 不检查重复 |
+| 重复消息上限 `spam_repeat_limit` | `3` | 统计时间内同一句话发到这么多次就算刷屏；填 0 不检查重复（开启时至少填 2） |
 | 警告次数 `spam_warnings` | `1` | 先警告几次，再犯才处罚；填 0 第一次就处罚 |
 | 警告有效期（分钟） `spam_forgive_minutes` | `10` | 这么久没有再刷屏，警告次数清零 |
 | 刷屏处罚命令 `spam_punish_commands` | 空 | 处罚时改为执行这些命令，`{player}` 换成该玩家，例如 `gamemode adventure {player}`；留空则踢出 |

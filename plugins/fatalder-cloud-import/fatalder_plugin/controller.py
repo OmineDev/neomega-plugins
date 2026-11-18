@@ -1,5 +1,6 @@
 """One durable import slot, explicit billing confirmation, and connection leases."""
 import asyncio
+import copy
 from datetime import datetime, timedelta, timezone
 import json
 import hashlib
@@ -15,7 +16,38 @@ from .durable import save as durable_save, recover_barrier, barrier
 from .client import WorkerError
 
 STATE = 'fatalder.controller'
+HISTORY_PREFIX = 'fatalder.history.'
+MAX_SERVICE_HISTORY = 256
+MAX_TELLRAW_BYTES = 320
 TERMINAL = {'succeeded', 'failed', 'cancelled'}
+
+
+def history_key(identity: str) -> str:
+    return HISTORY_PREFIX + identity
+
+
+def chunk_tellraw(selector: str, message: str, max_command_bytes: int = MAX_TELLRAW_BYTES) -> list[str]:
+    """按 320 字节上限切分 tellraw 命令，避免长列表或长报价超限。"""
+    def command_for(text: str) -> str:
+        return 'tellraw ' + selector + ' ' + json.dumps({'rawtext': [{'text': text}]}, ensure_ascii=False)
+
+    def fits(text: str) -> bool:
+        return len(command_for(text).encode('utf-8')) <= max_command_bytes
+
+    if not fits(''):
+        raise ValueError('tellraw target exceeds command budget')
+    chunks, chunk = [], ''
+    for ch in message:
+        if not fits(chunk + ch):
+            if chunk:
+                chunks.append(command_for(chunk))
+                chunk = ''
+            if not fits(ch):
+                raise ValueError('tellraw character exceeds command budget')
+        chunk += ch
+    if chunk or not chunks:
+        chunks.append(command_for(chunk))
+    return chunks
 
 
 def now():
@@ -39,16 +71,21 @@ class Controller:
         self.maintenance_token = None
         self.control_tasks = set()
         self.active_controls = 0
+        self.preparing = False
         self.persistence_error = False
 
     async def maintenance(self, request):
-        operation, token = request.get('operation'), request.get('token')
+        operation = request.get('operation') if isinstance(request, dict) else None
+        token = request.get('token') if isinstance(request, dict) else None
         if operation not in ('seal', 'release') or not isinstance(token, str) or not token:
-            return {'status': 'unsupported'}
+            reply = {'status': 'unsupported'}
+            if isinstance(token, str) and token:
+                reply['token'] = token
+            return reply
         # The lock check and seal contain no await: one atomic event-loop turn.
         # Do not acquire an unlocked asyncio.Lock here: queued waiters may own
         # its next turn, which would make maintenance wait behind business I/O.
-        if self.persistence_error or barrier(self.ctx).exists() or self.lock.locked():
+        if self.persistence_error or barrier(self.ctx).exists() or self.lock.locked() or self.preparing:
             return {'status': 'busy', 'token': token}
         if operation == 'release':
             if self.maintenance_token not in (None, token):
@@ -68,6 +105,18 @@ class Controller:
         self.maintenance_token = token
         return {'status': 'sealed', 'token': token}
 
+    def history_count(self):
+        ids = set(self.state.get('service_history_ids', []))
+        ids.update(self.state.get('service_history', {}).keys())
+        return len(ids)
+
+    async def get_service_history(self, identity: str):
+        legacy = self.state.get('service_history', {})
+        if identity in legacy:
+            return legacy[identity]
+        if identity in self.state.get('service_history_ids', []):
+            return await self.ctx.storage.get(history_key(identity))
+        return None
 
     async def start(self):
         await recover_barrier(self.ctx)
@@ -75,6 +124,22 @@ class Controller:
         if self.state and self.state.get('binding') != self.binding():
             raise ValueError('active slot configuration binding changed')
         changed = False
+        legacy_history = self.state.get('service_history')
+        if isinstance(legacy_history, dict) and legacy_history:
+            ids = list(self.state.get('service_history_ids', []))
+            items = list(legacy_history.items())
+            for start_idx in range(0, len(items), 16):
+                batch = items[start_idx:start_idx + 16]
+                commit_id = 'fatalder_hist_' + secrets.token_hex(16)
+                tx = await self.ctx.storage.transaction(commit_id=commit_id, keys=[])
+                for ident, entry in batch:
+                    tx.set(history_key(ident), entry)
+                    if ident not in ids:
+                        ids.append(ident)
+                await durable_save(self.ctx, tx, commit_id)
+            self.state.pop('service_history', None)
+            self.state['service_history_ids'] = ids
+            changed = True
         for record in self.state.get('controls', {}).values():
             if record['action_state'] == 'accepted':
                 record['action_state'] = 'unknown'
@@ -91,13 +156,16 @@ class Controller:
         # SSE disconnection is observational; never sends cancel/start/recover.
         self.stopped.set()
 
-    async def save(self):
+    async def save(self, extra=None):
         if self.persistence_error:
             raise RuntimeError('controller persistence unresolved; reload required')
         try:
             commit_id = 'fatalder_state_' + secrets.token_hex(16)
-            tx = await self.ctx.storage.transaction(commit_id=commit_id)
+            tx = await self.ctx.storage.transaction(commit_id=commit_id, keys=[STATE])
             tx.set(STATE, self.state)
+            if extra:
+                for key, value in extra.items():
+                    tx.set(key, value)
             await durable_save(self.ctx, tx, commit_id)
         except BaseException:
             # Do not create another transaction/CAS from uncommitted memory.
@@ -113,38 +181,53 @@ class Controller:
 
     async def tell(self, name, message):
         key = 'fatalder_message_' + secrets.token_hex(16)
-        tx = await self.ctx.storage.transaction(commit_id=key)
-        tx.action(self.ctx.commands.prepare(
-            'tellraw ' + _target(name) + ' ' + json.dumps({'rawtext': [{'text': message}]}, ensure_ascii=False),
-            idempotency_key=key, deadline=(now() + timedelta(seconds=30)).isoformat()))
+        tx = await self.ctx.storage.transaction(commit_id=key, keys=[])
+        deadline_iso = (now() + timedelta(seconds=30)).isoformat()
+        notifications = getattr(self.ctx, 'notifications', None)
+        if notifications is not None:
+            plan = notifications.prepare(name, message, idempotency_key=key, deadline=deadline_iso)
+            for part in plan.parts:
+                tx.action(part.intent)
+        else:
+            cmds = chunk_tellraw(_target(name), message)
+            for idx, cmd in enumerate(cmds):
+                idem = key if len(cmds) == 1 else f'{key}_{idx}'
+                tx.action(self.ctx.commands.prepare(cmd, idempotency_key=idem, deadline=deadline_iso))
         await durable_save(self.ctx, tx, key)
 
     async def handle(self, event):
         async with self.lock:
             if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
+                if hasattr(event, 'defer_ack'):
+                    event.defer_ack()
                 return
             body = event.payload.get('payload', {})
             message, name = body.get('message', ''), body.get('player', '')
-            if event.kind != 'chat.received' or not message.startswith('!导入'):
+            xuid = body.get('xuid') or ''
+            if (event.kind != 'chat.received' or not isinstance(message, str)
+                    or not isinstance(name, str) or not name
+                    or not re.match(r'^!导入(?:\s|$)', message)):
                 await event.ack()
                 return
             players = await self.ctx.players()
             matched = [p for p in players if p['name'] == name]
-            if len(matched) != 1 or matched[0]['uuid'] not in self.ctx.config.admin_uuids:
+            if (len(matched) != 1 or matched[0]['uuid'] not in self.ctx.config.admin_uuids
+                    or (xuid and matched[0].get('xuid') and matched[0]['xuid'] != xuid)):
                 await event.ack()
                 return
             # Admission and ACK are atomic. A crash never replays a paid command.
             # The slot records the corresponding prepare/start request before I/O.
             token = event.payload['delivery_token']
-            tx = await event.transaction(commit_id='fatalder_chat_' + hashlib.sha256(token.encode()).hexdigest())
+            commit_id = 'fatalder_chat_' + hashlib.sha256(token.encode()).hexdigest()
+            tx = await event.transaction(commit_id=commit_id, keys=[])
             tx.set('fatalder.last_chat', token)
-            await durable_save(self.ctx, tx, 'fatalder_chat_' + hashlib.sha256(token.encode()).hexdigest())
-            try:
-                await self._command(name, shlex.split(message)[1:])
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                await self.tell(name, '操作未确认完成；请用 !导入 状态 检查，勿重复提交。')
+            await durable_save(self.ctx, tx, commit_id)
+        try:
+            await self._dispatch_command(name, shlex.split(message)[1:])
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            await self.tell(name, '操作未确认完成；请用 !导入 状态 检查，勿重复提交。')
 
     def files_root(self):
         data = Path(self.ctx.data_dir).resolve()
@@ -164,6 +247,18 @@ class Controller:
         return path
 
     async def command(self, name, args):
+        await self._dispatch_command(name, args)
+
+    async def _dispatch_command(self, name, args):
+        if args and args[0] not in ('列表', '核查', '确认核查', '状态', '暂停', '继续', '取消', '恢复', '确认'):
+            async with self.lock:
+                if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
+                    return
+                if self.state.get('service') and (self.state.get('phase') not in TERMINAL or self.state.get('lease')):
+                    raise ValueError('service-owned slot; use owning installation')
+            await self.prepare_import(name, args)
+            await self.show_quote(name)
+            return
         async with self.lock:
             if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
                 return
@@ -238,51 +333,83 @@ class Controller:
         await self.prepare_import(name, args)
         await self.show_quote(name)
 
-    async def prepare_import(self, owner, args, service_record=None, service_history=None):
-        if len(args) != 5:
-            raise ValueError('expected file x y z dimension')
-        if self.state and (self.state.get('phase') not in TERMINAL or self.state.get('lease') or self.unresolved_controls()):
-            raise ValueError('import slot occupied')
-        action = args[0]
-        path = self.source_path(action)
-        xyz = [int(value) for value in args[1:4]]
-        if any(abs(v) > 30000000 for v in xyz) or args[4] not in ('overworld', 'nether', 'the_end'):
-            raise ValueError('invalid position')
-        if action.endswith('.ref.json'):
-            if path.stat().st_size > 16384:
-                raise ValueError('reference too large')
-            ref = self.client._ref(json.loads(path.read_text()))
-            source_name = ref.get('display_name', '')
-            if not source_name or Path(source_name).name != source_name:
-                raise ValueError('invalid reference name')
-        else:
-            ref = await asyncio.to_thread(self.client.upload, path)
-            source_name = action
-        build = json.loads(Path(__file__).with_name('build_defaults.json').read_text())
-        build.update(source=ref, source_name=source_name,
-            start_position=dict(zip(('x', 'y', 'z'), xyz)), dimension_name=args[4])
-        history = service_history if service_history is not None else dict(self.state.get('service_history', {}))
-        if service_history is None and self.state.get('service'):
-            from .services import ServiceAdapter
-            previous = self.state['service']
-            ident = hashlib.sha256((previous['owner'] + '\0' + previous['request_key']).encode()).hexdigest()
-            history[ident] = dict(fingerprint=previous['fingerprint'], result=ServiceAdapter.public(self.state))
-        if len(history) >= 256:
-            raise ValueError('retained service request limit')
-        self.state = dict(service_history=history, binding=self.binding(), phase='prepare_pending', owner=owner, cursor=0, prepare=dict(version=5,
-            idempotency_key=secrets.token_hex(16), spec=dict(display_name=source_name,
-                managed_operator=True,
-                operator_cleanup_policy='revoke' if self.ctx.config.revoke_operator_on_completion else 'retain',
-                target=dict(server_id=self.ctx.config.target_server_id,
-                    rental_server_code=self.ctx.config.rental_server_code, account_source='service_center'),
-                tasks=[dict(task_key='import', kind='build', build=build)])))
-        if service_record is not None:
-            self.state['service'] = service_record
-        await self.save()
-        await self.prepare()
+    async def prepare_import(self, owner, args, service_record=None, archive_extra=None, history_ids=None):
+        """校验并准备新导入；慢速上传和 /v2/jobs/prepare 期间释放 self.lock，用 self.preparing 互斥。"""
+        async with self.lock:
+            if self.maintenance_token or self.persistence_error or barrier(self.ctx).exists():
+                return
+            if len(args) != 5:
+                raise ValueError('expected file x y z dimension')
+            if self.preparing or (self.state and (self.state.get('phase') not in TERMINAL or self.state.get('lease') or self.unresolved_controls())):
+                raise ValueError('import slot occupied')
+            action = args[0]
+            path = self.source_path(action)
+            xyz = [int(value) for value in args[1:4]]
+            if any(abs(v) > 30000000 for v in xyz) or args[4] not in ('overworld', 'nether', 'the_end'):
+                raise ValueError('invalid position')
+            if action.endswith('.ref.json'):
+                if path.stat().st_size > 16384:
+                    raise ValueError('reference too large')
+                ref = self.client._ref(json.loads(path.read_text()))
+                source_name = ref.get('display_name', '')
+                if not source_name or Path(source_name).name != source_name:
+                    raise ValueError('invalid reference name')
+                upload_needed = False
+            else:
+                ref = None
+                source_name = action
+                upload_needed = True
+
+            ids = list(history_ids if history_ids is not None else self.state.get('service_history_ids', []))
+            extra = dict(archive_extra or {})
+            if archive_extra is None and self.state.get('service'):
+                from .services import ServiceAdapter
+                previous = self.state['service']
+                ident = hashlib.sha256((previous['owner'] + '\0' + previous['request_key']).encode()).hexdigest()
+                extra[history_key(ident)] = dict(fingerprint=previous['fingerprint'], result=ServiceAdapter.public(self.state))
+                if ident not in ids:
+                    ids.append(ident)
+            if len(ids) >= MAX_SERVICE_HISTORY:
+                raise ValueError('retained service request limit')
+            self.preparing = True
+
+        try:
+            if upload_needed:
+                ref = await asyncio.to_thread(self.client.upload, path)
+            build = json.loads(Path(__file__).with_name('build_defaults.json').read_text())
+            build.update(source=ref, source_name=source_name,
+                start_position=dict(zip(('x', 'y', 'z'), xyz)), dimension_name=args[4])
+            prepare_body = dict(version=5,
+                idempotency_key=secrets.token_hex(16), spec=dict(display_name=source_name,
+                    managed_operator=True,
+                    operator_cleanup_policy='revoke' if self.ctx.config.revoke_operator_on_completion else 'retain',
+                    target=dict(server_id=self.ctx.config.target_server_id,
+                        rental_server_code=self.ctx.config.rental_server_code, account_source='service_center'),
+                    tasks=[dict(task_key='import', kind='build', build=build)]))
+            async with self.lock:
+                self.state = dict(service_history_ids=ids, binding=self.binding(), phase='prepare_pending',
+                                  owner=owner, cursor=0, prepare=prepare_body)
+                if service_record is not None:
+                    self.state['service'] = service_record
+                await self.save(extra=extra or None)
+            await self._prepare_unlocked(prepare_body)
+        finally:
+            async with self.lock:
+                self.preparing = False
+
+    async def _prepare_unlocked(self, prepare_body):
+        expected_key = prepare_body['idempotency_key']
+        response = await self.request('POST', '/v2/jobs/prepare', copy.deepcopy(prepare_body))
+        async with self.lock:
+            if self.state.get('prepare', {}).get('idempotency_key') != expected_key:
+                return
+            self.state.update(job_id=response['job_id'], quote=response['quote'], phase='quoted',
+                              confirm_token=secrets.token_hex(4))
+            await self.save()
 
     async def prepare(self):
-        response = await self.request('POST', '/v2/jobs/prepare', self.state['prepare'])
+        prepare_body = copy.deepcopy(self.state['prepare'])
+        response = await self.request('POST', '/v2/jobs/prepare', prepare_body)
         self.state.update(job_id=response['job_id'], quote=response['quote'], phase='quoted',
                           confirm_token=secrets.token_hex(4))
         await self.save()

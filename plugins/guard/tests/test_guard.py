@@ -1,4 +1,5 @@
 """Drive the plugin through the real SDK storage against an in-memory Host."""
+import asyncio
 import copy
 import dataclasses
 import json
@@ -7,11 +8,13 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from neomega_runtime import Event, PluginContext
 from neomega_runtime.config_errors import ConfigError
 from neomega_runtime.config import load_config
-from neomega_runtime.config_schema import schema_for_config
+from neomega_runtime.config_schema import check_config_schema, schema_for_config
+from neomega_runtime.http import ProtocolError
 from neomega_runtime.managed import IPCRejected
 from neomega_runtime.operations import Operations
 from main import Guard, Settings
@@ -48,6 +51,7 @@ class FakeHost:
         self.online = [dict(ROBOT), dict(STEVE)]
         self.bot_name = ROBOT['name']
         self.level = LEVEL_OK
+        self.presence = LEVEL_OK
         self.queries, self.fail_commit = [], None
 
     async def call(self, method, payload, timeout=None):
@@ -57,9 +61,12 @@ class FakeHost:
             return {'session': 's1', 'in_game': True, 'bot_name': self.bot_name, 'player_count': len(self.online)}
         if method == 'operations.submit':
             self.queries.append(payload['arguments']['cmd'])
-            return {'operation_id': 'q1', 'state': 'accepted', 'duplicate': False}
+            return {'operation_id': 'q1' if ',lm=' in payload['arguments']['cmd'] else 'q2',
+                    'state': 'accepted', 'duplicate': False}
         if method == 'operations.get':
-            return copy.deepcopy(self.level)
+            row = copy.deepcopy(self.level if payload.get('operation_id') == 'q1' else self.presence)
+            row['operation_id'] = payload['operation_id']
+            return row
         if method == 'state.get':
             keys = payload.get('keys')
             values = self.values if keys is None else {k: self.values[k] for k in keys if k in self.values}
@@ -152,7 +159,9 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.queries, [])
 
     def test_static_schema_and_example_match_settings(self):
-        self.assertEqual(json.loads((ROOT / 'config.schema.json').read_text()), schema_for_config(Settings))
+        schema = json.loads((ROOT / 'config.schema.json').read_text())
+        check_config_schema(schema)
+        self.assertEqual(schema, schema_for_config(Settings))
         example = json.loads((ROOT / 'config.example.json').read_text())
         self.assertEqual(example, dataclasses.asdict(Settings()))
         self.assertEqual(load_config(Settings, ROOT / 'config.example.json'), Settings())
@@ -160,9 +169,12 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
     def test_rejects_invalid_settings(self):
         for changes in ({'name_patterns': ['[']}, {'name_keywords': [' ']}, {'admins': ['']},
                         {'player_limit_exempt': ['']}, {'spam_punish_commands': ['']},
-                        {'level_message': ' '}, {'spam_punish_message': ''}):
+                        {'level_message': ' '}, {'spam_punish_message': ''},
+                        {'spam_repeat_limit': 1}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 Settings(**changes)
+        Settings(spam_repeat_limit=0)
+        Settings(spam_repeat_limit=2)
         for value in ({'min_level': 0}, {'max_players': 0}, {'kick_delay_seconds': 31},
                       {'record_limit': 5000}, {'spam_window_seconds': 0}, {'unknown': 1}):
             with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
@@ -220,11 +232,23 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_level_check_kicks_when_no_target_matches(self):
         self.configure(level_check=True, min_level=15)
         self.host.level = LEVEL_LOW
+        self.host.presence = LEVEL_OK
         await self.join(STEVE)
+        self.assertEqual(self.host.queries, ['testfor @a[name="Steve",lm=15]', 'testfor @a[name="Steve"]'])
         self.assertEqual(self.host.told('Steve'), '[服务器守卫] 需要达到 15 级才能进入本服务器，升级后再来吧。')
         self.assertEqual(self.host.records()[-1]['rule'], 'level')
         await self.run_timers()
         self.assertEqual(self.host.kicks(), ['kick @a[name="Steve"] 需要达到 15 级才能进入本服务器，升级后再来吧。'])
+
+    async def test_level_check_does_not_kick_when_entity_not_spawned(self):
+        self.configure(level_check=True, min_level=15)
+        self.host.level = LEVEL_LOW
+        self.host.presence = LEVEL_LOW
+        with self.assertLogs('guard-test', 'WARNING'):
+            await self.join(STEVE)
+        self.assertEqual(self.host.queries, ['testfor @a[name="Steve",lm=15]', 'testfor @a[name="Steve"]'])
+        self.assert_only_acknowledged()
+        self.assertEqual(self.host.records(), [])
 
     async def test_level_check_accepts_success_message_with_parameters(self):
         # 实服 Host 返回的消息把参数拼在键后面：commands.testfor.success Steve。
@@ -475,9 +499,56 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_delayed_kick_is_logged(self):
         self.configure(name_check=True, name_keywords=['bob'])
         await self.join(BOB)
-        self.host.fail_commit = IPCRejected('revision_conflict', 'r1', False)
-        with self.assertLogs('guard-test', 'WARNING'):
-            await self.run_timers()
+        for error in (IPCRejected('revision_conflict', 'r1', False), ProtocolError('bad'), TimeoutError(), ValueError('x')):
+            self.host.fail_commit = error
+            with self.subTest(error=type(error).__name__), self.assertLogs('guard-test', 'WARNING'):
+                await self.plugin.kick(self.ctx, 'Bob', 'msg', 'cid')
+
+    async def test_spam_cleans_messages_on_player_not_found(self):
+        for _ in range(2):
+            await self.say(STEVE, '刷屏')
+        self.host.online = [p for p in self.host.online if p['name'] != 'Steve']
+        await self.deliver('chat.received', {'player': 'Steve', 'xuid': '2', 'message': '刷屏'})
+        self.assertNotIn('Steve', self.plugin.messages)
+        self.assert_only_acknowledged()
+
+    async def test_non_ascii_digit_in_show_command_rejected(self):
+        await self.say(ADMIN, '!守卫记录 ²')
+        self.assertIn('1 到 20', self.host.told('Owner'))
+
+    async def test_serve_ack_lifecycle(self):
+        host = self.host
+        events = [
+            {'kind': 'chat.received', 'payload': {'player': 'Steve', 'xuid': '2', 'message': '你好'},
+             'subscription_id': 'chat', 'event_id': 'ev1', 'delivery_token': 'dt1'},
+        ]
+
+        class DriveWorker:
+            def __init__(self, peer, **callbacks):
+                self.peer, self.callbacks = peer, callbacks
+                self.log = logging.getLogger('guard-serve-test')
+                self.session = 'install-1'
+                self._scopes = self._streams = None
+
+            async def run(self):
+                await self.callbacks['on_validate'](self.peer, {})
+                await self.callbacks['on_activate'](self.peer, {})
+                for ev in events:
+                    await self.callbacks['on_event'](self.peer, ev)
+                await self.callbacks['on_drain'](self.peer, {})
+
+            def spawn(self, coro, *, name=None):
+                return asyncio.create_task(coro)
+
+        async def call_with_caps(method, payload, timeout=None):
+            if method == 'capabilities.get':
+                return {'session': 's1', 'capabilities': []}
+            return await host.call(method, payload, timeout=timeout)
+
+        peer = SimpleNamespace(call=call_with_caps)
+        with tempfile.TemporaryDirectory() as tmp, patch('neomega_runtime.plugin.Worker', DriveWorker):
+            await Guard().serve(peer, data_dir=tmp)
+        self.assertEqual([c['event_id'] for c in host.commits], ['ev1'])
 
 
 if __name__ == '__main__':
